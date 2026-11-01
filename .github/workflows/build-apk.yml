@@ -1,0 +1,50 @@
+# สร้างไฟล์ APK อัตโนมัติบน GitHub (ไม่ต้องลง Flutter ในเครื่อง)
+# ทุกครั้งที่อัปโหลด/แก้โค้ด หรือกด Run workflow ในแท็บ Actions
+# ผลลัพธ์: หน้า Releases จะมีไฟล์ app-release.apk ให้โหลดลงมือถือได้เลย
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # เติมไฟล์โครงโปรเจกต์ Android ที่ไม่ได้อยู่ใน repo (ไฟล์ที่มีอยู่แล้วจะไม่ถูกทับ)
+      - name: Create missing project files
+        run: flutter create --org com.n1v65 --platforms android --project-name n1v65_dash .
+
+      - run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: n1v65-dash-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Publish to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: N1V65 Dash (build ${{ github.run_number }})
+          body: ดาวน์โหลด app-release.apk ด้านล่าง แล้วกดติดตั้งบนมือถือ Android
+          files: build/app/outputs/flutter-apk/app-release.apk
