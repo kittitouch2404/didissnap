@@ -6,6 +6,7 @@ import 'live.dart';
 import 'paint_utils.dart';
 import 'picture_dash.dart';
 import 'pro_pages.dart';
+import 'pro_pages2.dart';
 import 'race_dash.dart';
 import 'round_gauge.dart';
 import 'settings_page.dart';
@@ -75,6 +76,9 @@ class _DashShellState extends State<DashShell> {
       'arc' => paint((f) => ArcPainter(f)),
       'yellow' => paint((f) => YellowPainter(f)),
       'bars' => paint((f) => BarsPainter(f)),
+      'redstripe' => paint((f) => RedStripePainter(f)),
+      'ecu' => paint((f) => EcuPainter(f)),
+      'center' => paint((f) => CenterTachPainter(f)),
       _ => LiveBuilder(
           key: ValueKey(id), hub: hub, builder: (_, f) => PictureDash(f: f)),
     };

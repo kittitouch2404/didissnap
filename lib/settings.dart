@@ -14,6 +14,9 @@ const List<(String, String)> kPages = [
   ('arc', 'Arc (วงรอบเหลือง + ความเร็วกล่องใหญ่)'),
   ('yellow', 'Yellow box (ช่องเหลือง + เกียร์ฟ้า)'),
   ('bars', 'Bar graph (กราฟแท่ง + 8 ช่อง)'),
+  ('redstripe', 'Red stripe (เกจวงใหญ่ + พื้นแถบแดง)'),
+  ('ecu', 'ECU (รอบตัวใหญ่ + เกียร์/ความเร็วกลาง)'),
+  ('center', 'Center tach (เกจกลางจอ + 8 ช่อง)'),
   ('picture', 'รูปพื้นหลังของคุณ'),
 ];
 
@@ -140,16 +143,17 @@ class AppSettings extends ChangeNotifier {
   set showOnLock(bool v) => _setB('showOnLock', v);
 
   // ---------- หน้าที่เปิดใช้ ----------
+  // เก็บเป็น "หน้าที่ปิดไว้" เพื่อให้หน้าใหม่ในเวอร์ชันถัดไปโผล่ขึ้นมาเอง
   List<String> get pages {
     final all = kPages.map((e) => e.$1).toList();
-    final l = _p.getStringList('pages');
-    if (l == null) return all;
-    final r = all.where(l.contains).toList();
+    final off = _p.getStringList('pagesOff') ?? const <String>[];
+    final r = all.where((id) => !off.contains(id)).toList();
     return r.isEmpty ? all : r;
   }
 
   set pages(List<String> v) {
-    _p.setStringList('pages', v);
+    _p.setStringList('pagesOff',
+        kPages.map((e) => e.$1).where((id) => !v.contains(id)).toList());
     notifyListeners();
   }
 
