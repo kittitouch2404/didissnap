@@ -1,6 +1,6 @@
 # สร้างไฟล์ APK อัตโนมัติบน GitHub (ไม่ต้องลง Flutter ในเครื่อง)
 # ทุกครั้งที่อัปโหลด/แก้โค้ด หรือกด Run workflow ในแท็บ Actions
-# ผลลัพธ์: หน้า Releases จะมีไฟล์ app-release.apk ให้โหลดลงมือถือได้เลย
+# ผลลัพธ์: หน้า Releases จะมีไฟล์ OBD2_Disdisnap.apk ให้โหลดลงมือถือได้เลย
 name: Build APK
 
 on:
@@ -34,17 +34,19 @@ jobs:
       - run: flutter pub get
 
       - name: Build APK
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk OBD2_Disdisnap.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: n1v65-dash-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: OBD2_Disdisnap
+          path: OBD2_Disdisnap.apk
 
       - name: Publish to Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: N1V65 Dash (build ${{ github.run_number }})
-          body: ดาวน์โหลด app-release.apk ด้านล่าง แล้วกดติดตั้งบนมือถือ Android
-          files: build/app/outputs/flutter-apk/app-release.apk
+          body: ดาวน์โหลด OBD2_Disdisnap.apk ด้านล่าง แล้วกดติดตั้งบนมือถือ Android
+          files: OBD2_Disdisnap.apk
