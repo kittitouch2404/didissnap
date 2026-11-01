@@ -121,6 +121,24 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------- เปิดแอปอัตโนมัติ (โค้ด Kotlin อ่านค่าเหล่านี้โดยตรง) ----------
+  bool get autoBoot => _b('autoBoot', false);
+  set autoBoot(bool v) => _setB('autoBoot', v);
+  bool get autoPower => _b('autoPower', false);
+  set autoPower(bool v) => _setB('autoPower', v);
+  bool get autoBt => _b('autoBt', false);
+  set autoBt(bool v) => _setB('autoBt', v);
+  String get autoBtName => _s('autoBtName', '');
+  String get autoBtAddress => _s('autoBtAddress', '');
+  void setAutoBtDevice(String name, String address) {
+    _p.setString('autoBtName', name);
+    _p.setString('autoBtAddress', address);
+    notifyListeners();
+  }
+
+  bool get showOnLock => _b('showOnLock', false);
+  set showOnLock(bool v) => _setB('showOnLock', v);
+
   // ---------- หน้าที่เปิดใช้ ----------
   List<String> get pages {
     final all = kPages.map((e) => e.$1).toList();

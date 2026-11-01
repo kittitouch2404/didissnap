@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../data/car_data.dart';
 import '../data/elm_source.dart';
 import '../data/hub.dart';
+import '../data/native.dart';
 import '../settings.dart';
 import 'paint_utils.dart';
 
@@ -25,7 +26,7 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           toolbarHeight: 40,
@@ -38,6 +39,7 @@ class SettingsPage extends StatelessWidget {
               Tab(height: 36, text: 'เกียร์'),
               Tab(height: 36, text: 'รูปพื้นหลัง'),
               Tab(height: 36, text: 'DTC'),
+              Tab(height: 36, text: 'เปิดอัตโนมัติ'),
             ],
           ),
         ),
@@ -47,6 +49,7 @@ class SettingsPage extends StatelessWidget {
           GearTab(settings: settings, hub: hub),
           PicturesTab(settings: settings, hub: hub),
           DtcTab(hub: hub),
+          AutoStartTab(settings: settings),
         ]),
       ),
     );
@@ -888,6 +891,181 @@ class _DtcTabState extends State<DtcTab> {
             ),
           ),
       ],
+    );
+  }
+}
+
+// ======================================================================
+//  เปิดแอปอัตโนมัติ
+// ======================================================================
+Future<BtDevice?> pickBondedDevice(BuildContext context, String title) async {
+  final list = await BtTransport.bonded();
+  if (!context.mounted) return null;
+  return showDialog<BtDevice>(
+    context: context,
+    builder: (ctx) => SimpleDialog(
+      title: Text(title),
+      children: [
+        if (list.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('ไม่พบอุปกรณ์ที่จับคู่ไว้'),
+          ),
+        for (final d in list)
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, d),
+            child: Text('${d.name}\n${d.address}'),
+          ),
+      ],
+    ),
+  );
+}
+
+class AutoStartTab extends StatefulWidget {
+  const AutoStartTab({super.key, required this.settings});
+  final AppSettings settings;
+  @override
+  State<AutoStartTab> createState() => _AutoStartTabState();
+}
+
+class _AutoStartTabState extends State<AutoStartTab>
+    with WidgetsBindingObserver {
+  bool? _overlay;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _check();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // กลับมาจากหน้าตั้งค่าของ Android → เช็กสิทธิ์ใหม่
+    if (state == AppLifecycleState.resumed) _check();
+  }
+
+  Future<void> _check() async {
+    final ok = await Native.canOverlay();
+    if (mounted) setState(() => _overlay = ok);
+  }
+
+  bool get _anyOn =>
+      widget.settings.autoBoot ||
+      widget.settings.autoPower ||
+      widget.settings.autoBt;
+
+  Future<void> _toggle(void Function() apply, bool turningOn) async {
+    apply();
+    await Native.syncAutoStart();
+    if (turningOn && _overlay == false && mounted) {
+      _snack(context, 'อย่าลืมกด "อนุญาต" สิทธิ์แสดงทับแอปอื่น ด้านบน');
+    }
+  }
+
+  Future<void> _pickCarBt() async {
+    try {
+      final d = await pickBondedDevice(context, 'เลือก Bluetooth ของรถ');
+      if (d != null) widget.settings.setAutoBtDevice(d.name, d.address);
+    } catch (e) {
+      if (mounted) _snack(context, errText(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.settings;
+    return AnimatedBuilder(
+      animation: s,
+      builder: (context, _) => ListView(
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          ListTile(
+            leading: Icon(
+              _overlay == true ? Icons.check_circle : Icons.error_outline,
+              color: _overlay == true ? kGreen : kAmber,
+            ),
+            title: const Text('สิทธิ์ "แสดงทับแอปอื่น"'),
+            subtitle: Text(_overlay == true
+                ? 'อนุญาตแล้ว — แอปเปิดตัวเองได้'
+                : 'จำเป็น: Android ไม่ยอมให้แอปเปิดตัวเองจากเบื้องหลังถ้าไม่มีสิทธิ์นี้'),
+            trailing: _overlay == true
+                ? null
+                : FilledButton(
+                    onPressed: Native.requestOverlay,
+                    child: const Text('อนุญาต')),
+          ),
+          const _Header('เปิดแอปเองเมื่อ'),
+          SwitchListTile(
+            dense: true,
+            title: const Text('เปิดมือถือ (บูตเครื่องเสร็จ)'),
+            subtitle: const Text('เหมาะกับมือถือ/แท็บเล็ตที่ติดในรถถาวร และติดเครื่องพร้อมรถ'),
+            value: s.autoBoot,
+            onChanged: (v) => _toggle(() => s.autoBoot = v, v),
+          ),
+          SwitchListTile(
+            dense: true,
+            title: const Text('เริ่มชาร์จไฟ (บิดกุญแจแล้วที่ชาร์จในรถจ่ายไฟ)'),
+            subtitle: const Text('จะมีแจ้งเตือนเล็ก ๆ ค้างไว้ เพราะ Android ต้องให้แอปเฝ้ารอสัญญาณชาร์จ'),
+            value: s.autoPower,
+            onChanged: (v) async {
+              if (v) await Native.requestNotif();
+              await _toggle(() => s.autoPower = v, v);
+            },
+          ),
+          SwitchListTile(
+            dense: true,
+            title: const Text('มือถือต่อ Bluetooth กับรถ'),
+            subtitle: Text(s.autoBtAddress.isEmpty
+                ? 'เลือกเครื่องเสียง/ระบบ Bluetooth ของรถก่อน (ไม่ใช่ Vgate)'
+                : 'อุปกรณ์: ${s.autoBtName}'),
+            value: s.autoBt && s.autoBtAddress.isNotEmpty,
+            onChanged: s.autoBtAddress.isEmpty
+                ? null
+                : (v) => _toggle(() => s.autoBt = v, v),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _pickCarBt,
+                icon: const Icon(Icons.bluetooth),
+                label: Text(s.autoBtAddress.isEmpty
+                    ? 'เลือก Bluetooth ของรถ'
+                    : 'เปลี่ยนอุปกรณ์'),
+              ),
+            ),
+          ),
+          const _Header('ตอนแอปเปิดขึ้นมา'),
+          SwitchListTile(
+            dense: true,
+            title: const Text('แสดงบนหน้าล็อกได้เลย ไม่ต้องปลดล็อก'),
+            subtitle: const Text('ปิดแอป/กดย้อนกลับแล้วจะกลับไปที่หน้าล็อกตามปกติ'),
+            value: s.showOnLock,
+            onChanged: (v) => _toggle(() => s.showOnLock = v, false),
+          ),
+          if (_anyOn) ...[
+            const _Header('ถ้าแอปไม่เด้งขึ้นมาเอง'),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.battery_saver),
+              title: const Text('ปิดการประหยัดแบตเตอรี่ให้แอปนี้'),
+              subtitle: const Text(
+                  'Xiaomi/Oppo/Vivo/Realme: เปิด "เริ่มอัตโนมัติ (Autostart)" ให้ N1V65 Dash ในตั้งค่ามือถือด้วย'),
+              trailing: OutlinedButton(
+                  onPressed: Native.batterySettings,
+                  child: const Text('เปิดตั้งค่า')),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

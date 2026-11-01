@@ -6,9 +6,13 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
+import android.os.Bundle
+import android.provider.Settings
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -77,6 +81,51 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "bindWifi" -> result.success(bindWifi(call.argument<Boolean>("on") ?: true))
+                "canOverlay" -> result.success(AutoStart.canLaunchFromBackground(this))
+                "requestOverlay" -> {
+                    if (Build.VERSION.SDK_INT >= 23) {
+                        try {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:$packageName")
+                                )
+                            )
+                        } catch (e: Exception) {
+                        }
+                    }
+                    result.success(true)
+                }
+                "batterySettings" -> {
+                    try {
+                        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    } catch (e: Exception) {
+                        try {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.parse("package:$packageName")
+                                )
+                            )
+                        } catch (e2: Exception) {
+                        }
+                    }
+                    result.success(true)
+                }
+                "requestNotif" -> {
+                    if (Build.VERSION.SDK_INT >= 33 &&
+                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIF)
+                    }
+                    result.success(true)
+                }
+                "syncAutoStart" -> {
+                    AutoStart.syncService(this)
+                    applyLockScreen()
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -90,6 +139,27 @@ class MainActivity : FlutterActivity() {
                 sink = null
             }
         })
+    }
+
+    // ---------------- เปิดอัตโนมัติ / หน้าล็อก ----------------
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        applyLockScreen()
+        AutoStart.syncService(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applyLockScreen()
+    }
+
+    /** แสดงแอปทับหน้าล็อกได้เลย (ไม่ต้องปลดล็อก) ถ้าเปิดค่าตั้งไว้ */
+    private fun applyLockScreen() {
+        if (Build.VERSION.SDK_INT >= 27) {
+            val on = AutoStart.prefBool(this, "showOnLock")
+            setShowWhenLocked(on)
+            setTurnScreenOn(on)
+        }
     }
 
     // ---------------- สิทธิ์ ----------------
@@ -254,5 +324,6 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val REQ_BT = 4711
+        private const val REQ_NOTIF = 4712
     }
 }

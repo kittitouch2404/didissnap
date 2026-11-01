@@ -81,7 +81,7 @@ const PAGES=[
  {id:'race',name:'รถแข่ง'},{id:'round',name:'เกจกลม'},{id:'sweep',name:'Sweep'},
  {id:'arc',name:'Arc'},{id:'yellow',name:'Yellow box'},{id:'bars',name:'Bar graph'},{id:'picture',name:'รูปพื้นหลัง'}];
 const S={source:'demo',maxRpm:8000,redline:7000,shiftStart:5000,maxSpeed:240,ectWarn:105,keepOn:true,flip:false,
- gears:[7.6,13.4,19.6,25.9,32.4],pages:PAGES.map(p=>p.id),pictures:[],picAuto:true,picCfg:{},pixelFont:true};
+ gears:[7.6,13.4,19.6,25.9,32.4],pages:PAGES.map(p=>p.id),pictures:[],picAuto:true,picCfg:{},pixelFont:true,autoBoot:false,autoPower:false,autoBt:false,autoBtName:'',showOnLock:false,overlayOk:false};
 const picOn=p=>S.picCfg[p]?.on??true, picRpm=p=>S.picCfg[p]?.rpm??0;
 function setPic(p,o){S.picCfg[p]={...(S.picCfg[p]||{}),...o};if(S.picCfg[p].rpm<0)S.picCfg[p].rpm=0;}
 function activePics(){const ps=S.pictures.filter(picOn);if(!ps.length)return[];if(S.picAuto){const b=S.redline/ps.length;return ps.map((p,i)=>[p,Math.round(b*i)]);}return ps.map(p=>[p,picRpm(p)]).sort((a,b)=>a[1]-b[1]);}
@@ -315,7 +315,7 @@ function snack(m){const s=document.getElementById('snack');s.textContent=m;s.cla
 document.getElementById('chip').onclick=()=>snack(S.source=='demo'?'โหมดจำลอง (Demo)':'พรีวิว: ยังเป็นค่าจำลอง (ต้องใช้แอปจริงเพื่อต่อรถ)');
 
 // ===================================================================== menu
-let menuOpen=false,tab=0;const TABS=['การเชื่อมต่อ','หน้าปัด','เกียร์','รูปพื้นหลัง','DTC'];
+let menuOpen=false,tab=0;const TABS=['การเชื่อมต่อ','หน้าปัด','เกียร์','รูปพื้นหลัง','DTC','เปิดอัตโนมัติ'];
 const menu=document.getElementById('menu'),mb=document.getElementById('mbody');
 document.getElementById('menuBtn').onclick=()=>{menuOpen=true;menu.classList.add('open');renderMenu();};
 document.getElementById('back').onclick=()=>{menuOpen=false;menu.classList.remove('open');};
@@ -354,11 +354,20 @@ function renderMenu(){renderTabs();document.getElementById('busy').innerHTML=dtc
   if(dtc&&!dtc.length)h+=`<div style="padding:16px;color:${GRN};font-size:18px">ไม่พบรหัส DTC ✓</div>`;
   if(dtc&&dtc.length)h+=dtc.map(c=>`<div class="code"><span style="color:${AMB};font-size:20px">⚠</span><div><b>${c}</b><small>${DTCI[c]||''}</small></div></div>`).join('');
   if(dtcConfirm)h+=`<div style="margin:10px 16px;padding:14px;border-radius:12px;background:#2a2320"><b>ลบรหัส DTC?</b><div style="font-size:13px;color:#bbb;margin:6px 0 10px">จะล้างรหัสและดับไฟ Check Engine (ข้อมูล Readiness จะถูกรีเซ็ตด้วย) แนะนำให้ดับเครื่อง แต่เปิดสวิตช์กุญแจค้างไว้ที่ ON</div><button class="btn out" id="dNo">ยกเลิก</button> <button class="btn" id="dYes">ลบ</button></div>`;}
+ if(tab==5){h+=`<div class="row"><div class="t"><span style="color:${S.overlayOk?GRN:AMB}">${S.overlayOk?'✔':'⚠'}</span> สิทธิ์ "แสดงทับแอปอื่น"<small>${S.overlayOk?'อนุญาตแล้ว — แอปเปิดตัวเองได้':'จำเป็น: Android ไม่ยอมให้แอปเปิดตัวเองจากเบื้องหลังถ้าไม่มีสิทธิ์นี้'}</small></div>${S.overlayOk?'':'<button class="btn" id="ovl">อนุญาต</button>'}</div><div class="hd">เปิดแอปเองเมื่อ</div>`;
+  h+=swRow('เปิดมือถือ (บูตเครื่องเสร็จ)',S.autoBoot,'data-sw="autoBoot"','เหมาะกับมือถือ/แท็บเล็ตที่ติดในรถถาวร และติดเครื่องพร้อมรถ');
+  h+=swRow('เริ่มชาร์จไฟ (บิดกุญแจแล้วที่ชาร์จในรถจ่ายไฟ)',S.autoPower,'data-sw="autoPower"','จะมีแจ้งเตือนเล็ก ๆ ค้างไว้ เพราะ Android ต้องให้แอปเฝ้ารอสัญญาณชาร์จ');
+  h+=S.autoBtName?swRow('มือถือต่อ Bluetooth กับรถ',S.autoBt,'data-sw="autoBt"','อุปกรณ์: '+S.autoBtName):`<div class="row"><div class="t" style="color:#888">มือถือต่อ Bluetooth กับรถ<small>เลือกเครื่องเสียง/ระบบ Bluetooth ของรถก่อน (ไม่ใช่ Vgate)</small></div><div class="sw" style="opacity:.3"></div></div>`;
+  h+=`<div class="row" style="justify-content:flex-start"><button class="btn out" id="carBt">ᛒ ${S.autoBtName?'เปลี่ยนอุปกรณ์':'เลือก Bluetooth ของรถ'}</button></div>`;
+  h+='<div class="hd">ตอนแอปเปิดขึ้นมา</div>'+swRow('แสดงบนหน้าล็อกได้เลย ไม่ต้องปลดล็อก',S.showOnLock,'data-sw="showOnLock"','ปิดแอป/กดย้อนกลับแล้วจะกลับไปที่หน้าล็อกตามปกติ');
+  if(S.autoBoot||S.autoPower||S.autoBt)h+=`<div class="hd">ถ้าแอปไม่เด้งขึ้นมาเอง</div><div class="row"><div class="t">ปิดการประหยัดแบตเตอรี่ให้แอปนี้<small>Xiaomi/Oppo/Vivo/Realme: เปิด "เริ่มอัตโนมัติ (Autostart)" ให้ N1V65 Dash ในตั้งค่ามือถือด้วย</small></div><button class="btn out">เปิดตั้งค่า</button></div>`;}
  mb.innerHTML=h;}
 let dtcConfirm=false,lastCur=null;
 function updGear(){const el=document.getElementById('gLive');if(!el)return;const r=(D.rpm>400&&D.speed>2)?D.speed/(D.rpm/1000):null;el.textContent=`ตอนนี้: ${fmt(D.rpm)} rpm · ${fmt(D.speed)} km/h · อัตรา ${r==null?'--':r.toFixed(2)} · เกียร์ ${estimateGear(D.rpm,D.speed)}`;}
 mb.addEventListener('click',e=>{const t=e.target;let b;
  if(b=t.closest('[data-src]')){S.source=b.dataset.src;document.getElementById('chipT').textContent={demo:'DEMO',bt:'BT',wifi:'WiFi',esp:'ESP32'}[S.source];document.querySelector('.chip i').style.background=S.source=='demo'?GRN:AMB;renderMenu();return;}
+ if(t.id=='ovl'){S.overlayOk=true;renderMenu();snack('(พรีวิว) เปิดหน้าตั้งค่า Android → อนุญาต');return;}
+ if(t.id=='carBt'){S.autoBtName='Honda Audio (ตัวอย่าง)';renderMenu();return;}
  if(t.id=='recon'){snack('กำลังเชื่อมต่อใหม่...');return;}
  if(b=t.closest('[data-k]')){const k=b.dataset.k;S[k]=cl(S[k]+ +b.dataset.d,+b.dataset.min,+b.dataset.max);
   if(k=='maxRpm'){if(S.redline>S.maxRpm)S.redline=S.maxRpm;if(S.shiftStart>=S.redline)S.shiftStart=S.redline-500;}renderMenu();return;}
