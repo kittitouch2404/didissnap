@@ -49,12 +49,15 @@ static WiFiClient client;
 static String rx;
 static uint32_t lastSend = 0;
 
-inline void begin() {
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(N1LINK_SSID, N1LINK_PASS);
+// คืน true = ปล่อย WiFi สำเร็จ (false = แรมไม่พอ/เริ่ม WiFi ไม่ได้)
+inline bool begin() {
+  if (!WiFi.mode(WIFI_AP)) return false;
+  // ช่อง 1, ไม่ซ่อนชื่อ, ต่อได้ทีละ 1 เครื่อง (ประหยัดแรม)
+  if (!WiFi.softAP(N1LINK_SSID, N1LINK_PASS, 1, 0, 1)) return false;
   // ห้าม WiFi.setSleep(false) เมื่อใช้ Bluetooth ไปด้วย (ESP32 จะ abort/รีบูต)
   server.begin();
   server.setNoDelay(true);
+  return true;
 }
 
 inline bool connected() { return client && client.connected(); }
