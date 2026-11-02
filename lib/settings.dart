@@ -144,6 +144,12 @@ class AppSettings extends ChangeNotifier {
   bool get showOnLock => _b('showOnLock', false);
   set showOnLock(bool v) => _setB('showOnLock', v);
 
+  // ---------- คลิปตอนเปิดแอป ----------
+  bool get bootClip => _b('bootClip', true);
+  set bootClip(bool v) => _setB('bootClip', v);
+  bool get bootSound => _b('bootSound', true);
+  set bootSound(bool v) => _setB('bootSound', v);
+
   // ---------- หน้าที่เปิดใช้ ----------
   // เก็บเป็น "หน้าที่ปิดไว้" เพื่อให้หน้าใหม่ในเวอร์ชันถัดไปโผล่ขึ้นมาเอง
   List<String> get pages {

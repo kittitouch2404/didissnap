@@ -341,6 +341,20 @@ class DisplayTab extends StatelessWidget {
             value: s.flip,
             onChanged: (v) => s.flip = v,
           ),
+          const _Header('คลิปตอนเปิดแอป'),
+          SwitchListTile(
+            dense: true,
+            title: const Text('เล่นคลิปก่อนเข้าหน้าปัด'),
+            subtitle: const Text('เล่นจนจบ → จอดำ → เข้าหน้าปัด (แตะจอเพื่อข้าม)'),
+            value: s.bootClip,
+            onChanged: (v) => s.bootClip = v,
+          ),
+          SwitchListTile(
+            dense: true,
+            title: const Text('เปิดเสียงคลิป'),
+            value: s.bootSound,
+            onChanged: s.bootClip ? (v) => s.bootSound = v : null,
+          ),
           ListTile(
             dense: true,
             title: const Text('TRIP (ระยะทางที่คำนวณจากความเร็ว)'),

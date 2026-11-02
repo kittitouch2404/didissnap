@@ -13,6 +13,7 @@ dependencies:
   wakelock_plus: ^1.2.8
   image_picker: ^1.1.2
   path_provider: ^2.1.4
+  video_player: ^2.9.2
 
 dev_dependencies:
   flutter_test:
@@ -21,3 +22,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/boot.mp4
