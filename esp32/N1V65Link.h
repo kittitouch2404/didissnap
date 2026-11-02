@@ -52,7 +52,7 @@ static uint32_t lastSend = 0;
 inline void begin() {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(N1LINK_SSID, N1LINK_PASS);
-  WiFi.setSleep(false);
+  // ห้าม WiFi.setSleep(false) เมื่อใช้ Bluetooth ไปด้วย (ESP32 จะ abort/รีบูต)
   server.begin();
   server.setNoDelay(true);
 }
