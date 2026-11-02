@@ -7,8 +7,12 @@ import 'car_data.dart';
 import 'demo_source.dart';
 import 'elm_source.dart';
 import 'esp32_source.dart';
+import 'perf.dart';
 
 enum LinkState { idle, connecting, connected, error }
+
+/// โหมดการอ่านค่า: ปกติ / เน้นความเร็ว (จับเวลา) / อ่านทุก PID (หน้าตาราง)
+enum PollMode { normal, perf, allPids }
 
 abstract class CarSource {
   void start(DataHub hub);
@@ -33,6 +37,12 @@ class DataHub extends ChangeNotifier {
   }
 
   Timer? _tripTimer;
+
+  /// หน้าที่กำลังแสดงอยู่บอกว่าควรอ่านค่าแบบไหน
+  PollMode pollMode = PollMode.normal;
+
+  /// ตัวจับเวลาออกตัว
+  late final PerfRecorder perf = PerfRecorder(this);
 
   final AppSettings settings;
   final CarData data = CarData();
@@ -100,6 +110,7 @@ class DataHub extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _tripTimer?.cancel();
+    perf.dispose();
     settings.removeListener(_onSettings);
     _src?.stop();
     super.dispose();

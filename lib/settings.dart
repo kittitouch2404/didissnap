@@ -17,6 +17,8 @@ const List<(String, String)> kPages = [
   ('redstripe', 'Red stripe (เกจวงใหญ่ + พื้นแถบแดง)'),
   ('ecu', 'ECU (รอบตัวใหญ่ + เกียร์/ความเร็วกลาง)'),
   ('center', 'Center tach (เกจกลางจอ + 8 ช่อง)'),
+  ('perf', 'Record (จับเวลาออกตัว 0-100, 1/4 ไมล์)'),
+  ('pids', 'ตารางค่า OBD2 ทั้งหมด'),
   ('picture', 'รูปพื้นหลังของคุณ'),
 ];
 

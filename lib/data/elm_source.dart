@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'car_data.dart';
 import 'hub.dart';
 import 'native.dart';
+import 'pids.dart';
 
 // ======================================================================
 //  Transport: ท่อส่งข้อความไป/กลับ ELM327 (Bluetooth หรือ WiFi)
@@ -300,6 +301,25 @@ class ElmSource implements CarSource {
       }
       throw Exception('ECU ตอบไม่ถูกต้อง: $r');
     }
+    // ---- PID ที่รถรองรับ (0100, 0120, 0140 ...) ----
+    final sup = hub.data.supportedPids..clear();
+    var base = 0;
+    var bm = r;
+    while (true) {
+      final b = parsePid(bm, pidHex(base));
+      if (b == null || b.length < 4) break;
+      for (var i = 0; i < 32; i++) {
+        if ((b[i ~/ 8] >> (7 - i % 8)) & 1 == 1) sup.add(base + i + 1);
+      }
+      if (!sup.contains(base + 0x20) || base >= 0xC0) break;
+      base += 0x20;
+      try {
+        bm = await _x(() => ses.cmd('01${pidHex(base)}'));
+      } on TimeoutException {
+        break;
+      }
+    }
+
     final dpn = (await _x(() => ses.cmd('ATDPN'))).split('\n').last.trim();
     _isCan = dpn.isNotEmpty && '6789ABC'.contains(dpn[dpn.length - 1]);
     final t = await _x(() => ses.cmd('010C1'));
@@ -314,14 +334,30 @@ class ElmSource implements CarSource {
     final miss = <String, int>{};
     var si = 0;
     var timeouts = 0;
+    var ai = 0;
     while (_running && !ses.dead) {
-      final order = <String>['0C', '0D'];
-      for (var k = 0; k < slow.length; k++) {
-        final p = slow[si];
-        si = (si + 1) % slow.length;
-        if ((miss[p] ?? 0) < 4) {
-          order.add(p);
-          break;
+      final mode = hub.pollMode;
+      final List<String> order;
+      final all = hub.data.supportedPids
+          .where((p) => !isBitmapPid(p) && p != 0x0C && p != 0x0D)
+          .toList()
+        ..sort();
+      if (mode == PollMode.perf) {
+        // จับเวลา: อ่านความเร็วถี่ที่สุด
+        order = ['0D', '0D', '0C'];
+      } else if (mode == PollMode.allPids && all.isNotEmpty) {
+        ai = ai % all.length;
+        order = ['0C', '0D', pidHex(all[ai]), pidHex(all[(ai + 1) % all.length])];
+        ai += 2;
+      } else {
+        order = <String>['0C', '0D'];
+        for (var k = 0; k < slow.length; k++) {
+          final p = slow[si];
+          si = (si + 1) % slow.length;
+          if ((miss[p] ?? 0) < 4) {
+            order.add(p);
+            break;
+          }
         }
       }
       for (final p in order) {
@@ -354,6 +390,7 @@ class ElmSource implements CarSource {
         timeout: const Duration(seconds: 2)));
     final b = parsePid(r, p);
     if (b == null || b.isEmpty) return false;
+    d.pidBytes[int.parse(p, radix: 16)] = b;
     final a = b[0];
     final bb = b.length > 1 ? b[1] : 0;
     switch (p) {
@@ -377,6 +414,8 @@ class ElmSource implements CarSource {
         d.maf = (a * 256 + bb) / 100.0;
       case '2F':
         d.fuel = a * 100 / 255;
+      default:
+        break;
     }
     return true;
   }

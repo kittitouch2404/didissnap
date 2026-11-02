@@ -7,6 +7,8 @@ import 'paint_utils.dart';
 import 'picture_dash.dart';
 import 'pro_pages.dart';
 import 'pro_pages2.dart';
+import 'perf_page.dart';
+import 'pids_page.dart';
 import 'race_dash.dart';
 import 'round_gauge.dart';
 import 'settings_page.dart';
@@ -34,6 +36,17 @@ class _DashShellState extends State<DashShell> {
     _page = (p < 0 || p >= _ids.length) ? 0 : p;
     _pc = PageController(initialPage: _page);
     widget.settings.addListener(_onSettings);
+    _updateMode();
+  }
+
+  /// บอกฝั่งอ่านค่าว่าหน้าที่แสดงอยู่ต้องการข้อมูลแบบไหน
+  void _updateMode() {
+    final id = _page < _ids.length ? _ids[_page] : '';
+    widget.hub.pollMode = switch (id) {
+      'perf' => PollMode.perf,
+      'pids' => PollMode.allPids,
+      _ => PollMode.normal,
+    };
   }
 
   void _onSettings() {
@@ -46,6 +59,7 @@ class _DashShellState extends State<DashShell> {
         _pc.jumpToPage(_page);
       }
     });
+    _updateMode();
   }
 
   @override
@@ -79,6 +93,8 @@ class _DashShellState extends State<DashShell> {
       'redstripe' => paint((f) => RedStripePainter(f)),
       'ecu' => paint((f) => EcuPainter(f)),
       'center' => paint((f) => CenterTachPainter(f)),
+      'perf' => PerfPage(key: ValueKey(id), hub: hub),
+      'pids' => PidsPage(key: ValueKey(id), hub: hub),
       _ => LiveBuilder(
           key: ValueKey(id), hub: hub, builder: (_, f) => PictureDash(f: f)),
     };
@@ -96,6 +112,7 @@ class _DashShellState extends State<DashShell> {
             onPageChanged: (i) {
               setState(() => _page = i);
               widget.settings.startPage = i;
+              _updateMode();
             },
             children: [for (final id in _ids) _pageFor(id)],
           ),
