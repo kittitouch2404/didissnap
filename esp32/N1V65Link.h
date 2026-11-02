@@ -59,6 +59,14 @@ inline void begin() {
 
 inline bool connected() { return client && client.connected(); }
 
+// ปิด WiFi และคืนแรม
+inline void end() {
+  if (client) client.stop();
+  server.end();
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_OFF);
+}
+
 inline void handleCommand(const String& line) {
   if (line.indexOf("dtc_read") >= 0) {
     String arr = onDtcRead ? onDtcRead() : String("[]");
