@@ -79,7 +79,7 @@ h1{font-size:17px;font-weight:600;margin:0;color:#fff}
 // ===================================================================== state
 const PAGES=[
  {id:'race',name:'รถแข่ง'},{id:'round',name:'เกจกลม'},{id:'sweep',name:'Sweep'},
- {id:'arc',name:'Arc'},{id:'yellow',name:'Yellow box'},{id:'bars',name:'Bar graph'},{id:'redstripe',name:'Red stripe'},{id:'ecu',name:'ECU'},{id:'center',name:'Center tach'},{id:'picture',name:'รูปพื้นหลัง'}];
+ {id:'arc',name:'Arc'},{id:'yellow',name:'Yellow box'},{id:'bars',name:'Bar graph'},{id:'redstripe',name:'Red stripe'},{id:'ecu',name:'ECU'},{id:'center',name:'Center tach'},{id:'perf',name:'Record'},{id:'pids',name:'ตาราง OBD2'},{id:'picture',name:'รูปพื้นหลัง'}];
 const S={source:'demo',maxRpm:8000,redline:7000,shiftStart:5000,maxSpeed:240,ectWarn:105,keepOn:true,flip:false,
  gears:[7.6,13.4,19.6,25.9,32.4],pages:PAGES.map(p=>p.id),pictures:[],picAuto:true,picCfg:{},pixelFont:true,autoBoot:false,autoPower:false,autoBt:false,autoBtName:'',showOnLock:false,overlayOk:false};
 const picOn=p=>S.picCfg[p]?.on??true, picRpm=p=>S.picCfg[p]?.rpm??0;
@@ -336,6 +336,43 @@ function center(x){const g=x.createLinearGradient(0,0,0,VH);g.addColorStop(0,'#2
  const pa=ang(F.rpm);x.strokeStyle=F.atRed&&F.blink?'#fff':'#E01010';x.lineWidth=6;x.lineCap='round';x.beginPath();x.moveTo(C[0],C[1]);x.lineTo(C[0]+Math.cos(pa)*R*.97,C[1]+Math.sin(pa)*R*.97);x.stroke();x.lineCap='butt';
  x.fillStyle='#E01010';x.beginPath();x.arc(C[0],C[1],12,0,7);x.fill();}
 
+// ===================================================================== perf recorder (preview)
+const PERF_ITEMS=[['60ft','0 – 60 ft (18 m)'],['0-60','0 – 60 km/h'],['0-100','0 – 100 km/h'],['60-100','60 – 100 km/h'],['100-150','100 – 150 km/h'],['201m','1/8 ไมล์ (201 m)'],['402m','1/4 ไมล์ (402 m)']];
+const P={state:'idle',times:{},traps:{},hist:[],dist:0,el:0,top:0,t0:0,lt:0,lv:0,zt:0};
+const nowS=()=>performance.now()/1000;
+function perfArm(){P.times={};P.traps={};P.dist=0;P.el=0;P.top=0;P.zt=nowS();P.state=D.speed<.5?'ready':'wait';}
+function perfStop(){if(P.state=='run')perfFinish();else P.state='idle';}
+function perfBest(k){let b=null;for(const r of P.hist){const v=r[k];if(v!=null&&(b==null||v<b))b=v;}return b;}
+function perfFinish(){const a=P.times['0-60'],b=P.times['0-100'],c=P.times['0-150'];if(a!=null&&b!=null)P.times['60-100']=b-a;if(b!=null&&c!=null)P.times['100-150']=c-b;if(Object.keys(P.times).length)P.hist.unshift({...P.times});P.state='done';}
+function perfSample(){const t=nowS(),v=D.speed;
+ if(P.state=='wait'){if(v<.5){P.zt=t;P.state='ready';}return;}
+ if(P.state=='ready'){if(v<.5){P.zt=t;return;}P.t0=P.zt;P.lt=P.t0;P.lv=0;P.dist=0;P.state='run';}
+ if(P.state!='run')return;const dt=t-P.lt;if(dt<=0)return;const d0=P.dist;P.dist+=(P.lv+v)/2/3.6*dt;
+ for(const [k,tg] of [['0-60',60],['0-100',100],['0-150',150]])if(P.times[k]==null&&v>=tg&&P.lv<tg)P.times[k]=P.lt+dt*(tg-P.lv)/(v-P.lv)-P.t0;
+ for(const [k,tg] of [['60ft',18.288],['201m',201.168],['402m',402.336]])if(P.times[k]==null&&P.dist>=tg&&d0<tg){const f=(tg-d0)/(P.dist-d0);P.times[k]=P.lt+dt*f-P.t0;P.traps[k]=P.lv+(v-P.lv)*f;}
+ P.top=Math.max(P.top,v);P.lt=t;P.lv=v;P.el=t-P.t0;if(v<.5||P.el>90||(P.times['402m']!=null&&P.times['0-100']!=null))perfFinish();}
+let PERF_BTNS=[];
+function perf(x){x.fillStyle='#000';x.fillRect(0,0,VW,VH);const st={idle:['กด ARM เพื่อเริ่มจับเวลา',GRY],wait:['หยุดรถให้นิ่งก่อน...',AMB],ready:['พร้อม! ออกตัวได้เลย',F.blink?GRN:'#0E5A26'],run:['กำลังจับเวลา',A],done:['เสร็จ — กด ARM เพื่อวิ่งรอบใหม่',BLU]}[P.state];
+ x.strokeStyle=st[1];x.lineWidth=2;x.fillStyle=alpha(st[1].length==7?st[1]:'#888888',.15);rr(x,20,40,300,34,8);x.fill();x.stroke();txt(x,st[0],32,57,{size:17,weight:800,ay:0,color:st[1]});
+ const show=P.state=='run'||P.state=='done';txt(x,(show?P.el:0).toFixed(2)+' s',20,92,{size:118,weight:900,italic:1,color:P.state=='run'?'#fff':'#ffffffb3'});
+ const big=(v,u,X)=>{txt(x,v,X,262,{size:36,weight:800});x.font='800 36px Roboto';const w=x.measureText(v).width;txt(x,u,X+w+5,284,{size:14,color:GRY,ay:1});};
+ big(fmt(D.speed),'km/h',20);big(show?P.dist.toFixed(0):'0','m',190);big(show?P.top.toFixed(0):'--','สูงสุด',300);
+ PERF_BTNS=[];const btn=(X,w,label,fill,fg,act,dis)=>{x.globalAlpha=dis?.35:1;x.fillStyle=fill;rr(x,X,330,w,44,22);x.fill();if(fill=='transparent'){x.strokeStyle='#888';x.lineWidth=1.5;x.stroke();}txt(x,label,X+w/2,352,{size:17,weight:900,ax:0,ay:0,color:fg});x.globalAlpha=1;if(!dis)PERF_BTNS.push([X,330,w,44,act]);};
+ btn(20,120,'⚑ ARM',GRN,'#000',perfArm,P.state=='run');btn(150,100,'STOP','transparent','#ddd',perfStop,P.state=='idle');btn(260,110,'ล้างสถิติ','transparent','#FFB37A',()=>{P.hist=[];},!P.hist.length);
+ const X0=440,X1=980;const row=(y,a,b,c,hd,hl)=>{txt(x,a,X0+8,y,{size:hd?13:17,weight:hd?600:700,color:hd?GRY:'#fff',ay:0});txt(x,b,X0+380,y,{size:hd?13:18,weight:700,color:hd?GRY:(hl?A:'#fff'),ax:1,ay:0});txt(x,c,X1-8,y,{size:hd?13:18,weight:700,color:hd?GRY:'#8FD3FF',ax:1,ay:0});x.strokeStyle='#262626';x.lineWidth=1;x.beginPath();x.moveTo(X0,y+18);x.lineTo(X1,y+18);x.stroke();};
+ row(56,'รายการ','รอบนี้','ดีที่สุด',1);
+ PERF_ITEMS.forEach(([k,l],i)=>{const v=P.times[k],tr=P.traps[k],b=perfBest(k);row(96+i*40,l,v==null?'--':v.toFixed(2)+' s'+(tr!=null?' @'+tr.toFixed(0):''),b==null?'--':b.toFixed(2)+' s',0,v!=null&&v==b);});
+ txt(x,`ใช้ความเร็วจาก OBD2 (อ่านได้ราว 5–10 ครั้ง/วินาที) เวลาอาจคลาดเคลื่อน ±0.1–0.3 วินาที · วิ่งในสนามหรือพื้นที่ปิดเท่านั้น · ทั้งหมด ${P.hist.length} รอบ`,X0,440,{size:11,weight:400,color:'#ffffff60'});}
+
+// ===================================================================== pids table (preview, demo data)
+function pids(x){x.fillStyle='#000';x.fillRect(0,0,VW,VH);
+ const tp=D.tps||0;const rows=[['01','สถานะไฟ MIL / จำนวน DTC','MIL ดับ · 0 รหัส',''],['03','ระบบน้ำมัน','Closed loop',''],['04','Engine load',fmt(D.load,1),'%'],['05','อุณหภูมิน้ำ (Coolant)',fmt(D.ect),'°C'],['06','Short fuel trim B1',(Math.sin(T*3)*4.7).toFixed(1),'%'],['07','Long fuel trim B1','2.3','%'],['0B','MAP (แรงดันท่อไอดี)',fmt(D.map),'kPa'],['0C','รอบเครื่อง',fmt(D.rpm),'rpm'],['0D','ความเร็ว',fmt(D.speed),'km/h'],['0E','องศาจุดระเบิด',(12+tp/8).toFixed(1),'°'],['0F','อุณหภูมิอากาศเข้า (IAT)',fmt(D.iat),'°C'],['10','MAF (ปริมาณอากาศ)',fmt(D.maf,2),'g/s'],['11','ลิ้นเร่ง (TPS)',fmt(tp,1),'%'],['14','ออกซิเจนเซ็นเซอร์ B1S1',(0.45+Math.sin(T*5)*.4).toFixed(3),'V'],['15','ออกซิเจนเซ็นเซอร์ B1S2','0.700','V'],
+ ['1C','มาตรฐาน OBD','6',''],['1F','เวลาตั้งแต่ติดเครื่อง',T.toFixed(0),'s'],['2F','ระดับน้ำมัน','67.1','%'],['31','ระยะทางตั้งแต่ลบโค้ด','1234','km'],['33','ความดันบรรยากาศ','101','kPa'],['3C','อุณหภูมิแคท B1S1',(620+tp*2).toFixed(0),'°C'],['42','แรงดันไฟกล่อง ECU',fmt(D.volt,2),'V'],['43','Absolute load',fmt(D.load,1),'%'],['44','AFR ที่สั่ง (λ)',tp>0?'0.880':'1.000','λ'],['45','ลิ้นเร่งสัมพัทธ์',(tp*.94).toFixed(1),'%'],['46','อุณหภูมิอากาศภายนอก','32','°C'],['49','คันเร่ง D',(tp*.86+11.8).toFixed(1),'%'],['4C','มอเตอร์ลิ้นเร่งที่สั่ง',(tp*.94).toFixed(1),'%'],['51','ชนิดเชื้อเพลิง','เบนซิน',''],['5C','อุณหภูมิน้ำมันเครื่อง',fmt(Math.min(98,D.ect+4)),'°C']];
+ txt(x,'ค่า OBD2 ทั้งหมด',16,40,{size:18,weight:800,color:A});txt(x,`รถรองรับ ${rows.length} ค่า · อ่านวนทีละค่า (ครบรอบประมาณ ${(rows.length*.12).toFixed(0)} วินาที)`,190,43,{size:12,weight:400,color:'#ffffff80'});
+ const half=Math.ceil(rows.length/2),rh=26;
+ rows.forEach((r,i)=>{const c=i<half?0:1,X=16+c*494,Y=70+(i%half)*rh;txt(x,r[0],X,Y+5,{size:11,weight:700,color:'#6A8FB0'});txt(x,r[1],X+34,Y+4,{size:13.5,weight:400,color:'#ffffffb3'});
+  txt(x,r[2],X+420,Y+2,{size:17,weight:800,ax:1});txt(x,r[3],X+426,Y+6,{size:11,weight:400,color:GRY});x.strokeStyle='#242424';x.lineWidth=1;x.beginPath();x.moveTo(X,Y+rh-2);x.lineTo(X+478,Y+rh-2);x.stroke();});}
+
 // ===================================================================== pixel font (16-bit)
 const GLY={'0':['01110', '10001', '10011', '10101', '11001', '10001', '01110'],'1':['00100', '01100', '00100', '00100', '00100', '00100', '01110'],'2':['01110', '10001', '00001', '00010', '00100', '01000', '11111'],'3':['11111', '00010', '00100', '00010', '00001', '10001', '01110'],'4':['00010', '00110', '01010', '10010', '11111', '00010', '00010'],'5':['11111', '10000', '11110', '00001', '00001', '10001', '01110'],'6':['00110', '01000', '10000', '11110', '10001', '10001', '01110'],'7':['11111', '00001', '00010', '00100', '01000', '01000', '01000'],'8':['01110', '10001', '10001', '01110', '10001', '10001', '01110'],'9':['01110', '10001', '10001', '01111', '00001', '00010', '01100'],'-':['00000', '00000', '00000', '11111', '00000', '00000', '00000'],'.':['00000', '00000', '00000', '00000', '00000', '01100', '01100'],'/':['00001', '00010', '00010', '00100', '01000', '01000', '10000'],'°':['01100', '10010', '10010', '01100', '00000', '00000', '00000'],'A':['01110', '10001', '10001', '11111', '10001', '10001', '10001'],'C':['01110', '10001', '10000', '10000', '10000', '10001', '01110'],'E':['11111', '10000', '10000', '11110', '10000', '10000', '11111'],'G':['01110', '10001', '10000', '10111', '10001', '10001', '01111'],'H':['10001', '10001', '10001', '11111', '10001', '10001', '10001'],'I':['01110', '00100', '00100', '00100', '00100', '00100', '01110'],'K':['10001', '10010', '10100', '11000', '10100', '10010', '10001'],'L':['10000', '10000', '10000', '10000', '10000', '10000', '11111'],'M':['10001', '11011', '10101', '10101', '10001', '10001', '10001'],'N':['10001', '10001', '11001', '10101', '10011', '10001', '10001'],'O':['01110', '10001', '10001', '10001', '10001', '10001', '01110'],'P':['11110', '10001', '10001', '11110', '10000', '10000', '10000'],'R':['11110', '10001', '10001', '11110', '10100', '10010', '10001'],'T':['11111', '00100', '00100', '00100', '00100', '00100', '00100'],'V':['10001', '10001', '10001', '10001', '10001', '01010', '00100']};
 function ptxt(x,text,px,py,o){const t=text.toUpperCase(),p=o.px,W=t.length?(t.length*6-1)*p:0,H=7*p,ax=o.ax??-1,ay=o.ay??-1;const X=px-(ax+1)/2*W,Y=py-(ay+1)/2*H;
@@ -358,7 +395,7 @@ function picture(x,w,h){const cur=pictureFor(F.rpm);const pics=cur?[cur]:[];
  const col=F.atRed?(F.blink?RED:'#fff'):(F.rpm>=S.shiftStart?A:'#fff');x.strokeStyle=col;x.shadowColor=col;x.shadowBlur=10;x.lineWidth=h*.014;x.beginPath();x.moveTo(x0,y);x.lineTo(x0+(x1-x0)*t,y);x.stroke();x.shadowBlur=0;x.lineCap='butt';}
  if(!pics.length)txt(x,'MENU → รูปพื้นหลัง เพื่อเพิ่มรูปของคุณ (JPG/PNG/GIF)',w*.62,h*.45,{size:h*.04,color:'#ffffff99',ax:0,ay:0});}
 
-const DRAW={redstripe:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,redstripe)},ecu:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,ecu)},center:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,center)},race:(x,w,h)=>race(x,w,h),round:(x,w,h)=>round(x,w,h),sweep:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,sweep)},arc:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,arc)},
+const DRAW={perf:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,perf)},pids:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,pids)},redstripe:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,redstripe)},ecu:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,ecu)},center:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,center)},race:(x,w,h)=>race(x,w,h),round:(x,w,h)=>round(x,w,h),sweep:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,sweep)},arc:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,arc)},
  yellow:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,yellow)},bars:(x,w,h)=>{x.fillStyle='#000';x.fillRect(0,0,w,h);stage(x,w,h,bars)},picture:(x,w,h)=>picture(x,w,h)};
 
 // ===================================================================== shell
@@ -370,7 +407,9 @@ let drag=null,offset=0,anim=null;
 function go(i){const n=active().length;page=cl(i,0,n-1);anim={from:offset,t:0};offset=0;renderNav();}
 phone.addEventListener('pointerdown',e=>{if(menuOpen||e.target.closest('.menuBtn,.chip'))return;drag={x:e.clientX,o:0};phone.setPointerCapture(e.pointerId);});
 phone.addEventListener('pointermove',e=>{if(!drag)return;drag.o=e.clientX-drag.x;const n=active().length;let o=drag.o;if((page==0&&o>0)||(page==n-1&&o<0))o*=.3;offset=o;});
-phone.addEventListener('pointerup',e=>{if(!drag)return;const o=drag.o;drag=null;const th=W*.15;const from=offset;if(o<-th)go(page+1);else if(o>th)go(page-1);else{anim={from,t:0};offset=0;}
+phone.addEventListener('pointerup',e=>{if(!drag)return;const o=drag.o;drag=null;
+ if(Math.abs(o)<6&&active()[page]?.id=='perf'){const r=cv.getBoundingClientRect();let px=e.clientX-r.left,py=e.clientY-r.top;if(S.flip){px=W-px;py=H-py;}const k=Math.min(W/VW,H/VH),vx=(px-(W-VW*k)/2)/k,vy=(py-(H-VH*k)/2)/k;
+  for(const b of PERF_BTNS)if(vx>=b[0]&&vx<=b[0]+b[2]&&vy>=b[1]&&vy<=b[1]+b[3]){b[4]();break;}}const th=W*.15;const from=offset;if(o<-th)go(page+1);else if(o>th)go(page-1);else{anim={from,t:0};offset=0;}
  if(o<-th)anim={from:from+W,t:0};if(o>th)anim={from:from-W,t:0};});
 addEventListener('keydown',e=>{if(menuOpen)return;if(e.key=='ArrowRight')slide(1);if(e.key=='ArrowLeft')slide(-1);});
 function slide(d){const n=active().length;const np=cl(page+d,0,n-1);if(np==page)return;page=np;anim={from:d*W,t:0};renderNav();}
@@ -381,7 +420,7 @@ document.getElementById('nav').onclick=e=>{const b=e.target.closest('button');if
 let last=performance.now(),T=0;
 function loop(now){const dt=Math.min(.1,(now-last)/1000);last=now;T+=dt;
  if(document.getElementById('auto').checked)sim(dt);else manual();
- D.trip+=D.speed*dt/3600;frame(dt,T);
+ D.trip+=D.speed*dt/3600;perfSample();frame(dt,T);
  let off=offset;if(anim){anim.t+=dt/0.28;const e=1-Math.pow(1-Math.min(1,anim.t),3);off=anim.from*(1-e);if(anim.t>=1)anim=null;}
  const ps=active();ctx.save();if(S.flip){ctx.translate(W,H);ctx.rotate(Math.PI);}
  ctx.clearRect(0,0,W,H);picWant=null;picX=null;
