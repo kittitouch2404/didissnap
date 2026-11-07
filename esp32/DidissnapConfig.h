@@ -231,7 +231,7 @@ button.o{background:none;border:1px solid #888;color:#ddd}
 .codes div{padding:6px 0;font-size:18px;font-weight:700;color:#FFC400}
 .pic{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #1c1c1c}
 .pic img{width:96px;height:54px;object-fit:cover;border-radius:4px;background:#222}
-.pic .t{flex:1;font-size:12px;color:#aaa;word-break:break-all}
+.pic .t{flex:1;min-width:0;font-size:12px;color:#aaa;word-break:break-all}
 .pic button{padding:6px 10px;margin:0}
 .bar{height:6px;background:#222;border-radius:3px;overflow:hidden}.bar i{display:block;height:100%;background:#FF7A00}
 .hint{color:#888;font-size:12px;padding:4px 0}
@@ -252,7 +252,7 @@ button.o{background:none;border:1px solid #888;color:#ddd}
 <div id="gears"></div></section>
 <section id="picSec" style="display:none"><h3>รูปบนจอ</h3>
 <div class="hint" id="picFree"></div><div class="bar"><i id="picBar"></i></div>
-<div class="row"><input type="file" id="pf" accept=".jpg,.jpeg,.gif,image/jpeg,image/gif" style="flex:1;color:#aaa"><button onclick="up()">อัปโหลด</button></div>
+<div class="row"><input type="file" id="pf" accept=".jpg,.jpeg,.gif,image/jpeg,image/gif" style="flex:1;min-width:0;color:#aaa;font-size:13px"><button onclick="up()">อัปโหลด</button></div>
 <div class="hint">ควรเป็นขนาด 480×272 · ใช้แอป OBD2_Didissnap จะครอป/ย่อให้อัตโนมัติ</div>
 <div id="slots"></div>
 <div class="row"><span>หน้ารูปตามรอบ: แบ่งช่วงรอบอัตโนมัติ</span><input type="checkbox" class="sw" id="pAuto"></div>
