@@ -1,5 +1,5 @@
 // =====================================================================
-//  N1V65Buttons.h — ปุ่มกด 2 ปุ่ม (สำหรับบอร์ดที่ไม่มีทัชสกรีน)
+//  DidissnapButtons.h — ปุ่มกด 2 ปุ่ม (สำหรับบอร์ดที่ไม่มีทัชสกรีน)
 //
 //  ต่อสาย:  IO_A ──[ปุ่ม 1]── GND      IO_B ──[ปุ่ม 2]── GND
 //           (ไม่ต้องใช้ตัวต้านทาน ใช้ pull-up ในชิป)
@@ -8,20 +8,20 @@
 //    ปุ่ม 1 กดสั้น = หน้าถัดไป      กดค้าง = เข้า/ออกเมนู
 //    ปุ่ม 2 กดสั้น = หน้าก่อนหน้า   กดค้าง = ยืนยัน/เลือก (ในเมนู)
 //
-//  ใช้:  n1btn::begin(PIN_A, PIN_B);  n1btn::onEvent = myHandler;  loop(): n1btn::loop();
+//  ใช้:  didibtn::begin(PIN_A, PIN_B);  didibtn::onEvent = myHandler;  loop(): didibtn::loop();
 //        void myHandler(int button, bool longPress) { ... }   // button = 0 หรือ 1
 // =====================================================================
 #pragma once
 #include <Arduino.h>
 
-#ifndef N1BTN_LONG_MS
-#define N1BTN_LONG_MS 700        // กดค้างนานเท่านี้ = กดค้าง
+#ifndef DIDI_BTN_LONG_MS
+#define DIDI_BTN_LONG_MS 700        // กดค้างนานเท่านี้ = กดค้าง
 #endif
-#ifndef N1BTN_DEBOUNCE_MS
-#define N1BTN_DEBOUNCE_MS 30     // กันปุ่มเด้ง
+#ifndef DIDI_BTN_DEBOUNCE_MS
+#define DIDI_BTN_DEBOUNCE_MS 30     // กันปุ่มเด้ง
 #endif
 
-namespace n1btn {
+namespace didibtn {
 
 struct Btn {
   int pin = -1;
@@ -54,7 +54,7 @@ inline void loop() {
       x.raw = r;
       x.rawT = now;
     }
-    if (x.raw != x.stable && now - x.rawT >= N1BTN_DEBOUNCE_MS) {
+    if (x.raw != x.stable && now - x.rawT >= DIDI_BTN_DEBOUNCE_MS) {
       x.stable = x.raw;
       if (x.stable) {               // เริ่มกด
         x.downT = now;
@@ -63,7 +63,7 @@ inline void loop() {
         if (onEvent) onEvent(i, false);
       }
     }
-    if (x.stable && !x.longFired && now - x.downT >= N1BTN_LONG_MS) {
+    if (x.stable && !x.longFired && now - x.downT >= DIDI_BTN_LONG_MS) {
       x.longFired = true;           // กดค้าง: ทำงานทันทีไม่ต้องรอปล่อย
       if (onEvent) onEvent(i, true);
     }
@@ -72,4 +72,4 @@ inline void loop() {
 
 inline bool held(int i) { return i >= 0 && i < 2 && b[i].stable; }
 
-}  // namespace n1btn
+}  // namespace didibtn

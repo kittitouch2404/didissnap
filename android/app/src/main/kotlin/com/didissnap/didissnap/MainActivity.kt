@@ -1,4 +1,4 @@
-package com.n1v65.n1v65_dash
+package com.didissnap.didissnap
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -44,7 +44,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
-        MethodChannel(messenger, "n1v65/native").setMethodCallHandler { call, result ->
+        MethodChannel(messenger, "didissnap/native").setMethodCallHandler { call, result ->
             when (call.method) {
                 "ensurePermission" -> ensurePermission(result)
                 "bonded" -> result.success(bondedDevices())
@@ -130,7 +130,7 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        EventChannel(messenger, "n1v65/bt/stream").setStreamHandler(object : EventChannel.StreamHandler {
+        EventChannel(messenger, "didissnap/bt/stream").setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                 sink = events
             }

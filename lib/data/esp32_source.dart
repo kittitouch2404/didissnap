@@ -144,7 +144,7 @@ class Esp32Source implements CarSource {
         onTimeout: () => throw Exception('ESP32 ไม่ตอบคำสั่ง $cmd'));
   }
 
-  // ---------------- ค่าตั้งของจอ ESP32 (N1V65Config.h) ----------------
+  // ---------------- ค่าตั้งของจอ ESP32 (DidissnapConfig.h) ----------------
   /// คืน {'cfg': {...}, 'pages': [...]}
   Future<Map<String, dynamic>> getConfig() => _ask('get_cfg');
 

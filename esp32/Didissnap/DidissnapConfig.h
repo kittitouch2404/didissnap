@@ -1,26 +1,26 @@
 // =====================================================================
-//  N1V65Config.h — ค่าตั้งของจอ ESP32 แก้ได้ 2 ทาง
-//    1) แอปมือถือ OBD2_Didissnap: MENU → จอ ESP32   (ผ่าน TCP เดียวกับ N1V65Link.h)
-//    2) หน้าเว็บในบอร์ด: ต่อ WiFi "N1V65-DASH" แล้วเปิด http://192.168.4.1
+//  DidissnapConfig.h — ค่าตั้งของจอ ESP32 แก้ได้ 2 ทาง
+//    1) แอปมือถือ OBD2_Didissnap: MENU → จอ ESP32   (ผ่าน TCP เดียวกับ DidissnapLink.h)
+//    2) หน้าเว็บในบอร์ด: ต่อ WiFi "Didissnap" แล้วเปิด http://192.168.4.1
 //  ค่าตั้งเก็บใน Preferences (namespace เดิมของสเก็ตช์) ปิดเครื่องแล้วไม่หาย
 //
-//  ใช้คู่กับ N1V65Link.h:
-//    #include "N1V65Link.h"
-//    #include "N1V65Config.h"
-//    setup(): n1link::begin();
-//             n1cfg::onApply = applySettings;   // ค่าตั้งเปลี่ยน → ใช้ค่าใหม่ (ความสว่าง, กลับจอ ...)
-//             n1cfg::onPage  = gotoPage;        // แอป/เว็บ/สลับอัตโนมัติ สั่งเปลี่ยนหน้า
-//             n1cfg::begin(prefs, PAGE_NAMES, N_PAGES);
-//    loop():  n1link::loop(); n1cfg::loop(); n1link::send(...);
-//  อ่านค่าตั้งจาก n1cfg::cfg.maxRpm, n1cfg::cfg.tempAlert, ... ได้ตลอด
+//  ใช้คู่กับ DidissnapLink.h:
+//    #include "DidissnapLink.h"
+//    #include "DidissnapConfig.h"
+//    setup(): didilink::begin();
+//             didicfg::onApply = applySettings;   // ค่าตั้งเปลี่ยน → ใช้ค่าใหม่ (ความสว่าง, กลับจอ ...)
+//             didicfg::onPage  = gotoPage;        // แอป/เว็บ/สลับอัตโนมัติ สั่งเปลี่ยนหน้า
+//             didicfg::begin(prefs, PAGE_NAMES, N_PAGES);
+//    loop():  didilink::loop(); didicfg::loop(); didilink::send(...);
+//  อ่านค่าตั้งจาก didicfg::cfg.maxRpm, didicfg::cfg.tempAlert, ... ได้ตลอด
 // =====================================================================
 #pragma once
 #include <Arduino.h>
 #include <Preferences.h>
 #include <WebServer.h>
-#include "N1V65Link.h"
+#include "DidissnapLink.h"
 
-namespace n1cfg {
+namespace didicfg {
 
 struct Config {
   int maxRpm = 7500;      // redline / ไฟ shift
@@ -176,7 +176,7 @@ inline void setPage(int p) {
 // ------------------------------------------------------------------ คำสั่งจากแอป (TCP)
 inline bool handleLine(const String& line) {
   if (line.indexOf("\"get_cfg\"") >= 0) {
-    n1link::reply(toJson());
+    didilink::reply(toJson());
     return true;
   }
   if (line.indexOf("\"set_cfg\"") >= 0) {
@@ -186,31 +186,31 @@ inline bool handleLine(const String& line) {
       if (numField(line, KEYS[i], v)) setKV(KEYS[i], v);
     }
     changed(old);
-    n1link::reply(toJson());
+    didilink::reply(toJson());
     return true;
   }
   if (line.indexOf("\"page\"") >= 0 && line.indexOf("\"cmd\"") >= 0) {
     float v;
     if (numField(line, "v", v)) setPage((int)v);
-    n1link::reply(toJson());
+    didilink::reply(toJson());
     return true;
   }
   if (line.indexOf("\"peaks_reset\"") >= 0) {
     if (onPeaksReset) onPeaksReset();
-    n1link::reply("{\"ok\":true}");
+    didilink::reply("{\"ok\":true}");
     return true;
   }
   if (line.indexOf("\"trip_reset\"") >= 0) {
     if (onTripReset) onTripReset();
-    n1link::reply("{\"ok\":true}");
+    didilink::reply("{\"ok\":true}");
     return true;
   }
-  return false;   // ไม่ใช่คำสั่งของเรา (เช่น dtc_read) ให้ N1V65Link จัดการต่อ
+  return false;   // ไม่ใช่คำสั่งของเรา (เช่น dtc_read) ให้ DidissnapLink จัดการต่อ
 }
 
 // ------------------------------------------------------------------ หน้าเว็บ
 static const char PAGE_HTML[] = R"HTML(<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>N1V65 ตั้งค่าจอ</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Didissnap ตั้งค่าจอ</title>
 <style>
 body{margin:0;background:#0b0b0b;color:#e8e8e8;font-family:system-ui,sans-serif}
 header{background:#1a1512;padding:12px 16px;color:#FF7A00;font-weight:800;font-size:18px;position:sticky;top:0}
@@ -230,7 +230,7 @@ button.o{background:none;border:1px solid #888;color:#ddd}
 #msg{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:#333;padding:10px 16px;border-radius:8px;opacity:0;transition:.3s}
 .codes div{padding:6px 0;font-size:18px;font-weight:700;color:#FFC400}
 </style></head><body>
-<header>N1V65 · ตั้งค่าจอ ESP32</header>
+<header>Didissnap · ตั้งค่าจอ ESP32</header>
 <div class="live" id="live"></div>
 <section><h3>หน้าจอ</h3>
 <div class="row"><span>หน้าที่แสดง</span><select id="page"></select></div>
@@ -280,13 +280,13 @@ inline void setupWeb() {
     changed(old);
     web.send(200, "application/json", toJson());
   });
-  web.on("/api/live", []() { web.send(200, "application/json", n1link::lastJson); });
+  web.on("/api/live", []() { web.send(200, "application/json", didilink::lastJson); });
   web.on("/api/dtc", []() {
-    String arr = n1link::onDtcRead ? n1link::onDtcRead() : String("[]");
+    String arr = didilink::onDtcRead ? didilink::onDtcRead() : String("[]");
     web.send(200, "application/json", "{\"dtc\":" + arr + "}");
   });
   web.on("/api/dtc_clear", []() {
-    bool ok = n1link::onDtcClear ? n1link::onDtcClear() : false;
+    bool ok = didilink::onDtcClear ? didilink::onDtcClear() : false;
     web.send(200, "application/json", ok ? "{\"cleared\":true}" : "{\"cleared\":false}");
   });
   web.on("/api/peaks_reset", []() {
@@ -301,13 +301,13 @@ inline void setupWeb() {
   web.begin();
 }
 
-// เรียกใน setup() หลัง n1link::begin()
+// เรียกใน setup() หลัง didilink::begin()
 inline void begin(Preferences& p, const char* const* names, int count) {
   prefs = &p;
   pageNames = names;
   pageCount = count > 0 ? count : 1;
   load();
-  n1link::onCommand = handleLine;
+  didilink::onCommand = handleLine;
   setupWeb();
   lastCycle = millis();
 }
@@ -323,4 +323,4 @@ inline void loop() {
   }
 }
 
-}  // namespace n1cfg
+}  // namespace didicfg

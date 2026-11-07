@@ -1,5 +1,5 @@
-name: n1v65_dash
-description: "N1V65 Dash - OBD2 dashboard (ELM327 Bluetooth/WiFi + ESP32 CYD link)"
+name: didissnap
+description: "Didissnap - OBD2 dashboard (ELM327 Bluetooth/WiFi + ESP32 CYD link)"
 publish_to: 'none'
 version: 1.0.0+1
 

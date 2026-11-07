@@ -29,7 +29,7 @@ jobs:
 
       # เติมไฟล์โครงโปรเจกต์ Android ที่ไม่ได้อยู่ใน repo (ไฟล์ที่มีอยู่แล้วจะไม่ถูกทับ)
       - name: Create missing project files
-        run: flutter create --org com.n1v65 --platforms android --project-name n1v65_dash .
+        run: flutter create --org com.didissnap --platforms android --project-name didissnap .
 
       - run: flutter pub get
 
@@ -47,6 +47,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: N1V65 Dash (build ${{ github.run_number }})
+          name: Didissnap (build ${{ github.run_number }})
           body: ดาวน์โหลด Didissnap.apk ด้านล่าง แล้วกดติดตั้งบนมือถือ Android
           files: Didissnap.apk

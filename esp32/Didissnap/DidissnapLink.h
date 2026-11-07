@@ -1,5 +1,5 @@
 // =====================================================================
-//  N1V65Link.h  —  ให้ ESP32 CYD ส่งค่า OBD2 ต่อไปที่แอป Android (N1V65 Dash)
+//  DidissnapLink.h  —  ให้ ESP32 CYD ส่งค่า OBD2 ต่อไปที่แอป Android (Didissnap)
 //
 //  ESP32 ปล่อย WiFi เอง (SoftAP) → มือถือต่อ WiFi นี้ → แอปต่อ TCP มาที่ 192.168.4.1:3333
 //  ส่งค่าเป็น JSON ทีละบรรทัด:
@@ -7,12 +7,12 @@
 //  แอปส่งคำสั่งกลับมา:  {"cmd":"dtc_read"}  /  {"cmd":"dtc_clear"}
 //
 //  วิธีใช้ในสเก็ตช์เดิม:
-//    #include "N1V65Link.h"
-//    setup():  n1link::onDtcRead = myDtcRead;   // (ไม่ใส่ก็ได้)
-//              n1link::onDtcClear = myDtcClear; // (ไม่ใส่ก็ได้)
-//              n1link::begin();
-//    loop():   n1link::loop();
-//              n1link::send(rpm, speed, coolant, iat, volt, load, tps, map, maf, fuel);
+//    #include "DidissnapLink.h"
+//    setup():  didilink::onDtcRead = myDtcRead;   // (ไม่ใส่ก็ได้)
+//              didilink::onDtcClear = myDtcClear; // (ไม่ใส่ก็ได้)
+//              didilink::begin();
+//    loop():   didilink::loop();
+//              didilink::send(rpm, speed, coolant, iat, volt, load, tps, map, maf, fuel);
 //              (ค่าที่ไม่มี ให้ส่ง NAN — จะไม่ถูกส่งไป)
 //
 //  ESP32 core 3.x (ทดสอบตามโค้ด core 3.2.0 / Arduino IDE)
@@ -22,23 +22,23 @@
 #include <WiFi.h>
 #include <math.h>
 
-#ifndef N1LINK_SSID
-#define N1LINK_SSID "N1V65-DASH"
+#ifndef DIDI_SSID
+#define DIDI_SSID "Didissnap"
 #endif
-#ifndef N1LINK_PASS
-#define N1LINK_PASS "12345678"   // อย่างน้อย 8 ตัวอักษร
+#ifndef DIDI_PASS
+#define DIDI_PASS "12345678"   // อย่างน้อย 8 ตัวอักษร
 #endif
-#ifndef N1LINK_PORT
-#define N1LINK_PORT 3333
+#ifndef DIDI_PORT
+#define DIDI_PORT 3333
 #endif
-#ifndef N1LINK_MAX_STA
-#define N1LINK_MAX_STA 2         // มือถือที่ต่อ WiFi พร้อมกันได้ (CYD แรมน้อย ใช้ 1)
+#ifndef DIDI_MAX_STA
+#define DIDI_MAX_STA 2         // มือถือที่ต่อ WiFi พร้อมกันได้ (CYD แรมน้อย ใช้ 1)
 #endif
-#ifndef N1LINK_INTERVAL_MS
-#define N1LINK_INTERVAL_MS 50    // ส่ง 20 ครั้ง/วินาที
+#ifndef DIDI_INTERVAL_MS
+#define DIDI_INTERVAL_MS 50    // ส่ง 20 ครั้ง/วินาที
 #endif
 
-namespace n1link {
+namespace didilink {
 
 // คืนค่าเป็น JSON array เช่น  "[\"P0133\",\"P0420\"]"  หรือ "[]"
 typedef String (*DtcReadFn)();
@@ -47,14 +47,14 @@ typedef bool (*DtcClearFn)();
 static DtcReadFn onDtcRead = nullptr;
 static DtcClearFn onDtcClear = nullptr;
 
-// คำสั่งอื่นจากแอป (เช่น ค่าตั้งจาก N1V65Config.h) คืน true = จัดการแล้ว
+// คำสั่งอื่นจากแอป (เช่น ค่าตั้งจาก DidissnapConfig.h) คืน true = จัดการแล้ว
 typedef bool (*CmdFn)(const String& line);
 static CmdFn onCommand = nullptr;
 
 // ค่าล่าสุดเป็น JSON (ใช้กับหน้าเว็บ /api/live)
 static char lastJson[224] = "{}";
 
-static WiFiServer server(N1LINK_PORT);
+static WiFiServer server(DIDI_PORT);
 static WiFiClient client;
 static String rx;
 static uint32_t lastSend = 0;
@@ -62,8 +62,8 @@ static uint32_t lastSend = 0;
 // คืน true = ปล่อย WiFi สำเร็จ (false = แรมไม่พอ/เริ่ม WiFi ไม่ได้)
 inline bool begin() {
   if (!WiFi.mode(WIFI_AP)) return false;
-  // ช่อง 1, ไม่ซ่อนชื่อ, ต่อได้สูงสุด N1LINK_MAX_STA เครื่อง
-  if (!WiFi.softAP(N1LINK_SSID, N1LINK_PASS, 1, 0, N1LINK_MAX_STA)) return false;
+  // ช่อง 1, ไม่ซ่อนชื่อ, ต่อได้สูงสุด DIDI_MAX_STA เครื่อง
+  if (!WiFi.softAP(DIDI_SSID, DIDI_PASS, 1, 0, DIDI_MAX_STA)) return false;
   // ห้าม WiFi.setSleep(false) เมื่อใช้ Bluetooth ไปด้วย (ESP32 จะ abort/รีบูต)
   server.begin();
   server.setNoDelay(true);
@@ -127,12 +127,12 @@ static void addField(char* buf, size_t cap, size_t& len, const char* key,
   if (n > 0) len += (size_t)n;
 }
 
-// ส่งค่าล่าสุด (จำกัดความถี่เองตาม N1LINK_INTERVAL_MS)
+// ส่งค่าล่าสุด (จำกัดความถี่เองตาม DIDI_INTERVAL_MS)
 inline void send(float rpm, float spd, float ect, float iat, float volt,
                  float load = NAN, float tps = NAN, float map = NAN,
                  float maf = NAN, float fuel = NAN) {
   uint32_t now = millis();
-  if (now - lastSend < N1LINK_INTERVAL_MS) return;
+  if (now - lastSend < DIDI_INTERVAL_MS) return;
   lastSend = now;
 
   char buf[220];
@@ -157,4 +157,4 @@ inline void send(float rpm, float spd, float ect, float iat, float volt,
   client.write((const uint8_t*)buf, len);
 }
 
-}  // namespace n1link
+}  // namespace didilink

@@ -1,19 +1,19 @@
 /*
   Didissnap — สเก็ตช์ทดสอบ (ไม่ต้องมีจอ) ใช้กับ ESP32 ได้ทุกตัว (ESP32-S3, CYD ฯลฯ)
   ทดสอบก่อนได้บอร์ดจริง:
-    - ESP32 ปล่อย WiFi "N1V65-DASH" (รหัส 12345678) ส่งค่าจำลองให้แอป OBD2_Didissnap
+    - ESP32 ปล่อย WiFi "Didissnap" (รหัส 12345678) ส่งค่าจำลองให้แอป OBD2_Didissnap
     - ตั้งค่าจอจากแอป (MENU → จอ ESP32) หรือหน้าเว็บ http://192.168.4.1
     - ปุ่ม 2 ปุ่ม: ปุ่ม 1 สั้น = หน้าถัดไป, ค้าง = เมนู / ปุ่ม 2 สั้น = หน้าก่อนหน้า, ค้าง = เลือก
     - ดูผลทั้งหมดใน Serial Monitor (115200)
 
-  ไฟล์ที่ต้องอยู่ในโฟลเดอร์เดียวกัน: N1V65Link.h, N1V65Config.h, N1V65Buttons.h
+  ไฟล์ที่ต้องอยู่ในโฟลเดอร์เดียวกัน: DidissnapLink.h, DidissnapConfig.h, DidissnapButtons.h
   Board: ESP32S3 Dev Module (PSRAM: OPI PSRAM) หรือ ESP32 Dev Module สำหรับ CYD
 */
 #include <Arduino.h>
 #include <Preferences.h>
-#include "N1V65Link.h"
-#include "N1V65Config.h"
-#include "N1V65Buttons.h"
+#include "DidissnapLink.h"
+#include "DidissnapConfig.h"
+#include "DidissnapButtons.h"
 
 // ขาปุ่ม: แก้ให้ตรงกับ schematic ของบอร์ด (ช่อง CN3: IO1 / IO2)
 #define PIN_BTN_A 1
@@ -32,9 +32,9 @@ float tripKm = 0, peakRpm = 0;
 
 void applySettings() {
   Serial.printf("[cfg] redline %d, เตือนน้ำ %d, สว่าง %d%%%s, กลับจอ %s, สลับหน้าทุก %d วิ, เกียร์ %d\n",
-                n1cfg::cfg.maxRpm, n1cfg::cfg.tempAlert, n1cfg::cfg.bri,
-                n1cfg::cfg.briAuto ? " (auto)" : "", n1cfg::cfg.flip ? "ON" : "OFF",
-                n1cfg::cfg.autoCycle, n1cfg::cfg.gearCount);
+                didicfg::cfg.maxRpm, didicfg::cfg.tempAlert, didicfg::cfg.bri,
+                didicfg::cfg.briAuto ? " (auto)" : "", didicfg::cfg.flip ? "ON" : "OFF",
+                didicfg::cfg.autoCycle, didicfg::cfg.gearCount);
   // จอจริง: lcd.setBrightness(...), lcd.setRotation(...), วาดหน้าใหม่
 }
 
@@ -54,8 +54,8 @@ void onButton(int button, bool longPress) {
     Serial.println(button == 0 ? "[menu] เลื่อนลง" : (longPress ? "[menu] เลือก" : "[menu] เลื่อนขึ้น"));
     return;
   }
-  if (button == 0) n1cfg::setPage(n1cfg::cfg.page + 1);
-  else if (!longPress) n1cfg::setPage(n1cfg::cfg.page - 1);
+  if (button == 0) didicfg::setPage(didicfg::cfg.page + 1);
+  else if (!longPress) didicfg::setPage(didicfg::cfg.page - 1);
 }
 
 String demoDtcRead() { return "[\"P0133\",\"P0420\"]"; }
@@ -68,36 +68,36 @@ void setup() {
   delay(300);
   prefs.begin("dash", false);
 
-  if (!n1link::begin()) Serial.println("WiFi FAILED");
-  Serial.printf("WiFi %s  IP %s  heap %u  psram %u\n", N1LINK_SSID,
+  if (!didilink::begin()) Serial.println("WiFi FAILED");
+  Serial.printf("WiFi %s  IP %s  heap %u  psram %u\n", DIDI_SSID,
                 WiFi.softAPIP().toString().c_str(), ESP.getFreeHeap(), ESP.getFreePsram());
-  n1link::onDtcRead = demoDtcRead;
-  n1link::onDtcClear = demoDtcClear;
+  didilink::onDtcRead = demoDtcRead;
+  didilink::onDtcClear = demoDtcClear;
 
-  n1cfg::onApply = applySettings;
-  n1cfg::onPage = gotoPage;
-  n1cfg::onPeaksReset = resetPeaks;
-  n1cfg::onTripReset = resetTrip;
-  n1cfg::begin(prefs, PAGE_NAMES, N_PAGES);
+  didicfg::onApply = applySettings;
+  didicfg::onPage = gotoPage;
+  didicfg::onPeaksReset = resetPeaks;
+  didicfg::onTripReset = resetTrip;
+  didicfg::begin(prefs, PAGE_NAMES, N_PAGES);
   applySettings();
-  gotoPage(n1cfg::cfg.page);
+  gotoPage(didicfg::cfg.page);
 
-  n1btn::onEvent = onButton;
-  n1btn::begin(PIN_BTN_A, PIN_BTN_B);
+  didibtn::onEvent = onButton;
+  didibtn::begin(PIN_BTN_A, PIN_BTN_B);
 }
 
 void loop() {
-  n1link::loop();
-  n1cfg::loop();
-  n1btn::loop();
+  didilink::loop();
+  didicfg::loop();
+  didibtn::loop();
 
   // ค่าจำลอง: เร่ง-ผ่อนวนไป
   float t = millis() / 1000.0f;
   float rpm = 1500 + 2500 * (1 + sinf(t * 0.7f));
-  float spd = rpm / n1cfg::cfg.gears[2];
+  float spd = rpm / didicfg::cfg.gears[2];
   peakRpm = max(peakRpm, rpm);
   tripKm += spd * 0.001f / 3600.0f;
-  n1link::send(rpm, spd, 88 + sinf(t * 0.1f) * 3, 36, 14.1f, 40 + 30 * sinf(t), 20 + 20 * sinf(t),
+  didilink::send(rpm, spd, 88 + sinf(t * 0.1f) * 3, 36, 14.1f, 40 + 30 * sinf(t), 20 + 20 * sinf(t),
                60 + 50 * sinf(t * 0.7f), rpm / 400.0f, 67);
   delay(1);
 }

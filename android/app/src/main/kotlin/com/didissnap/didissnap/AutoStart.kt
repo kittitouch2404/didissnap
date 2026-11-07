@@ -1,4 +1,4 @@
-package com.n1v65.n1v65_dash
+package com.didissnap.didissnap
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -143,7 +143,7 @@ class PowerWatchService : Service() {
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
         val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, chId) else Notification.Builder(this)
-        val n = b.setContentTitle("N1V65 Dash")
+        val n = b.setContentTitle("Didissnap")
             .setContentText("รอไฟจากรถ (บิดกุญแจ) เพื่อเปิดหน้าปัด")
             .setSmallIcon(applicationInfo.icon)
             .setContentIntent(pi)

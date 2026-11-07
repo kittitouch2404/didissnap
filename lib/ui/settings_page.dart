@@ -253,7 +253,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
               const _Header('ESP32 CYD'),
               _hostPort(_espH, _espP, s.setEsp),
               const _Hint(
-                  'ให้มือถือต่อ WiFi "N1V65-DASH" (รหัส 12345678) ที่ ESP32 ปล่อยออกมา\n'
+                  'ให้มือถือต่อ WiFi "Didissnap" (รหัส 12345678) ที่ ESP32 ปล่อยออกมา\n'
                   'ถ้ามือถือถามว่า "WiFi นี้ไม่มีอินเทอร์เน็ต" ให้กด "ใช้ต่อ/คงการเชื่อมต่อ"'),
             ],
           ],
@@ -1074,7 +1074,7 @@ class _AutoStartTabState extends State<AutoStartTab>
               leading: const Icon(Icons.battery_saver),
               title: const Text('ปิดการประหยัดแบตเตอรี่ให้แอปนี้'),
               subtitle: const Text(
-                  'Xiaomi/Oppo/Vivo/Realme: เปิด "เริ่มอัตโนมัติ (Autostart)" ให้ N1V65 Dash ในตั้งค่ามือถือด้วย'),
+                  'Xiaomi/Oppo/Vivo/Realme: เปิด "เริ่มอัตโนมัติ (Autostart)" ให้ Didissnap ในตั้งค่ามือถือด้วย'),
               trailing: OutlinedButton(
                   onPressed: Native.batterySettings,
                   child: const Text('เปิดตั้งค่า')),
@@ -1087,7 +1087,7 @@ class _AutoStartTabState extends State<AutoStartTab>
 }
 
 // ======================================================================
-//  ตั้งค่าจอ ESP32 (N1V65Config.h) ผ่าน WiFi
+//  ตั้งค่าจอ ESP32 (DidissnapConfig.h) ผ่าน WiFi
 // ======================================================================
 class Esp32Tab extends StatefulWidget {
   const Esp32Tab({super.key, required this.settings, required this.hub});
@@ -1177,7 +1177,7 @@ class _Esp32TabState extends State<Esp32Tab> {
           child: const Text('เปลี่ยนเป็นโหมด ESP32'),
         ),
         const SizedBox(height: 12),
-        const _Hint('ให้มือถือต่อ WiFi "N1V65-DASH" (รหัส 12345678) ของบอร์ดก่อน'),
+        const _Hint('ให้มือถือต่อ WiFi "Didissnap" (รหัส 12345678) ของบอร์ดก่อน'),
       ]);
     }
     final connected = hub.state == LinkState.connected;
@@ -1200,7 +1200,7 @@ class _Esp32TabState extends State<Esp32Tab> {
             child: Text(_err!, style: const TextStyle(color: kRed)),
           ),
         if (cfg == null && connected && !_busy)
-          const _Hint('บอร์ดยังไม่ตอบค่าตั้ง — บอร์ดต้องใช้โค้ดที่มี N1V65Config.h'),
+          const _Hint('บอร์ดยังไม่ตอบค่าตั้ง — บอร์ดต้องใช้โค้ดที่มี DidissnapConfig.h'),
         if (cfg != null) ...[
           const _Header('หน้าจอ'),
           ListTile(

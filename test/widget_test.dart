@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:n1v65_dash/data/car_data.dart';
-import 'package:n1v65_dash/data/elm_source.dart';
+import 'package:didissnap/data/car_data.dart';
+import 'package:didissnap/data/elm_source.dart';
 
 void main() {
   test('gear estimate', () {

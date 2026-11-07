@@ -1,4 +1,4 @@
-# N1V65 Dash — แอปหน้าปัด OBD2 บน Android (Flutter)
+# Didissnap — แอปหน้าปัด OBD2 บน Android (Flutter)
 
 ## มีอะไรบ้าง
 - **12 หน้าปัด** (ปัดซ้าย/ขวาเพื่อสลับหน้า และเลือกเปิด/ปิดแต่ละหน้าได้ใน MENU → หน้าปัด) ตัวเลขกับเข็มวิ่งนุ่มตามรีเฟรชเรตของจอ
@@ -29,13 +29,13 @@
    แล้วรัน `flutter doctor` ให้ขึ้นเครื่องหมายถูกในส่วน Android toolchain
 2. เปิด Command Prompt ในโฟลเดอร์ที่จะเก็บโปรเจกต์ แล้วรัน (ต้องใช้ชื่อตามนี้เป๊ะ ๆ เพราะชื่อแพ็กเกจต้องตรงกับไฟล์ Kotlin)
    ```
-   flutter create --org com.n1v65 --platforms android n1v65_dash
+   flutter create --org com.didissnap --platforms android didissnap
    ```
-3. แตกไฟล์ zip นี้ในโฟลเดอร์เดียวกับที่รันคำสั่งข้อ 2 (ใน zip มีโฟลเดอร์ `n1v65_dash` อยู่ข้างใน ไฟล์จะลงทับโปรเจกต์พอดี) แล้วกด **แทนที่ไฟล์ทั้งหมด**
+3. แตกไฟล์ zip นี้ในโฟลเดอร์เดียวกับที่รันคำสั่งข้อ 2 (ใน zip มีโฟลเดอร์ `didissnap` อยู่ข้างใน ไฟล์จะลงทับโปรเจกต์พอดี) แล้วกด **แทนที่ไฟล์ทั้งหมด**
    (ไฟล์ที่จะถูกทับ: `pubspec.yaml`, `lib/`, `test/`, `android/app/src/main/AndroidManifest.xml`, `MainActivity.kt`)
 4. รันคำสั่ง
    ```
-   cd n1v65_dash
+   cd didissnap
    flutter pub get
    flutter run                 (ต่อมือถือผ่าน USB และเปิด USB debugging ก่อน)
    flutter build apk --release (ถ้าจะสร้างไฟล์ติดตั้ง)
@@ -50,9 +50,9 @@
 > Vgate ต่อได้ทีละอุปกรณ์ ถ้า ESP32 CYD ต่อ Vgate อยู่ มือถือจะต่อไม่ได้ ถ้าอยากให้แสดงพร้อมกันทั้งสองจอให้ใช้โหมด ESP32
 
 ## โหมด ESP32 CYD (ใช้ OBD2 ตัวเดียว แสดงพร้อมกันทั้งจอ CYD และมือถือ)
-นำไฟล์ `esp32/N1V65Link.h` ไปวางไว้ในโฟลเดอร์สเก็ตช์เดิม แล้วเพิ่มโค้ดตามนี้
+นำไฟล์ `esp32/DidissnapLink.h` ไปวางไว้ในโฟลเดอร์สเก็ตช์เดิม แล้วเพิ่มโค้ดตามนี้
 ```cpp
-#include "N1V65Link.h"
+#include "DidissnapLink.h"
 
 // (ไม่บังคับ) ให้แอปสั่งอ่าน/ลบ DTC ผ่าน ESP32 ได้
 String myDtcRead() {
@@ -66,18 +66,18 @@ bool myDtcClear() {
 
 void setup() {
   // ... โค้ดเดิม ...
-  n1link::onDtcRead  = myDtcRead;
-  n1link::onDtcClear = myDtcClear;
-  n1link::begin();            // ESP32 ปล่อย WiFi ชื่อ "N1V65-DASH" รหัส 12345678
+  didilink::onDtcRead  = myDtcRead;
+  didilink::onDtcClear = myDtcClear;
+  didilink::begin();            // ESP32 ปล่อย WiFi ชื่อ "Didissnap" รหัส 12345678
 }
 
 void loop() {
   // ... โค้ดเดิมที่อ่าน OBD2 และวาดจอ ...
-  n1link::loop();
-  n1link::send(rpm, speed, coolant, iat, volt, load, tps, map, maf, fuel); // ค่าที่ไม่มีให้ใส่ NAN (MAP ใช้คำนวณ BOOST)
+  didilink::loop();
+  didilink::send(rpm, speed, coolant, iat, volt, load, tps, map, maf, fuel); // ค่าที่ไม่มีให้ใส่ NAN (MAP ใช้คำนวณ BOOST)
 }
 ```
-ฝั่งมือถือ: ต่อ WiFi `N1V65-DASH` → ในแอปไปที่ MENU → การเชื่อมต่อ → ESP32 CYD (ค่าเริ่มต้นคือ 192.168.4.1 : 3333)
+ฝั่งมือถือ: ต่อ WiFi `Didissnap` → ในแอปไปที่ MENU → การเชื่อมต่อ → ESP32 CYD (ค่าเริ่มต้นคือ 192.168.4.1 : 3333)
 ถ้ามือถือแจ้งว่า "WiFi นี้ไม่มีอินเทอร์เน็ต" ให้กด **คงการเชื่อมต่อไว้**
 
 **ข้อควรระวัง:** การเปิด WiFi ใช้ RAM ของ ESP32 เพิ่มประมาณ 40–50 KB และ WiFi ต้องแบ่งเสาอากาศใช้ร่วมกับ Bluetooth
@@ -104,7 +104,7 @@ lib/
     settings_page.dart      MENU (การเชื่อมต่อ/หน้าปัด/เกียร์/รูป/DTC)
     live.dart               ตัวทำให้ค่าวิ่งนุ่ม (สปริง) + วาดทุกเฟรม
 android/app/src/main/kotlin/.../MainActivity.kt   Bluetooth SPP + ผูก WiFi
-esp32/N1V65Link.h           ไฟล์เสริมสำหรับ ESP32 CYD
+esp32/DidissnapLink.h           ไฟล์เสริมสำหรับ ESP32 CYD
 ```
 
 PID ที่อ่าน: 0C รอบ · 0D ความเร็ว · 05 น้ำ · 0F IAT · ATRV แบต · 04 load · 11 TPS · 0B MAP · 10 MAF · 2F น้ำมัน
