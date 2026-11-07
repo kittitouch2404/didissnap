@@ -73,7 +73,7 @@ class Esp32Source implements CarSource {
         last = DateTime.now();
         if (!got) {
           got = true;
-          _set(LinkState.connected, 'ESP32 CYD ($host)');
+          _set(LinkState.connected, 'ESP32 ($host)');
         }
         _onLine(line);
       },

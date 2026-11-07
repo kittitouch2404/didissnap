@@ -10,6 +10,7 @@ import '../data/elm_source.dart';
 import '../data/hub.dart';
 import '../data/native.dart';
 import '../settings.dart';
+import 'esp32_pics_ui.dart';
 import 'paint_utils.dart';
 
 void _snack(BuildContext context, String msg) {
@@ -114,7 +115,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
         SourceType.demo => 'จำลอง (Demo)',
         SourceType.btElm => 'ELM327 Bluetooth (Vgate iCar Pro)',
         SourceType.wifiElm => 'ELM327 WiFi',
-        SourceType.esp32 => 'ESP32 CYD ผ่าน WiFi',
+        SourceType.esp32 => 'ESP32 ผ่าน WiFi',
       };
 
   static String _sub(SourceType t) => switch (t) {
@@ -242,7 +243,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
               ),
               const _Hint(
                   'จับคู่ (Pair) Vgate iCar Pro ในหน้าตั้งค่า Bluetooth ของมือถือก่อน — PIN มักเป็น 1234 หรือ 0000\n'
-                  'Vgate ต่อได้ทีละเครื่อง: ถ้า ESP32 CYD ต่ออยู่ มือถือจะต่อไม่ได้ (ใช้โหมด ESP32 แทน)'),
+                  'Vgate ต่อได้ทีละเครื่อง: ถ้า บอร์ด ESP32 ต่ออยู่ มือถือจะต่อไม่ได้ (ใช้โหมด ESP32 แทน)'),
             ],
             if (s.source == SourceType.wifiElm) ...[
               const _Header('ELM327 WiFi'),
@@ -250,7 +251,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
               const _Hint('ต่อ WiFi ของตัว OBD2 ก่อน (ค่าทั่วไป 192.168.0.10 : 35000)'),
             ],
             if (s.source == SourceType.esp32) ...[
-              const _Header('ESP32 CYD'),
+              const _Header('ESP32 (บอร์ดจอ)'),
               _hostPort(_espH, _espP, s.setEsp),
               const _Hint(
                   'ให้มือถือต่อ WiFi "Didissnap" (รหัส 12345678) ที่ ESP32 ปล่อยออกมา\n'
@@ -1169,7 +1170,7 @@ class _Esp32TabState extends State<Esp32Tab> {
     final hub = widget.hub;
     if (s.source != SourceType.esp32) {
       return ListView(padding: const EdgeInsets.all(16), children: [
-        const Text('ตั้งค่าจอ ESP32 ได้เมื่อใช้แหล่งข้อมูล "ESP32 CYD ผ่าน WiFi"',
+        const Text('ตั้งค่าจอ ESP32 และส่งรูปเข้าจอได้เมื่อใช้แหล่งข้อมูล "ESP32 ผ่าน WiFi"',
             style: TextStyle(fontSize: 15)),
         const SizedBox(height: 12),
         FilledButton(
@@ -1276,6 +1277,7 @@ class _Esp32TabState extends State<Esp32Tab> {
                     onPressed: () => _set('g$g', double.parse((_d('g$g', 50) + 0.5).toStringAsFixed(1)))),
               ]),
             ),
+          Esp32PicsSection(host: s.espHost, redline: _i('maxRpm', 7500)),
           const _Header('รีเซ็ต'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

@@ -229,6 +229,12 @@ button{background:#FF7A00;color:#1a0d00;border:0;border-radius:20px;padding:10px
 button.o{background:none;border:1px solid #888;color:#ddd}
 #msg{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:#333;padding:10px 16px;border-radius:8px;opacity:0;transition:.3s}
 .codes div{padding:6px 0;font-size:18px;font-weight:700;color:#FFC400}
+.pic{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #1c1c1c}
+.pic img{width:96px;height:54px;object-fit:cover;border-radius:4px;background:#222}
+.pic .t{flex:1;font-size:12px;color:#aaa;word-break:break-all}
+.pic button{padding:6px 10px;margin:0}
+.bar{height:6px;background:#222;border-radius:3px;overflow:hidden}.bar i{display:block;height:100%;background:#FF7A00}
+.hint{color:#888;font-size:12px;padding:4px 0}
 </style></head><body>
 <header>Didissnap · ตั้งค่าจอ ESP32</header>
 <div class="live" id="live"></div>
@@ -244,6 +250,13 @@ button.o{background:none;border:1px solid #888;color:#ddd}
 <section><h3>เกียร์ (rpm ต่อ 1 km/h)</h3>
 <div class="row"><span>จำนวนเกียร์</span><input type="number" id="gearCount" min="3" max="6"></div>
 <div id="gears"></div></section>
+<section id="picSec" style="display:none"><h3>รูปบนจอ</h3>
+<div class="hint" id="picFree"></div><div class="bar"><i id="picBar"></i></div>
+<div class="row"><input type="file" id="pf" accept=".jpg,.jpeg,.gif,image/jpeg,image/gif" style="flex:1;color:#aaa"><button onclick="up()">อัปโหลด</button></div>
+<div class="hint">ควรเป็นขนาด 480×272 · ใช้แอป OBD2_Didissnap จะครอป/ย่อให้อัตโนมัติ</div>
+<div id="slots"></div>
+<div class="row"><span>หน้ารูปตามรอบ: แบ่งช่วงรอบอัตโนมัติ</span><input type="checkbox" class="sw" id="pAuto"></div>
+<div id="pics"></div></section>
 <section><h3>DTC / รีเซ็ต</h3>
 <button onclick="dtc()">อ่าน DTC</button><button class="o" onclick="dtcClear()">ลบ DTC</button>
 <div class="codes" id="codes"></div>
@@ -268,7 +281,23 @@ async function dtcClear(){if(!confirm('ลบรหัส DTC และดับ
 async function act(a,t){await fetch('/api/'+a);msg(t)}
 const L=[['rpm','รอบ',''],['spd','km/h',''],['ect','น้ำ','°C'],['iat','IAT','°C'],['volt','แบต','V'],['load','Load','%'],['tps','TPS','%'],['map','MAP','kPa'],['fuel','น้ำมัน','%']];
 async function live(){try{const j=await (await fetch('/api/live')).json();$('live').innerHTML=L.map(([k,n,u])=>`<div><small>${n}</small><b>${j[k]!==undefined?j[k]:'--'}${u}</b></div>`).join('')}catch(e){}setTimeout(live,700)}
-load();live();
+let P=null;
+function fmtB(b){return b>1048576?(b/1048576).toFixed(1)+' MB':Math.round(b/1024)+' KB'}
+function rp(j){if(!j||!j.ok){if(j&&j.err)msg('ผิดพลาด: '+j.err);return}P=j;$('picSec').style.display='';
+$('picFree').textContent='ใช้ไป '+fmtB(j.used)+' / '+fmtB(j.total)+' · '+j.pics.length+' รูป';$('picBar').style.width=(j.used/j.total*100)+'%';
+const opt=v=>'<option value="">รูปเดิมในบอร์ด</option>'+j.pics.map(p=>`<option ${p.n==v?'selected':''}>${p.n}</option>`).join('');
+$('slots').innerHTML=[9,10,11].map((pg,i)=>`<div class="row"><span>หน้า ${pg}</span><select onchange="pa('pic_slot?slot=${i}&name='+this.value)">${opt(j.slots[i])}</select></div>`).join('');
+$('pAuto').checked=!!j.auto;
+$('pics').innerHTML=j.pics.map((p,i)=>`<div class="pic"><img src="/pics/${p.n}" loading="lazy"><div class="t">${p.n}<br>${fmtB(p.s)}${j.auto?'':`<br>เริ่มที่ <input type="number" style="width:70px;padding:4px;font-size:13px" value="${p.rpm}" onchange="pa('pic_rpm?name=${p.n}&rpm='+this.value)"> rpm`}</div>
+<input type="checkbox" class="sw" title="ใช้ในหน้ารูปตามรอบ" ${p.on?'checked':''} onchange="pa('pic_rpm?name=${p.n}&on='+(this.checked?1:0))">
+${i?`<button class="o" onclick="pa('pic_move?name=${p.n}&dir=-1')">↑</button>`:''}<button class="o" onclick="if(confirm('ลบ ${p.n}?'))pa('pic_del?name=${p.n}')">ลบ</button></div>`).join('')}
+async function pa(q){try{rp(await (await fetch('/api/'+q)).json())}catch(e){}}
+$('pAuto').onchange=e=>pa('pic_auto?v='+(e.target.checked?1:0));
+async function up(){const f=$('pf').files[0];if(!f)return msg('เลือกไฟล์ก่อน');const gif=/gif$/i.test(f.type)||/\.gif$/i.test(f.name);
+let n=f.name.toLowerCase().replace(/\.[^.]*$/,'').replace(/[^a-z0-9_-]/g,'_').slice(0,20)||'pic';n+=gif?'.gif':'.jpg';
+const fd=new FormData();fd.append('f',f,n);msg('กำลังอัปโหลด...');
+try{const r=await fetch('/api/pic_up?name='+n,{method:'POST',body:fd});const j=await r.json();rp(j);if(j.ok){msg('อัปโหลดแล้ว');$('pf').value=''}}catch(e){msg('อัปโหลดไม่สำเร็จ')}}
+pa('pics');load();live();
 </script></body></html>)HTML";
 
 inline void setupWeb() {

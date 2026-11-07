@@ -6,14 +6,19 @@
     - ปุ่ม 2 ปุ่ม: ปุ่ม 1 สั้น = หน้าถัดไป, ค้าง = เมนู / ปุ่ม 2 สั้น = หน้าก่อนหน้า, ค้าง = เลือก
     - ดูผลทั้งหมดใน Serial Monitor (115200)
 
-  ไฟล์ที่ต้องอยู่ในโฟลเดอร์เดียวกัน: DidissnapLink.h, DidissnapConfig.h, DidissnapButtons.h
-  Board: ESP32S3 Dev Module (PSRAM: OPI PSRAM) หรือ ESP32 Dev Module สำหรับ CYD
+    - รับรูปจากแอป/หน้าเว็บ เก็บในแฟลช (LittleFS) ใช้กับหน้า 9-11 และหน้า 12 "รูปตามรอบ"
+
+  ไฟล์ที่ต้องอยู่ในโฟลเดอร์เดียวกัน: DidissnapLink.h, DidissnapConfig.h, DidissnapButtons.h,
+                                    DidissnapPics.h, partitions.csv
+  Board: ESP32S3 Dev Module · Flash Size 16MB · PSRAM: OPI PSRAM · Partition Scheme: Custom
+         (ใช้ partitions.csv ในโฟลเดอร์นี้: แอป 4MB + พื้นที่รูป ~11.9MB)
 */
 #include <Arduino.h>
 #include <Preferences.h>
 #include "DidissnapLink.h"
 #include "DidissnapConfig.h"
 #include "DidissnapButtons.h"
+#include "DidissnapPics.h"
 
 // ขาปุ่ม: แก้ให้ตรงกับ schematic ของบอร์ด (ช่อง CN3: IO1 / IO2)
 #define PIN_BTN_A 1
@@ -24,7 +29,7 @@ Preferences prefs;
 // รายชื่อหน้า (ตอนทำจอจริงจะตรงกับหน้าที่วาด)
 const char* const PAGE_NAMES[] = {"Bar graph", "Yellow box", "Race bar", "Half gauge",
                                   "Round gauge", "Strip", "Race dash", "Gear big",
-                                  "Picture", "Car run", "Photo"};
+                                  "Picture", "Car run", "Photo", "Pic by rpm"};
 const int N_PAGES = sizeof(PAGE_NAMES) / sizeof(PAGE_NAMES[0]);
 
 bool inMenu = false;
@@ -63,6 +68,15 @@ bool demoDtcClear() { return true; }
 void resetPeaks() { peakRpm = 0; Serial.println("[peaks] ล้างแล้ว"); }
 void resetTrip() { tripKm = 0; Serial.println("[trip] รีเซ็ตแล้ว"); }
 
+void picsChanged() {
+  // จอจริง: โหลดรูปของหน้าที่กำลังแสดงใหม่
+  Serial.printf("[pics] %d รูป · หน้า9=%s หน้า10=%s หน้า11=%s · ตามรอบ=%s\n", didipics::count,
+                didipics::slot[0].length() ? didipics::slot[0].c_str() : "(เดิม)",
+                didipics::slot[1].length() ? didipics::slot[1].c_str() : "(เดิม)",
+                didipics::slot[2].length() ? didipics::slot[2].c_str() : "(เดิม)",
+                didipics::autoSplit ? "แบ่งอัตโนมัติ" : "กำหนดเอง");
+}
+
 void setup() {
   Serial.begin(115200);
   delay(300);
@@ -79,6 +93,9 @@ void setup() {
   didicfg::onPeaksReset = resetPeaks;
   didicfg::onTripReset = resetTrip;
   didicfg::begin(prefs, PAGE_NAMES, N_PAGES);
+  didipics::onChange = picsChanged;
+  if (!didipics::begin()) Serial.println("LittleFS FAILED (เช็ค Partition Scheme)");
+  picsChanged();
   applySettings();
   gotoPage(didicfg::cfg.page);
 
