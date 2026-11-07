@@ -94,6 +94,12 @@ class DataHub extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// แหล่งข้อมูล ESP32 ที่ใช้อยู่ (null = ไม่ได้ใช้โหมด ESP32)
+  Esp32Source? get esp32 {
+    final s = _src;
+    return s is Esp32Source ? s : null;
+  }
+
   Future<List<String>> readDtc() {
     final s = _src;
     if (s == null) return Future.error(Exception('ยังไม่ได้เชื่อมต่อ'));

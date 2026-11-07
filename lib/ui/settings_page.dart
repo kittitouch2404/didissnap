@@ -26,7 +26,7 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 6,
+      length: 7,
       child: Scaffold(
         appBar: AppBar(
           toolbarHeight: 40,
@@ -40,6 +40,7 @@ class SettingsPage extends StatelessWidget {
               Tab(height: 36, text: 'รูปพื้นหลัง'),
               Tab(height: 36, text: 'DTC'),
               Tab(height: 36, text: 'เปิดอัตโนมัติ'),
+              Tab(height: 36, text: 'จอ ESP32'),
             ],
           ),
         ),
@@ -50,6 +51,7 @@ class SettingsPage extends StatelessWidget {
           PicturesTab(settings: settings, hub: hub),
           DtcTab(hub: hub),
           AutoStartTab(settings: settings),
+          Esp32Tab(settings: settings, hub: hub),
         ]),
       ),
     );
@@ -1080,6 +1082,227 @@ class _AutoStartTabState extends State<AutoStartTab>
           ],
         ],
       ),
+    );
+  }
+}
+
+// ======================================================================
+//  ตั้งค่าจอ ESP32 (N1V65Config.h) ผ่าน WiFi
+// ======================================================================
+class Esp32Tab extends StatefulWidget {
+  const Esp32Tab({super.key, required this.settings, required this.hub});
+  final AppSettings settings;
+  final DataHub hub;
+  @override
+  State<Esp32Tab> createState() => _Esp32TabState();
+}
+
+class _Esp32TabState extends State<Esp32Tab> {
+  Map<String, dynamic>? _cfg;
+  List<String> _pages = const [];
+  bool _busy = false;
+  String? _err;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.hub.addListener(_onHub);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    widget.hub.removeListener(_onHub);
+    super.dispose();
+  }
+
+  void _onHub() {
+    // เพิ่งต่อ ESP32 ติด → โหลดค่าตั้ง
+    if (_cfg == null && !_busy && widget.hub.state == LinkState.connected) _load();
+    if (mounted) setState(() {});
+  }
+
+  void _take(Map<String, dynamic> j) {
+    final c = j['cfg'];
+    if (c is Map) _cfg = Map<String, dynamic>.from(c);
+    final p = j['pages'];
+    if (p is List) _pages = p.map((e) => e.toString()).toList();
+  }
+
+  Future<void> _run(Future<Map<String, dynamic>?> Function() f, [String? ok]) async {
+    final esp = widget.hub.esp32;
+    if (esp == null) return;
+    setState(() {
+      _busy = true;
+      _err = null;
+    });
+    try {
+      final j = await f();
+      if (j != null) _take(j);
+      if (ok != null && mounted) _snack(context, ok);
+    } catch (e) {
+      _err = errText(e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _load() async {
+    final esp = widget.hub.esp32;
+    if (esp == null || widget.hub.state != LinkState.connected) return;
+    await _run(() => esp.getConfig());
+  }
+
+  Future<void> _set(String key, num v) async {
+    final esp = widget.hub.esp32;
+    if (esp == null) return;
+    setState(() => _cfg?[key] = v); // แสดงทันที แล้วค่อยรอบอร์ดยืนยัน
+    await _run(() => esp.setConfig({key: v}));
+  }
+
+  int _i(String k, int d) => (_cfg?[k] as num?)?.toInt() ?? d;
+  double _d(String k, double d) => (_cfg?[k] as num?)?.toDouble() ?? d;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.settings;
+    final hub = widget.hub;
+    if (s.source != SourceType.esp32) {
+      return ListView(padding: const EdgeInsets.all(16), children: [
+        const Text('ตั้งค่าจอ ESP32 ได้เมื่อใช้แหล่งข้อมูล "ESP32 CYD ผ่าน WiFi"',
+            style: TextStyle(fontSize: 15)),
+        const SizedBox(height: 12),
+        FilledButton(
+          onPressed: () => s.source = SourceType.esp32,
+          child: const Text('เปลี่ยนเป็นโหมด ESP32'),
+        ),
+        const SizedBox(height: 12),
+        const _Hint('ให้มือถือต่อ WiFi "N1V65-DASH" (รหัส 12345678) ของบอร์ดก่อน'),
+      ]);
+    }
+    final connected = hub.state == LinkState.connected;
+    final cfg = _cfg;
+    final page = _i('page', 0);
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
+      children: [
+        ListTile(
+          leading: Icon(Icons.circle, size: 14, color: connected ? kGreen : kAmber),
+          title: Text(connected ? 'ต่อบอร์ด ESP32 แล้ว' : 'ยังไม่ได้ต่อบอร์ด ESP32'),
+          subtitle: Text('ตั้งในเบราว์เซอร์ก็ได้: http://${s.espHost}'),
+          trailing: FilledButton.tonal(
+              onPressed: _busy || !connected ? null : _load, child: const Text('โหลดค่า')),
+        ),
+        if (_busy) const LinearProgressIndicator(),
+        if (_err != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(_err!, style: const TextStyle(color: kRed)),
+          ),
+        if (cfg == null && connected && !_busy)
+          const _Hint('บอร์ดยังไม่ตอบค่าตั้ง — บอร์ดต้องใช้โค้ดที่มี N1V65Config.h'),
+        if (cfg != null) ...[
+          const _Header('หน้าจอ'),
+          ListTile(
+            dense: true,
+            title: const Text('หน้าที่แสดงบนจอ ESP32'),
+            trailing: DropdownButton<int>(
+              value: page.clamp(0, _pages.isEmpty ? 0 : _pages.length - 1),
+              items: [
+                for (var i = 0; i < (_pages.isEmpty ? 1 : _pages.length); i++)
+                  DropdownMenuItem(
+                      value: i,
+                      child: Text('${i + 1}. ${_pages.isEmpty ? '' : _pages[i]}')),
+              ],
+              onChanged: (v) {
+                final esp = hub.esp32;
+                if (v == null || esp == null) return;
+                setState(() => _cfg?['page'] = v);
+                _run(() => esp.setPage(v));
+              },
+            ),
+          ),
+          _StepRow('สลับหน้าเองทุก (0 = ปิด)', _i('autoCycle', 0), 0, 120, 5,
+              (v) => _set('autoCycle', v),
+              unit: ' วิ'),
+          ListTile(
+            dense: true,
+            title: Text('ความสว่าง ${_i('bri', 80)}%'),
+            subtitle: Slider(
+              value: _i('bri', 80).toDouble(),
+              min: 10,
+              max: 100,
+              divisions: 9,
+              onChanged: (v) => setState(() => _cfg?['bri'] = v.round()),
+              onChangeEnd: (v) => _set('bri', v.round()),
+            ),
+          ),
+          SwitchListTile(
+            dense: true,
+            title: const Text('ปรับความสว่างตามแสงอัตโนมัติ'),
+            value: _i('briAuto', 0) != 0,
+            onChanged: (v) => _set('briAuto', v ? 1 : 0),
+          ),
+          SwitchListTile(
+            dense: true,
+            title: const Text('กลับจอ 180°'),
+            value: _i('flip', 0) != 0,
+            onChanged: (v) => _set('flip', v ? 1 : 0),
+          ),
+          const _Header('รอบ / ความร้อน'),
+          _StepRow('Redline', _i('maxRpm', 7500), 2000, 12000, 250,
+              (v) => _set('maxRpm', v),
+              unit: ' rpm'),
+          _StepRow('เตือนน้ำที่', _i('tempAlert', 100), 70, 130, 1,
+              (v) => _set('tempAlert', v),
+              unit: ' °C'),
+          const _Header('เกียร์ (rpm ต่อ 1 km/h)'),
+          _StepRow('จำนวนเกียร์', _i('gearCount', 6), 3, 6, 1, (v) => _set('gearCount', v)),
+          for (var g = 0; g < _i('gearCount', 6); g++)
+            ListTile(
+              dense: true,
+              title: Text('เกียร์ ${g + 1}'),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                    icon: const Icon(Icons.remove),
+                    onPressed: () => _set('g$g', double.parse((_d('g$g', 50) - 0.5).toStringAsFixed(1)))),
+                SizedBox(
+                    width: 64,
+                    child: Text(_d('g$g', 50).toStringAsFixed(1),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+                IconButton(
+                    icon: const Icon(Icons.add),
+                    onPressed: () => _set('g$g', double.parse((_d('g$g', 50) + 0.5).toStringAsFixed(1)))),
+              ]),
+            ),
+          const _Header('รีเซ็ต'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(spacing: 8, children: [
+              OutlinedButton(
+                onPressed: _busy
+                    ? null
+                    : () => _run(() async {
+                          await hub.esp32?.resetPeaks();
+                          return null;
+                        }, 'ล้างค่าสูงสุดบนจอ ESP32 แล้ว'),
+                child: const Text('ล้างค่าสูงสุด'),
+              ),
+              OutlinedButton(
+                onPressed: _busy
+                    ? null
+                    : () => _run(() async {
+                          await hub.esp32?.resetTrip();
+                          return null;
+                        }, 'รีเซ็ตทริปบนจอ ESP32 แล้ว'),
+                child: const Text('รีเซ็ตทริป'),
+              ),
+            ]),
+          ),
+          const _Hint('อ่าน/ลบ DTC ของรถผ่านบอร์ดได้ที่แท็บ DTC'),
+        ],
+      ],
     );
   }
 }

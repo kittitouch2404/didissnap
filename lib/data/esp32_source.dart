@@ -106,7 +106,10 @@ class Esp32Source implements CarSource {
     } catch (_) {
       return;
     }
-    if (m.containsKey('dtc') || m.containsKey('cleared')) {
+    if (m.containsKey('dtc') ||
+        m.containsKey('cleared') ||
+        m.containsKey('cfg') ||
+        m.containsKey('ok')) {
       final r = _reply;
       _reply = null;
       if (r != null && !r.isCompleted) r.complete(m);
@@ -127,18 +130,32 @@ class Esp32Source implements CarSource {
     d.fuel = n('fuel') ?? d.fuel;
   }
 
-  Future<Map<String, dynamic>> _ask(String cmd) async {
+  Future<Map<String, dynamic>> _ask(String cmd,
+      [Map<String, dynamic>? extra]) async {
     final s = _s;
     if (s == null || _hub?.state != LinkState.connected) {
       throw Exception('ยังไม่ได้เชื่อมต่อ ESP32');
     }
     final c = Completer<Map<String, dynamic>>();
     _reply = c;
-    s.write('{"cmd":"$cmd"}\n');
+    s.write('${jsonEncode({'cmd': cmd, ...?extra})}\n');
     await s.flush();
     return c.future.timeout(const Duration(seconds: 10),
         onTimeout: () => throw Exception('ESP32 ไม่ตอบคำสั่ง $cmd'));
   }
+
+  // ---------------- ค่าตั้งของจอ ESP32 (N1V65Config.h) ----------------
+  /// คืน {'cfg': {...}, 'pages': [...]}
+  Future<Map<String, dynamic>> getConfig() => _ask('get_cfg');
+
+  Future<Map<String, dynamic>> setConfig(Map<String, num> values) =>
+      _ask('set_cfg', {'cfg': values});
+
+  Future<Map<String, dynamic>> setPage(int page) => _ask('page', {'v': page});
+
+  Future<void> resetPeaks() => _ask('peaks_reset');
+
+  Future<void> resetTrip() => _ask('trip_reset');
 
   @override
   Future<List<String>> readDtc() async {

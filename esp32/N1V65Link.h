@@ -31,6 +31,9 @@
 #ifndef N1LINK_PORT
 #define N1LINK_PORT 3333
 #endif
+#ifndef N1LINK_MAX_STA
+#define N1LINK_MAX_STA 2         // มือถือที่ต่อ WiFi พร้อมกันได้ (CYD แรมน้อย ใช้ 1)
+#endif
 #ifndef N1LINK_INTERVAL_MS
 #define N1LINK_INTERVAL_MS 50    // ส่ง 20 ครั้ง/วินาที
 #endif
@@ -44,6 +47,13 @@ typedef bool (*DtcClearFn)();
 static DtcReadFn onDtcRead = nullptr;
 static DtcClearFn onDtcClear = nullptr;
 
+// คำสั่งอื่นจากแอป (เช่น ค่าตั้งจาก N1V65Config.h) คืน true = จัดการแล้ว
+typedef bool (*CmdFn)(const String& line);
+static CmdFn onCommand = nullptr;
+
+// ค่าล่าสุดเป็น JSON (ใช้กับหน้าเว็บ /api/live)
+static char lastJson[224] = "{}";
+
 static WiFiServer server(N1LINK_PORT);
 static WiFiClient client;
 static String rx;
@@ -52,8 +62,8 @@ static uint32_t lastSend = 0;
 // คืน true = ปล่อย WiFi สำเร็จ (false = แรมไม่พอ/เริ่ม WiFi ไม่ได้)
 inline bool begin() {
   if (!WiFi.mode(WIFI_AP)) return false;
-  // ช่อง 1, ไม่ซ่อนชื่อ, ต่อได้ทีละ 1 เครื่อง (ประหยัดแรม)
-  if (!WiFi.softAP(N1LINK_SSID, N1LINK_PASS, 1, 0, 1)) return false;
+  // ช่อง 1, ไม่ซ่อนชื่อ, ต่อได้สูงสุด N1LINK_MAX_STA เครื่อง
+  if (!WiFi.softAP(N1LINK_SSID, N1LINK_PASS, 1, 0, N1LINK_MAX_STA)) return false;
   // ห้าม WiFi.setSleep(false) เมื่อใช้ Bluetooth ไปด้วย (ESP32 จะ abort/รีบูต)
   server.begin();
   server.setNoDelay(true);
@@ -70,7 +80,15 @@ inline void end() {
   WiFi.mode(WIFI_OFF);
 }
 
+// ส่งข้อความกลับไปที่แอป (ต่อท้ายด้วยขึ้นบรรทัดใหม่ให้เอง)
+inline void reply(const String& s) {
+  if (!connected()) return;
+  client.print(s);
+  client.print("\n");
+}
+
 inline void handleCommand(const String& line) {
+  if (onCommand && onCommand(line)) return;
   if (line.indexOf("dtc_read") >= 0) {
     String arr = onDtcRead ? onDtcRead() : String("[]");
     client.print("{\"dtc\":" + arr + "}\n");
@@ -95,7 +113,7 @@ inline void loop() {
     if (c == '\n') {
       handleCommand(rx);
       rx = "";
-    } else if (rx.length() < 128) {
+    } else if (rx.length() < 600) {
       rx += c;
     }
   }
@@ -113,7 +131,6 @@ static void addField(char* buf, size_t cap, size_t& len, const char* key,
 inline void send(float rpm, float spd, float ect, float iat, float volt,
                  float load = NAN, float tps = NAN, float map = NAN,
                  float maf = NAN, float fuel = NAN) {
-  if (!connected()) return;
   uint32_t now = millis();
   if (now - lastSend < N1LINK_INTERVAL_MS) return;
   lastSend = now;
@@ -133,6 +150,9 @@ inline void send(float rpm, float spd, float ect, float iat, float volt,
   addField(buf, sizeof(buf) - 3, len, "maf", maf, 1);
   addField(buf, sizeof(buf) - 3, len, "fuel", fuel, 0);
   buf[len++] = '}';
+  memcpy(lastJson, buf, len);           // เก็บไว้ให้หน้าเว็บ
+  lastJson[len] = 0;
+  if (!connected()) return;
   buf[len++] = '\n';
   client.write((const uint8_t*)buf, len);
 }
