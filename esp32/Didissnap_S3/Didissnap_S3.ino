@@ -17,7 +17,6 @@
     USB CDC On Boot: Enabled · Partition Scheme: 16M Flash (3MB APP/9.9MB FATFS) หรือ Custom
     (ตัวที่ใช้จริงคือ partitions.csv ในโฟลเดอร์นี้ — core หยิบไปใช้เองเสมอ)
 */
-#pragma GCC optimize("O2")   // ส่วนวาดภาพ: เน้นความเร็ว (Arduino ตั้ง -Os ไว้)
 #include <Arduino.h>
 #include <Preferences.h>
 #include "esp_system.h"
@@ -26,6 +25,9 @@
 #include "DidissnapConfig.h"
 #include "DidissnapButtons.h"
 #include "DidissnapPics.h"
+#include "esp_core_dump.h"
+#pragma GCC push_options
+#pragma GCC optimize("O2")   // เฉพาะส่วนวาดภาพ: เน้นความเร็ว (Arduino ตั้ง -Os ไว้)
 #include "lcd.h"
 #include "gfx.h"
 #include "data.h"
@@ -33,6 +35,7 @@
 #include "pages.h"
 #include "menu.h"
 #include "perf.h"
+#pragma GCC pop_options
 
 #define PIN_BTN1 41      // แพด RXD1
 #define PIN_BTN2 2       // แพด RXD2 (ทดสอบรอบแรกขึ้น IO1 เลยอ่านทั้งสองขา)
@@ -115,21 +118,40 @@ static void checkLastBoot() {
   if (r == ESP_RST_POWERON) { g_crashStep = 0; g_crashCount = 0; crashedAt = 0; }
 }
 // ขึ้นข้อความบนจอว่ารอบก่อนดับตรงไหน (ถ่ายรูปส่งมาได้เลย)
+static esp_core_dump_summary_t cd;
+static bool cdOk = false;
+static void readCoredump() {
+  memset(&cd, 0, sizeof(cd));
+  cdOk = esp_core_dump_get_summary(&cd) == ESP_OK;
+  if (!cdOk) return;
+  Serial.printf("    coredump: task %s cause %u pc 0x%08x vaddr 0x%08x\n    backtrace:", cd.exc_task, (unsigned)cd.ex_info.exc_cause,
+                (unsigned)cd.exc_pc, (unsigned)cd.ex_info.exc_vaddr);
+  for (unsigned i = 0; i < cd.exc_bt_info.depth && i < 16; i++) Serial.printf(" 0x%08x", (unsigned)cd.exc_bt_info.bt[i]);
+  Serial.println();
+}
 static void showCrash() {
   if (!crashedAt || !lcd::ok()) return;
   gfx::target(lcd::back());
   gfx::clear(0);
-  gfx::text("LAST BOOT CRASHED", 240, 70, 26, gfx::rgb(0xFF2A2A), gfx::CENTER, 900);
+  gfx::text("LAST BOOT CRASHED", 240, 60, 26, gfx::rgb(0xFF2A2A), gfx::CENTER, 900);
   char b[64];
   snprintf(b, sizeof(b), "at step %d: %s", crashedAt, STEP_NAME[crashedAt]);
-  gfx::text(b, 240, 112, 19, 0xFFFF, gfx::CENTER, 700);
-  gfx::text(crashWhy, 240, 142, 16, gfx::rgb(0xFFC400), gfx::CENTER, 700);
+  gfx::text(b, 240, 98, 19, 0xFFFF, gfx::CENTER, 700);
+  gfx::text(crashWhy, 240, 124, 16, gfx::rgb(0xFFC400), gfx::CENTER, 700);
   snprintf(b, sizeof(b), "%u time(s) in a row%s", (unsigned)g_crashCount, g_crashCount >= 2 ? " -> SAFE MODE: step skipped" : "");
-  gfx::text(b, 240, 172, 14, gfx::rgb(0xAAAAAA), gfx::CENTER, 600);
-  gfx::text("Take a photo and send it to Claude", 240, 230, 13, gfx::rgb(0x888888), gfx::CENTER, 600);
+  gfx::text(b, 240, 150, 14, gfx::rgb(0xAAAAAA), gfx::CENTER, 600);
+  if (cdOk) {                                         // ข้อมูลจาก coredump: งานไหนพัง ที่ตำแหน่งไหน
+    snprintf(b, sizeof(b), "task %s  cause %u  pc %08x  addr %08x", cd.exc_task, (unsigned)cd.ex_info.exc_cause, (unsigned)cd.exc_pc, (unsigned)cd.ex_info.exc_vaddr);
+    gfx::text(b, 240, 198, 11, gfx::rgb(0x8FD3FF), gfx::CENTER, 600);
+    char bt[120] = "bt";
+    for (unsigned i = 0; i < cd.exc_bt_info.depth && i < 7; i++) { char t[12]; snprintf(t, sizeof(t), " %08x", (unsigned)cd.exc_bt_info.bt[i]); strlcat(bt, t, sizeof(bt)); }
+    gfx::text(bt, 240, 214, 10, gfx::rgb(0x8FD3FF), gfx::CENTER, 500);
+  }
+  gfx::text("Take a photo and send it to Claude", 240, 240, 13, gfx::rgb(0x888888), gfx::CENTER, 600);
   lcd::present();
   lcd::brightness(80);
-  delay(4000);
+  delay(cdOk ? 8000 : 4000);
+  esp_core_dump_image_erase();
 }
 
 void setup() {
@@ -138,6 +160,7 @@ void setup() {
   while (!Serial && millis() - t0 < 1500) delay(10);
   checkLastBoot();
   Serial.printf("\n=== Didissnap_S3 === reset reason %d\n", (int)esp_reset_reason());
+  if (crashedAt) readCoredump();
   if (crashedAt) Serial.printf("    รอบที่แล้วดับที่ [boot %d] %s (%s) ติดกัน %u ครั้ง\n", crashedAt, STEP_NAME[crashedAt], crashWhy, (unsigned)g_crashCount);
   Serial.printf("    PSRAM %u KB  flash %u MB\n", ESP.getPsramSize() / 1024, ESP.getFlashChipSize() >> 20);
   step(1, "prefs");

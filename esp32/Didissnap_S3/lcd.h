@@ -102,7 +102,7 @@ inline bool begin() {
   esp_cache_msync(fb, FB_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
   ledcAttach(PIN_BL, 5000, 8);
   ledcWrite(PIN_BL, 0);
-  xTaskCreatePinnedToCore(refreshTask, "lcd", 4096, nullptr, configMAX_PRIORITIES - 2, nullptr, 0);
+  xTaskCreatePinnedToCore(refreshTask, "lcd", 4096, nullptr, 10, nullptr, 1);   // คอร์ 1 (WiFi อยู่คอร์ 0)
   return true;
 }
 
