@@ -1,7 +1,8 @@
 /*
-  Didissnap_S3_Test — ทดสอบบอร์ด Panlee ZX4D30NE01S (ESP32-S3 + จอ 4.3" 480x272 RGB)
+  Didissnap_S3_Test v2 — ทดสอบบอร์ด Panlee ZX4D30NE01S (ESP32-S3 + จอ 4.3" 480x272 RGB)
 
   ทำอะไร
+   0) ตอนเปิด: ไฟจอกะพริบ 3 ครั้ง แล้วเต็มจอ แดง → เขียว → น้ำเงิน → ขาว (ดูขั้นตอนใน Serial Monitor 115200)
    1) เปิดจอ: แถบสี แดง/เขียว/น้ำเงิน/ขาว + ข้อความ  → เช็คว่าจอติด สีถูก ภาพไม่เลื่อน
    2) แถบวิ่ง + ตัวเลข FPS → เช็คความลื่น
    3) ตาราง GPIO สด: เอาสายไฟแตะแพดที่จะต่อปุ่ม (TXD2 / RXD2 ฯลฯ) กับ GND
@@ -16,7 +17,8 @@
 */
 #include <Arduino_GFX_Library.h>
 
-#define PIN_BL 45  // ไฟจอ (HIGH = ติด)
+#define PIN_BL 45    // ไฟจอ (HIGH = ติด)
+#define PIN_DISP 21  // LCD_DISP ใน datasheet: เปิดจอ (HIGH)
 
 // ---- จอ RGB 16 บิต: (DE, VSYNC, HSYNC, PCLK, R0-R4, G0-G5, B0-B4, timing...)
 Arduino_ESP32RGBPanel* bus = new Arduino_ESP32RGBPanel(
@@ -30,7 +32,7 @@ Arduino_ESP32RGBPanel* bus = new Arduino_ESP32RGBPanel(
 Arduino_RGB_Display* gfx = new Arduino_RGB_Display(480, 272, bus, 0 /* rotation */, true /* auto_flush */);
 
 // ---- แพดที่น่าจะว่าง (ไม่ใช้กับจอ/PSRAM/USB) — ทดสอบด้วยการแตะกับ GND
-const int PROBE[] = {0, 1, 2, 21, 38, 39, 41, 42};
+const int PROBE[] = {0, 1, 2, 38, 39, 41, 42};
 const int NP = sizeof(PROBE) / sizeof(PROBE[0]);
 int last[NP], lows[NP];
 
@@ -81,10 +83,35 @@ void drawPin(int i, int v) {
 
 void setup() {
   Serial.begin(115200);
-  delay(200);
+  delay(500);
+  Serial.println("\n=== Didissnap S3 test v2 ===");
+  Serial.printf("[1] chip %s  flash %u MB  PSRAM %u KB\n", ESP.getChipModel(), ESP.getFlashChipSize() >> 20, ESP.getPsramSize() / 1024);
+  if (ESP.getPsramSize() == 0) Serial.println("    !! ไม่เจอ PSRAM -> Tools > PSRAM ต้องเป็น OPI PSRAM (จอใช้ไม่ได้ถ้าไม่มี PSRAM)");
+
+  // [2] เปิดขา DISP + กะพริบไฟจอ 3 ครั้ง: ถ้าเห็นจอสว่าง-ดับ = โค้ดรันแล้ว และไฟจอปกติ
+  pinMode(PIN_DISP, OUTPUT);
+  digitalWrite(PIN_DISP, HIGH);
+  pinMode(PIN_BL, OUTPUT);
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(PIN_BL, HIGH); delay(400);
+    digitalWrite(PIN_BL, LOW);  delay(300);
+  }
+  digitalWrite(PIN_BL, HIGH);
+  Serial.println("[2] backlight blink x3 done");
+
+  bool ok = gfx->begin();
+  Serial.printf("[3] gfx->begin() = %s  (PSRAM free %u KB)\n", ok ? "OK" : "FAILED", ESP.getFreePsram() / 1024);
   ledcAttach(PIN_BL, 5000, 8);
   setBri(255);
-  if (!gfx->begin()) Serial.println("gfx->begin() FAILED");
+
+  // [4] เต็มจอทีละสี แดง เขียว น้ำเงิน ขาว
+  const uint16_t full[] = {C_RED, C_GREEN, C_BLUE, C_WHITE};
+  const char* nm[] = {"RED", "GREEN", "BLUE", "WHITE"};
+  for (int i = 0; i < 4; i++) {
+    gfx->fillScreen(full[i]);
+    Serial.printf("[4] full screen %s\n", nm[i]);
+    delay(800);
+  }
   for (int i = 0; i < NP; i++) {
     pinMode(PROBE[i], INPUT_PULLUP);
     lows[i] = 0;
