@@ -157,7 +157,7 @@ static void chooseBackground(int page) {
 //  ถ้าดับที่ขั้นเดิม 2 รอบติด → รอบต่อไปข้ามขั้นนั้น (safe mode) แล้วขึ้นข้อความบนจอ
 RTC_NOINIT_ATTR uint32_t g_magic, g_step, g_crashStep, g_crashCount;
 static const char* const STEP_NAME[] = {"", "prefs", "picture storage (format)", "lcd", "wifi", "config + web", "boot logo",
-                                        "pictures (LittleFS)", "background task", "ready", "first frames"};
+                                        "pictures (LittleFS)", "background task", "2-core draw + refresh", "first frames"};
 static int crashedAt = 0;          // ขั้นที่รอบที่แล้วดับ (0 = ไม่ได้ดับ)
 static const char* crashWhy = "";
 static bool skip(int n) { return crashedAt == n && g_crashCount >= 2; }
@@ -267,20 +267,24 @@ void setup() {
   else if (!didipics::begin()) { Serial.println("LittleFS FAILED (เช็คว่ามี partitions.csv ในโฟลเดอร์)"); picsOn = false; }
   stripBuf = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (!stripBuf) { Serial.println("strip buffer: no internal RAM -> PSRAM"); stripBuf = (uint16_t*)ps_malloc(LCD_W * STRIP_H * 2); }
-  stripBuf2 = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  if (stripBuf2) {                                  // วาด 2 คอร์
-    workGo = xSemaphoreCreateBinary();
-    workDone = xSemaphoreCreateBinary();
-    xTaskCreatePinnedToCore(drawWorker, "draw2", 8192, nullptr, 3, nullptr, 0);
-  } else Serial.println("2nd strip buffer: no internal RAM -> draw on 1 core");
   step(8, "background task");
   if (!picsOn || skip(8)) Serial.println("background task OFF");
   else if (!bg::begin()) Serial.println("bg buffers FAILED");
   menu::onPeaks = resetPeaks;
   menu::onTrip = resetTrip;
   menu::onHold2 = onHold2;
+  step(9, "2-core draw + refresh");
+  bool safeDraw = skip(9) || skip(10);              // ดับตอนวาด 2 รอบติด → วาดคอร์เดียว + 44 Hz
+  if (!safeDraw) stripBuf2 = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (safeDraw) Serial.println("SAFE MODE: draw on 1 core, 44 Hz");
+  else if (stripBuf2) {                                  // วาด 2 คอร์
+    workGo = xSemaphoreCreateBinary();
+    workDone = xSemaphoreCreateBinary();
+    xTaskCreatePinnedToCore(drawWorker, "draw2", 8192, nullptr, 3, nullptr, 0);
+  } else Serial.println("2nd strip buffer: no internal RAM -> draw on 1 core");
   menu::lcdMode = prefs.getInt("lcdMode", 0) & 3;
   menu::onLcdMode = onLcdMode;
+  if (safeDraw) menu::lcdMode = 0;
   applyLcdMode(menu::lcdMode);
   perf::begin();
   didibtn::onEvent = onButton;
