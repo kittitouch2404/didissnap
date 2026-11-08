@@ -1,144 +1,184 @@
 /*
-  Didissnap_S3_Test v2 — ทดสอบบอร์ด Panlee ZX4D30NE01S (ESP32-S3 + จอ 4.3" 480x272 RGB)
+  Didissnap_S3_Test v3 — ทดสอบบอร์ด Panlee ZX4D30NE01S (ESP32-S3 + จอ 4.3" 480x272 RGB)
+  ** ไม่ต้องลง Library เพิ่ม ** ใช้ไดรเวอร์จอ RGB (esp_lcd) ที่มากับ ESP32 core 3.x
+  ค่าขา/timing เหมือนโค้ดของผู้ผลิตทุกตัว: github.com/wireless-tag-com/ZX4D30NE01S
 
   ทำอะไร
-   0) ตอนเปิด: ไฟจอกะพริบ 3 ครั้ง แล้วเต็มจอ แดง → เขียว → น้ำเงิน → ขาว (ดูขั้นตอนใน Serial Monitor 115200)
-   1) เปิดจอ: แถบสี แดง/เขียว/น้ำเงิน/ขาว + ข้อความ  → เช็คว่าจอติด สีถูก ภาพไม่เลื่อน
-   2) แถบวิ่ง + ตัวเลข FPS → เช็คความลื่น
-   3) ตาราง GPIO สด: เอาสายไฟแตะแพดที่จะต่อปุ่ม (TXD2 / RXD2 ฯลฯ) กับ GND
-      ตัวไหนเปลี่ยนเป็น LOW (สีแดง) = แพดนั้นคือ GPIO เลขนั้น
-   4) ความสว่าง: ถ้า IO0 (BOOT) LOW จะวนความสว่าง 100 → 50 → 15 %
+   0) ไฟจอกะพริบ 3 ครั้ง แล้วเต็มจอ แดง → เขียว → น้ำเงิน → ขาว (ดูขั้นตอนใน Serial Monitor 115200)
+   1) หน้าทดสอบ: แถบสี + กรอบขอบจอ + แถบวิ่ง + fps
+   2) ตาราง GPIO สด: เอาสายแตะแพด (RXD2 / TXD2) กับ GND → ช่องที่เป็น LOW สีแดง = เลข GPIO ของแพดนั้น
+   3) แตะ IO0 กับ GND ค้าง = วนความสว่าง 100 / 50 / 15 %
 
-  ต้องลง Library: "GFX Library for Arduino" (moononournation) เวอร์ชัน 1.5 ขึ้นไป
-  Arduino IDE: Board = ESP32S3 Dev Module
-               Flash Size = 16MB · PSRAM = OPI PSRAM · USB CDC On Boot = Disabled
-               (ถ้าเปิด Serial Monitor แล้วเงียบ ลองเปลี่ยน USB CDC On Boot = Enabled)
-  ขาจอเอามาจากโค้ดตัวอย่างของผู้ผลิต: github.com/wireless-tag-com/ZX4D30NE01S (main/board.h, screen.c)
+  Arduino IDE: Board = ESP32S3 Dev Module · Flash Size = 16MB · PSRAM = OPI PSRAM
+               USB CDC On Boot = Disabled (ถ้า Serial Monitor เงียบ ลอง Enabled)
+  ต้องใช้ ESP32 core 3.x (Boards Manager → esp32 by Espressif)
 */
-#include <Arduino_GFX_Library.h>
+#include <Arduino.h>
+#include "esp_lcd_panel_rgb.h"
+#include "esp_lcd_panel_ops.h"
+#include "esp_cache.h"
+#include "font6x10.h"
 
+#define W 480
+#define H 272
 #define PIN_BL 45    // ไฟจอ (HIGH = ติด)
-#define PIN_DISP 21  // LCD_DISP ใน datasheet: เปิดจอ (HIGH)
+#define PIN_DISP 21  // LCD_DISP ใน datasheet (ลองตั้ง HIGH เผื่อบอร์ดรุ่นนี้ต้องใช้)
 
-// ---- จอ RGB 16 บิต: (DE, VSYNC, HSYNC, PCLK, R0-R4, G0-G5, B0-B4, timing...)
-Arduino_ESP32RGBPanel* bus = new Arduino_ESP32RGBPanel(
-    40 /* DE */, 48 /* VSYNC */, 47 /* HSYNC */, 14 /* PCLK */,
-    4 /* R0 */, 5 /* R1 */, 6 /* R2 */, 7 /* R3 */, 15 /* R4 */,
-    16 /* G0 */, 17 /* G1 */, 18 /* G2 */, 8 /* G3 */, 3 /* G4 */, 46 /* G5 */,
-    9 /* B0 */, 10 /* B1 */, 11 /* B2 */, 12 /* B3 */, 13 /* B4 */,
-    1 /* hsync_polarity */, 60 /* hsync_front_porch */, 10 /* hsync_pulse_width */, 80 /* hsync_back_porch */,
-    1 /* vsync_polarity */, 60 /* vsync_front_porch */, 10 /* vsync_pulse_width */, 20 /* vsync_back_porch */,
-    1 /* pclk_active_neg */, 14000000 /* pclk 14 MHz */);
-Arduino_RGB_Display* gfx = new Arduino_RGB_Display(480, 272, bus, 0 /* rotation */, true /* auto_flush */);
+static uint16_t* fb = nullptr;   // เฟรมบัฟเฟอร์ใน PSRAM (RGB565)
+static esp_lcd_panel_handle_t panel = nullptr;
 
-// ---- แพดที่น่าจะว่าง (ไม่ใช้กับจอ/PSRAM/USB) — ทดสอบด้วยการแตะกับ GND
+const uint16_t C_BLACK = 0x0000, C_WHITE = 0xFFFF, C_RED = 0xF800, C_GREEN = 0x07E0, C_BLUE = 0x001F,
+               C_ORANGE = 0xFBE0, C_GREY = 0x7BEF, C_DARK = 0x2104, C_YELLOW = 0xFFE0;
+
+bool lcdBegin() {
+  esp_lcd_rgb_panel_config_t c;
+  memset(&c, 0, sizeof(c));
+  c.clk_src = LCD_CLK_SRC_DEFAULT;
+  c.timings.pclk_hz = 14000000;
+  c.timings.h_res = W;
+  c.timings.v_res = H;
+  c.timings.hsync_pulse_width = 10;
+  c.timings.hsync_back_porch = 80;
+  c.timings.hsync_front_porch = 60;
+  c.timings.vsync_pulse_width = 10;
+  c.timings.vsync_back_porch = 20;
+  c.timings.vsync_front_porch = 60;
+  c.timings.flags.pclk_active_neg = 1;
+  c.data_width = 16;
+  c.dma_burst_size = 64;
+  c.hsync_gpio_num = 47;
+  c.vsync_gpio_num = 48;
+  c.de_gpio_num = 40;
+  c.pclk_gpio_num = 14;
+  c.disp_gpio_num = -1;
+  const int data[16] = {9, 10, 11, 12, 13,      // B0-B4
+                        16, 17, 18, 8, 3, 46,   // G0-G5
+                        4, 5, 6, 7, 15};        // R0-R4
+  for (int i = 0; i < 16; i++) c.data_gpio_nums[i] = data[i];
+  c.flags.fb_in_psram = 1;
+  esp_err_t e = esp_lcd_new_rgb_panel(&c, &panel);
+  if (e != ESP_OK) { Serial.printf("    esp_lcd_new_rgb_panel error %d (%s)\n", e, esp_err_to_name(e)); return false; }
+  esp_lcd_panel_reset(panel);
+  esp_lcd_panel_init(panel);
+  void* p = nullptr;
+  e = esp_lcd_rgb_panel_get_frame_buffer(panel, 1, &p);
+  if (e != ESP_OK || !p) { Serial.printf("    get_frame_buffer error %d\n", e); return false; }
+  fb = (uint16_t*)p;
+  return true;
+}
+
+// เขียนจาก cache ลง PSRAM ให้จออ่านเห็น
+void flush() { esp_cache_msync(fb, W * H * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED); }
+
+void rect(int x, int y, int w, int h, uint16_t col) {
+  if (x < 0) { w += x; x = 0; }
+  if (y < 0) { h += y; y = 0; }
+  if (x + w > W) w = W - x;
+  if (y + h > H) h = H - y;
+  for (int j = 0; j < h; j++) {
+    uint16_t* r = fb + (y + j) * W + x;
+    for (int i = 0; i < w; i++) r[i] = col;
+  }
+}
+void frame(int x, int y, int w, int h, uint16_t c) { rect(x, y, w, 1, c); rect(x, y + h - 1, w, 1, c); rect(x, y, 1, h, c); rect(x + w - 1, y, 1, h, c); }
+
+void text(int x, int y, const char* s, int sc, uint16_t col, int bg = -1) {
+  for (; *s; s++, x += 6 * sc) {
+    int ch = (unsigned char)*s;
+    if (ch < 32 || ch > 126) ch = '?';
+    const uint8_t* g = FONT6x10[ch - 32];
+    for (int r = 0; r < 10; r++)
+      for (int b = 0; b < 6; b++) {
+        bool on = g[r] >> (5 - b) & 1;
+        if (on) rect(x + b * sc, y + r * sc, sc, sc, col);
+        else if (bg >= 0) rect(x + b * sc, y + r * sc, sc, sc, (uint16_t)bg);
+      }
+  }
+}
+void textf(int x, int y, int sc, uint16_t col, int bg, const char* f, ...) {
+  char b[96];
+  va_list a; va_start(a, f); vsnprintf(b, sizeof(b), f, a); va_end(a);
+  text(x, y, b, sc, col, bg);
+}
+
+// ---- แพดที่น่าจะว่าง (ไม่ใช้กับจอ/PSRAM/USB)
 const int PROBE[] = {0, 1, 2, 38, 39, 41, 42};
 const int NP = sizeof(PROBE) / sizeof(PROBE[0]);
 int last[NP], lows[NP];
-
-const uint16_t C_BLACK = 0x0000, C_WHITE = 0xFFFF, C_RED = 0xF800, C_GREEN = 0x07E0,
-               C_BLUE = 0x001F, C_ORANGE = 0xFBE0, C_GREY = 0x7BEF, C_DARK = 0x2104, C_YELLOW = 0xFFE0;
-
 int bri = 255;
-void setBri(int v) {
-  bri = v;
-  ledcWrite(PIN_BL, v);
+void setBri(int v) { bri = v; ledcWrite(PIN_BL, v); }
+
+void drawPin(int i, int v) {
+  int x = 12 + (i % 4) * 116, y = 122 + (i / 4) * 54;
+  rect(x + 1, y + 26, 106, 19, v ? C_DARK : C_RED);
+  textf(x + 6, y + 28, 2, C_WHITE, -1, "%s %d", v ? "HIGH" : "LOW", lows[i]);
 }
 
 void drawStatic() {
-  gfx->fillScreen(C_BLACK);
-  // แถบสี: ต้องเห็นเรียงจากซ้าย แดง เขียว น้ำเงิน ขาว
-  const uint16_t bars[] = {C_RED, C_GREEN, C_BLUE, C_WHITE};
-  for (int i = 0; i < 4; i++) gfx->fillRect(i * 120, 0, 120, 40, bars[i]);
-  gfx->drawRect(0, 0, 480, 272, C_ORANGE);   // กรอบขอบจอ: ต้องเห็นครบ 4 ด้าน
-  gfx->setTextColor(C_ORANGE);
-  gfx->setTextSize(3);
-  gfx->setCursor(12, 52);
-  gfx->print("Didissnap S3 TEST");
-  gfx->setTextSize(1);
-  gfx->setTextColor(C_GREY);
-  gfx->setCursor(12, 82);
-  gfx->printf("480x272  heap %u KB  psram %u KB", ESP.getFreeHeap() / 1024, ESP.getFreePsram() / 1024);
-  gfx->setCursor(12, 96);
-  gfx->print("Touch a pad to GND -> its GPIO turns RED");
+  rect(0, 0, W, H, C_BLACK);
+  const uint16_t bars[] = {C_RED, C_GREEN, C_BLUE, C_WHITE};   // ต้องเรียง แดง เขียว น้ำเงิน ขาว
+  for (int i = 0; i < 4; i++) rect(i * 120, 0, 120, 40, bars[i]);
+  frame(0, 0, W, H, C_ORANGE);                                   // กรอบขอบจอ ต้องเห็นครบ 4 ด้าน
+  text(12, 50, "Didissnap S3 TEST", 3, C_ORANGE);
+  textf(12, 84, 1, C_GREY, -1, "480x272  heap %u KB  psram %u KB", ESP.getFreeHeap() / 1024, ESP.getFreePsram() / 1024);
+  text(12, 98, "Touch a pad to GND -> its GPIO turns RED", 1, C_GREY);
   for (int i = 0; i < NP; i++) {
-    int x = 12 + (i % 4) * 116, y = 120 + (i / 4) * 54;
-    gfx->drawRect(x, y, 108, 46, C_GREY);
-    gfx->setTextSize(2);
-    gfx->setTextColor(C_WHITE);
-    gfx->setCursor(x + 6, y + 6);
-    gfx->printf("IO%d", PROBE[i]);
+    int x = 12 + (i % 4) * 116, y = 122 + (i / 4) * 54;
+    frame(x, y, 108, 46, C_GREY);
+    textf(x + 6, y + 5, 2, C_WHITE, -1, "IO%d", PROBE[i]);
     last[i] = -1;
   }
-}
-
-void drawPin(int i, int v) {
-  int x = 12 + (i % 4) * 116, y = 120 + (i / 4) * 54;
-  gfx->fillRect(x + 1, y + 26, 106, 19, v ? C_DARK : C_RED);
-  gfx->setTextSize(2);
-  gfx->setTextColor(C_WHITE);
-  gfx->setCursor(x + 6, y + 28);
-  gfx->printf("%s %d", v ? "HIGH" : "LOW ", lows[i]);
 }
 
 void setup() {
   Serial.begin(115200);
   delay(500);
-  Serial.println("\n=== Didissnap S3 test v2 ===");
+  Serial.println("\n=== Didissnap S3 test v3 (esp_lcd) ===");
   Serial.printf("[1] chip %s  flash %u MB  PSRAM %u KB\n", ESP.getChipModel(), ESP.getFlashChipSize() >> 20, ESP.getPsramSize() / 1024);
-  if (ESP.getPsramSize() == 0) Serial.println("    !! ไม่เจอ PSRAM -> Tools > PSRAM ต้องเป็น OPI PSRAM (จอใช้ไม่ได้ถ้าไม่มี PSRAM)");
+  if (ESP.getPsramSize() == 0) Serial.println("    !! ไม่เจอ PSRAM -> Tools > PSRAM ต้องเป็น OPI PSRAM");
 
-  // [2] เปิดขา DISP + กะพริบไฟจอ 3 ครั้ง: ถ้าเห็นจอสว่าง-ดับ = โค้ดรันแล้ว และไฟจอปกติ
   pinMode(PIN_DISP, OUTPUT);
   digitalWrite(PIN_DISP, HIGH);
   pinMode(PIN_BL, OUTPUT);
-  for (int i = 0; i < 3; i++) {
-    digitalWrite(PIN_BL, HIGH); delay(400);
-    digitalWrite(PIN_BL, LOW);  delay(300);
-  }
+  for (int i = 0; i < 3; i++) { digitalWrite(PIN_BL, HIGH); delay(400); digitalWrite(PIN_BL, LOW); delay(300); }
   digitalWrite(PIN_BL, HIGH);
   Serial.println("[2] backlight blink x3 done");
 
-  bool ok = gfx->begin();
-  Serial.printf("[3] gfx->begin() = %s  (PSRAM free %u KB)\n", ok ? "OK" : "FAILED", ESP.getFreePsram() / 1024);
+  bool ok = lcdBegin();
+  Serial.printf("[3] lcd init = %s  fb=%p  PSRAM free %u KB\n", ok ? "OK" : "FAILED", fb, ESP.getFreePsram() / 1024);
   ledcAttach(PIN_BL, 5000, 8);
   setBri(255);
+  if (!ok) return;
 
-  // [4] เต็มจอทีละสี แดง เขียว น้ำเงิน ขาว
   const uint16_t full[] = {C_RED, C_GREEN, C_BLUE, C_WHITE};
   const char* nm[] = {"RED", "GREEN", "BLUE", "WHITE"};
   for (int i = 0; i < 4; i++) {
-    gfx->fillScreen(full[i]);
+    rect(0, 0, W, H, full[i]);
+    flush();
     Serial.printf("[4] full screen %s\n", nm[i]);
     delay(800);
   }
-  for (int i = 0; i < NP; i++) {
-    pinMode(PROBE[i], INPUT_PULLUP);
-    lows[i] = 0;
-  }
+  for (int i = 0; i < NP; i++) { pinMode(PROBE[i], INPUT_PULLUP); lows[i] = 0; }
   drawStatic();
-  Serial.printf("Didissnap S3 test  heap %u  psram %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
+  flush();
+  Serial.println("[5] test screen ready");
 }
 
 uint32_t frames = 0, fpsT = 0, briT = 0;
 int barX = 0;
 
 void loop() {
-  // แถบวิ่ง (เช็คความลื่น)
-  gfx->fillRect(barX, 236, 60, 26, C_DARK);
+  if (!fb) { delay(1000); Serial.println("lcd init failed - see [3]"); return; }
+  rect(barX, 238, 60, 26, C_DARK);
   barX = (barX + 4) % 420;
-  gfx->fillRect(barX, 236, 60, 26, C_ORANGE);
+  rect(barX, 238, 60, 26, C_ORANGE);
   frames++;
   if (millis() - fpsT >= 1000) {
-    gfx->fillRect(400, 52, 76, 24, C_BLACK);
-    gfx->setTextSize(2);
-    gfx->setTextColor(C_YELLOW);
-    gfx->setCursor(400, 56);
-    gfx->printf("%u fps", frames);
+    rect(392, 50, 84, 24, C_BLACK);
+    textf(392, 52, 2, C_YELLOW, -1, "%u fps", frames);
     frames = 0;
     fpsT = millis();
   }
-  // GPIO สด
   for (int i = 0; i < NP; i++) {
     int v = digitalRead(PROBE[i]);
     if (v != last[i]) {
@@ -148,11 +188,11 @@ void loop() {
       drawPin(i, v);
     }
   }
-  // IO0 (BOOT) ค้าง LOW → วนความสว่าง
   if (digitalRead(0) == LOW && millis() - briT > 700) {
     setBri(bri == 255 ? 128 : bri == 128 ? 40 : 255);
     briT = millis();
     Serial.printf("brightness %d\n", bri);
   }
+  flush();
   delay(10);
 }
