@@ -40,6 +40,7 @@ static uint16_t* gifCanvas = nullptr;
 static AnimatedGIF* gif = nullptr;
 static char lastErr[48] = "";
 // รถวิ่ง: ถอดทั้ง 20 เฟรมเก็บไว้ใน PSRAM ครั้งเดียว (เฉพาะแถวที่ขยับ = ถนน/ล้อ) แล้วสลับเฟรมเฉย ๆ → ลื่น ไม่ต้องถอดใหม่ทุกเฟรม
+static const uint32_t RUN_MS = 50;   // รถวิ่ง: 20 เฟรม/วินาที
 static const int RUN_Y0 = 95, RUN_ROWS = H - RUN_Y0;
 static uint16_t* runBlock = nullptr;
 static volatile int runReady = 0;    // ถอดเสร็จกี่เฟรม
@@ -168,9 +169,9 @@ static void task(void*) {
         } else runReady = BI_RUN_N;                       // ถอดไม่ได้ → เลิก
       }
       if (runBlock && runReady > 0 && now >= nextT) {
-        float sp = runSpeed;
-        if (sp > 1) { runIdx = (runIdx + 1) % runReady; runShow = runIdx; }
-        nextT = now + (uint32_t)constrain(2500.f / fmaxf(sp, 1.f), 40.f, 90.f);   // 11-25 เฟรม/วินาที ตามความเร็วรถ (ช้าเกินไปจะดูกระตุก)
+        runIdx = (runIdx + 1) % runReady;          // วิ่งตลอด ความเร็วคงที่ (ไม่ขึ้นกับความเร็วรถ)
+        runShow = runIdx;
+        nextT = now + RUN_MS;
       } else if (!runBlock && now >= nextT) {             // PSRAM ไม่พอ → ถอดทีละเฟรมแบบเดิม
         float sp = runSpeed;
         if (sp > 1 || shown < 0) {
