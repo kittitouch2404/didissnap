@@ -17,6 +17,7 @@
     USB CDC On Boot: Enabled · Partition Scheme: 16M Flash (3MB APP/9.9MB FATFS) หรือ Custom
     (ตัวที่ใช้จริงคือ partitions.csv ในโฟลเดอร์นี้ — core หยิบไปใช้เองเสมอ)
 */
+#pragma GCC optimize("O2")   // ส่วนวาดภาพ: เน้นความเร็ว (Arduino ตั้ง -Os ไว้)
 #include <Arduino.h>
 #include <Preferences.h>
 #include "esp_system.h"
@@ -159,6 +160,7 @@ void setup() {
     }
   } else Serial.println("SAFE MODE: skip picture storage");
 
+  gfx::copyFontsToPsram();
   step(3, "lcd");
   if (!lcd::begin()) Serial.println("LCD init FAILED (เช็ค PSRAM = OPI PSRAM)");
   showCrash();
@@ -195,8 +197,10 @@ void setup() {
   Serial.printf("Didissnap_S3 ready  heap %u  psram %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
 }
 
-static uint32_t lastUs = 0, fpsT = 0;
-static int frames = 0;
+static uint32_t lastUs = 0, fpsT = 0, drawAcc = 0, perfT = 0, lcdF0 = 0;
+static int frames = 0, perfFrames = 0, perfFps = 0, perfLcd = 0;
+static uint32_t perfDraw = 0;
+static bool showPerf = true;
 
 void loop() {
   uint32_t us = micros();
@@ -219,21 +223,40 @@ void loop() {
   if (bri != lastBri) { lcd::brightness(bri); lastBri = bri; }
 
   chooseBackground(menu::open ? -1 : c.page);
+  uint32_t tr0 = micros();
   uint16_t* fb = lcd::back();
   for (int y0 = 0; y0 < LCD_H; y0 += STRIP_H) {
     gfx::strip(stripBuf, y0, y0 + STRIP_H);
     if (menu::open) menu::draw();
     else pages::draw(c.page);
     menu::drawToast();
+    if (y0 == LCD_H - STRIP_H && showPerf) {     // ตัวเลขวัดความเร็ว (ชั่วคราว) มุมล่างซ้าย
+      char pb[48];
+      snprintf(pb, sizeof(pb), "%d fps  draw %d ms  lcd %d Hz", perfFps, perfDraw / 1000, perfLcd);
+      gfx::fillA(0, LCD_H - 14, gfx::textWidth(pb, 11, 600) + 8, 14, 0, 180);
+      gfx::text(pb, 4, LCD_H - 3, 11, gfx::rgb(0x00E05A), gfx::LEFT, 600);
+    }
     copyStrip(fb, y0, c.flip);
   }
+  uint32_t tr1 = micros();
   lcd::present();
+  drawAcc += tr1 - tr0;
   // present() รอ vsync อยู่แล้ว → เฟรมตรงจังหวะจอ (~44 fps หรือ 22 fps สม่ำเสมอ ไม่กระตุก)
 
   frames++;
+  perfFrames++;
+  if (millis() - perfT >= 1000) {
+    perfFps = perfFrames;
+    perfDraw = perfFrames ? drawAcc / perfFrames : 0;
+    perfLcd = lcd::frames - lcdF0;
+    lcdF0 = lcd::frames;
+    perfFrames = 0;
+    drawAcc = 0;
+    perfT = millis();
+  }
   if (g_magic && millis() > 8000) { g_magic = 0; g_crashCount = 0; Serial.println("[boot] running OK"); }
   if (millis() - fpsT >= 5000) {
-    Serial.printf("fps %.1f  page %d  heap %u  psram %u\n", frames / 5.f, c.page + 1, ESP.getFreeHeap(), ESP.getFreePsram());
+    Serial.printf("fps %.1f  draw %u ms  lcd %d Hz  page %d  heap %u  psram %u\n", frames / 5.f, (unsigned)(perfDraw / 1000), perfLcd, c.page + 1, ESP.getFreeHeap(), ESP.getFreePsram());
     frames = 0;
     fpsT = millis();
   }

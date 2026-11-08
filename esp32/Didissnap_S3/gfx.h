@@ -219,15 +219,45 @@ inline void line(float x0, float y0, float x1, float y1, uint16_t c, float w = 1
 
 // ---------------------------------------------------------------- ตัวอักษร
 enum Align { LEFT, CENTER, RIGHT };
+// ฟอนต์ที่ใช้จริง (ตอนเปิดเครื่อง copyFontsToPsram() ย้ายรูปตัวอักษรจากแฟลชไป PSRAM — เร็วกว่าแฟลช DIO มาก)
+static DFont fontsRt[N_FONTS];
+static bool fontsInit = false;
+inline const DFont* fontTable() {
+  if (!fontsInit) { memcpy(fontsRt, FONTS, sizeof(FONTS)); fontsInit = true; }
+  return fontsRt;
+}
+inline void copyFontsToPsram() {
+#ifndef BG_HOST
+  const DFont* t = fontTable();
+  for (int i = 0; i < N_FONTS; i++) {
+    const DGlyph& last = t[i].g[t[i].last - t[i].first];
+    size_t n = last.off + (size_t)((last.w + 1) / 2) * last.h + 16;
+    uint8_t* p = (uint8_t*)heap_caps_malloc(n, MALLOC_CAP_SPIRAM);
+    DGlyph* g = (DGlyph*)heap_caps_malloc(sizeof(DGlyph) * (t[i].last - t[i].first + 1), MALLOC_CAP_SPIRAM);
+    if (!p || !g) break;
+    memcpy(p, t[i].bmp, n);
+    memcpy(g, t[i].g, sizeof(DGlyph) * (t[i].last - t[i].first + 1));
+    fontsRt[i].bmp = p;
+    fontsRt[i].g = g;
+  }
+#endif
+}
+static const DFont* lastPick = nullptr;
+static float lastSize = -1;
+static int lastW = -1;
+static bool lastIt = false;
 inline const DFont* pick(float size, int weight, bool italic) {
+  if (size == lastSize && weight == lastW && italic == lastIt) return lastPick;
+  const DFont* T = fontTable();
   int wc = weight <= 600 ? 600 : (weight <= 800 ? 800 : 900);
   const DFont* best = nullptr;
   float bd = 1e9;
   for (int i = 0; i < N_FONTS; i++) {
-    const DFont& f = FONTS[i];
+    const DFont& f = T[i];
     float d = fabsf(f.size - size) * 10 + (f.weight != wc ? (f.weight > wc ? 3 : 6) * 4 : 0) + ((f.italic != 0) != italic ? 25 : 0);
     if (d < bd) { bd = d; best = &f; }
   }
+  lastPick = best; lastSize = size; lastW = weight; lastIt = italic;
   return best;
 }
 static inline int glyphIndex(const DFont* f, const unsigned char*& s) {
