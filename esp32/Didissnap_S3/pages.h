@@ -58,7 +58,8 @@ inline void gearBox(int x, int y, int w, int h, uint16_t bgc, uint16_t fg) {
 }
 // หน้ารูป 13-16: ตัวอักษรพิกเซลแบบเกม 16-bit (Press Start 2P + ขอบดำ) + แถบรอบแบบหลอดพลัง
 // ขนาด (k = พิกเซลต่อจุด, สูง 8k) — ตั้งจากตัวปรับในพรีวิว
-static const int PX_LAB = 2, PX_RPM = 4, PX_SPD = 3, PX_SM = 3, PX_BAR_W = 226, PX_BAR_H = 19, PX_OL = 1;
+static const int PX_LAB = 2, PX_RPM = 4, PX_SPD = 3, PX_SM = 3, PX_BAR_W = 226, PX_BAR_H = 19, PX_OL = 1;   // หน้า 13
+static const int PXT_LAB = 1, PXT_RPM = 2;                                                                // หน้า 14-16
 constexpr uint16_t PXG = rgb(0x39E05A), PXY = rgb(0xFFD21E), PXR = rgb(0xFF3030);
 inline void rpmHp(int x, int y, int w, int h) {
   float rf = redF();
@@ -67,20 +68,20 @@ inline void rpmHp(int x, int y, int w, int h) {
 inline void pt(const char* s, int x, int y, int k, uint16_t c = WH, Align al = LEFT) { pxText(s, x, y, k, c, al, PX_OL); }
 inline int lh() { return 8 * PX_LAB; }
 // ค่าตัวเลข + หน่วย "C" ต่อท้าย (ชิดล่างของตัวเลข)
-inline void valC(const char* v, int x, int y, int k, uint16_t c) {
+inline void valC(const char* v, int x, int y, int k, uint16_t c, int lab = PX_LAB) {
   pt(v, x, y, k, c);
-  pt("C", x + pxWidth(v, k) + 6, y + 8 * k - lh(), PX_LAB);
+  pt("C", x + pxWidth(v, k) + 2 + 2 * lab, y + 8 * k - 8 * lab, lab);
 }
 inline void topBar() {               // หน้า 14-16
-  int vy = 8 + lh() + 4;
-  int rr = 10 + pxWidth("8888", PX_RPM);
-  int by = vy + 8 * PX_RPM + 6;
+  int vy = 8 + 8 * PXT_LAB + 4;
+  int rr = 10 + pxWidth("8888", PXT_RPM);
+  int by = vy + 8 * PXT_RPM + 6;
   fillA(0, 0, W, by + PX_BAR_H + 4, BK, 40);
-  pt("RPM", 10, 8, PX_LAB);
-  pt(f0(D.rpm), rr, vy, PX_RPM, over() ? PXR : WH, RIGHT);
-  int cx = rr + 24;
-  pt("COOLANT", cx, 8, PX_LAB);
-  valC(f0(D.ect), cx, vy, PX_RPM, ectC());
+  pt("RPM", 10, 8, PXT_LAB);
+  pt(f0(D.rpm), rr, vy, PXT_RPM, over() ? PXR : WH, RIGHT);
+  int cx = max(rr + 24, 10 + pxWidth("RPM", PXT_LAB) + 24);
+  pt("COOLANT", cx, 8, PXT_LAB);
+  valC(f0(D.ect), cx, vy, PXT_RPM, ectC(), PXT_LAB);
   obd(474, 14, RIGHT);
   rpmHp(8, by, PX_BAR_W, PX_BAR_H);
 }
