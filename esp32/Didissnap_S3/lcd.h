@@ -1,5 +1,6 @@
 // lcd.h — จอ RGB 480x272 ของ Panlee ZX4D30NE01S (ใช้ esp_lcd ที่มากับ ESP32 core 3.x)
-// วาดลงบัฟเฟอร์หลัง แล้วสลับตอนจอเริ่มเฟรมใหม่ (ไม่มีภาพฉีก)
+// บัฟเฟอร์จอชุดเดียว (แบบสเก็ตช์ทดสอบ) + บัฟเฟอร์หลังของเราเอง คัดลอกขึ้นจอตอน vsync
+// (num_fbs = 2 บนบอร์ดนี้ทำให้ภาพเฟรมสลับเลื่อนซ้อนกันเป็นสองชุด)
 #pragma once
 #include <Arduino.h>
 #include "esp_lcd_panel_rgb.h"
@@ -14,8 +15,8 @@
 namespace lcd {
 
 static esp_lcd_panel_handle_t panel = nullptr;
-static uint16_t* fb[2] = {nullptr, nullptr};
-static int front = 0;
+static uint16_t* fb = nullptr;     // บัฟเฟอร์ที่จออ่าน (PSRAM)
+static uint16_t* bb = nullptr;     // บัฟเฟอร์หลังที่เราวาด (PSRAM)
 static SemaphoreHandle_t vsyncSem = nullptr;
 
 static bool IRAM_ATTR onVsync(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t*, void*) {
@@ -39,7 +40,7 @@ inline bool begin() {
   c.timings.vsync_front_porch = 60;
   c.timings.flags.pclk_active_neg = 1;
   c.data_width = 16;
-  c.num_fbs = 2;
+  c.num_fbs = 1;
   c.dma_burst_size = 64;
   c.hsync_gpio_num = 47;
   c.vsync_gpio_num = 48;
@@ -59,32 +60,34 @@ inline bool begin() {
   esp_lcd_rgb_panel_register_event_callbacks(panel, &cb, nullptr);
   esp_lcd_panel_reset(panel);
   esp_lcd_panel_init(panel);
-  void *a = nullptr, *b = nullptr;
-  if (esp_lcd_rgb_panel_get_frame_buffer(panel, 2, &a, &b) != ESP_OK || !a || !b) return false;
-  fb[0] = (uint16_t*)a;
-  fb[1] = (uint16_t*)b;
-  memset(fb[0], 0, LCD_W * LCD_H * 2);
-  memset(fb[1], 0, LCD_W * LCD_H * 2);
+  void* a = nullptr;
+  if (esp_lcd_rgb_panel_get_frame_buffer(panel, 1, &a) != ESP_OK || !a) return false;
+  bb = (uint16_t*)heap_caps_aligned_alloc(64, LCD_W * LCD_H * 2, MALLOC_CAP_SPIRAM);
+  if (!bb) return false;
+  fb = (uint16_t*)a;
+  memset(fb, 0, LCD_W * LCD_H * 2);
+  memset(bb, 0, LCD_W * LCD_H * 2);
+  esp_cache_msync(fb, LCD_W * LCD_H * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
   ledcAttach(PIN_BL, 5000, 8);
   ledcWrite(PIN_BL, 0);
   return true;
 }
 
-inline bool ok() { return fb[0] && fb[1]; }
+inline bool ok() { return fb && bb; }
 static uint16_t* dummy = nullptr;   // ถ้าจอเริ่มไม่ได้ วาดลงที่นี่แทน (ไม่ค้าง)
 inline uint16_t* back() {
   if (!ok()) { if (!dummy) dummy = (uint16_t*)heap_caps_malloc(LCD_W * LCD_H * 2, MALLOC_CAP_SPIRAM); return dummy; }
-  return fb[front ^ 1];
+  return bb;
 }
 
 // ส่งบัฟเฟอร์หลังขึ้นจอ แล้วรอจนจอเปลี่ยนไปแสดงเฟรมใหม่จริง
 inline void present() {
   if (!ok()) { delay(16); return; }
-  uint16_t* b = back();   // (draw_bitmap เขียน cache ลง PSRAM ให้เองแล้ว)
+  // รอจอเริ่มช่วงว่างระหว่างเฟรม แล้วคัดลอกทั้งจอ (เร็วกว่าจอไล่แสดงภาพ → ไม่ฉีก)
   xSemaphoreTake(vsyncSem, 0);
-  esp_lcd_panel_draw_bitmap(panel, 0, 0, LCD_W, LCD_H, b);
-  front ^= 1;
   xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(40));
+  memcpy(fb, bb, LCD_W * LCD_H * 2);
+  esp_cache_msync(fb, LCD_W * LCD_H * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 }
 
 inline void brightness(int pct) { ledcWrite(PIN_BL, constrain(pct, 0, 100) * 255 / 100); }
