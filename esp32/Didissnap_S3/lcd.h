@@ -139,7 +139,7 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true) {
   esp_lcd_rgb_panel_config_t c;
   memset(&c, 0, sizeof(c));
   c.clk_src = LCD_CLK_SRC_DEFAULT;
-  c.timings.pclk_hz = (uint32_t)hz * DOTS_PER_FRAME;
+  c.timings.pclk_hz = hz == 44 ? LCD_PCLK_HZ : (uint32_t)hz * DOTS_PER_FRAME;   // 44 Hz = 10 MHz พอดี (แบบที่ใช้ได้)
   minVsyncs = every < 1 ? 1 : every;
   c.timings.h_res = LCD_W;
   c.timings.v_res = LCD_H;
