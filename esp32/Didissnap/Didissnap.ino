@@ -21,9 +21,10 @@
 #include "DidissnapButtons.h"
 #include "DidissnapPics.h"
 
-// ขาปุ่ม: แก้ให้ตรงกับ schematic ของบอร์ด (ช่อง CN3: IO1 / IO2)
+// ขาปุ่ม (ทดสอบกับบอร์ดจริง ZX4D30NE01S-V15): แพด RXD2 = IO1, แพด RXD1 = IO41
+// ต่อปุ่มระหว่างแพดกับ GND ไม่ต้องใส่ตัวต้านทาน (ใช้ pull-up ภายใน) · ห้ามใช้ IO38 (มีวงจรอื่นดึง LOW)
 #define PIN_BTN_A 1
-#define PIN_BTN_B 2
+#define PIN_BTN_B 41
 
 Preferences prefs;
 
