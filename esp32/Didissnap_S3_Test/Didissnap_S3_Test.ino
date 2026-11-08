@@ -147,7 +147,6 @@ const char* why(esp_reset_reason_t r) {
     case ESP_RST_PANIC: return "PANIC (โค้ดค้าง/crash)";
     case ESP_RST_INT_WDT: case ESP_RST_TASK_WDT: case ESP_RST_WDT: return "WATCHDOG (ค้าง)";
     case ESP_RST_SW: return "SOFTWARE reset";
-    case ESP_RST_USB: return "USB reset";
     case ESP_RST_EXT: return "EXTERNAL (ปุ่ม/ขา EN)";
     default: return "OTHER";
   }
