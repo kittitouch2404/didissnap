@@ -112,6 +112,62 @@ static void findDma() {
 
 inline void paceCopy(uint16_t* dst, const uint16_t* src, size_t bytes);
 
+// ---------- คัดลอกเฉพาะส่วนที่เปลี่ยน ----------
+// แบ่งจอเป็นแถบเล็กละ 4 แถว (68 แถบ) จำ "ลายนิ้วมือ" (hash) ของแต่ละแถบในบัฟเฟอร์หลังแต่ละชุดและบนจอ
+// แถบที่เหมือนเดิมไม่ต้องคัดลอก → ลดงาน PSRAM ซึ่งเป็นคอขวดหลัก (ภาพนิ่ง/ตัวหนังสือที่ไม่เปลี่ยน ไม่ต้องย้ายทุกเฟรม)
+static const int BAND_H = 4, NB = LCD_H / BAND_H;
+static const size_t BAND_BYTES = (size_t)BAND_H * LCD_W * 2;
+static const uint32_t NOHASH = 0x80000000u;          // "ไม่รู้" (hash จริงไม่มีบิตบนสุด)
+static uint32_t bbHash[2][NB], fbHash[NB];
+static bool bbFull[2] = {false, false};
+static volatile uint32_t bandsCopied = 0;            // นับแถบที่คัดลอกขึ้นจอจริง (ดูใน Serial)
+static void resetHashes() {
+  for (int b = 0; b < NB; b++) { bbHash[0][b] = bbHash[1][b] = fbHash[b] = NOHASH; }
+}
+static inline uint32_t hashRows(const uint16_t* p, size_t words32, uint32_t seed) {
+  const uint32_t* q = (const uint32_t*)p;
+  uint32_t h = 2166136261u ^ seed;
+  for (size_t i = 0; i < words32; i++) h = (h ^ q[i]) * 16777619u;
+  return (h ^ (h >> 15)) & 0x7FFFFFFFu;
+}
+inline int backIndex() { return wIdx; }
+// ใส่แถบ dBand (แถวจริงบนจอ) ลงบัฟเฟอร์หลัง จากแถว 4 แถวในบัฟเฟอร์แถบ (ข้ามถ้าเหมือนของเดิมในบัฟเฟอร์นี้)
+inline void putBand(int dBand, const uint16_t* src, bool flip) {
+  int w = wIdx;
+  uint32_t h = hashRows(src, BAND_BYTES / 4, flip ? 0x5bd1e995u : 0);
+  if (bbHash[w][dBand] == h) return;
+  uint16_t* d = bb[w] + (size_t)dBand * BAND_H * LCD_W;
+  if (!flip) memcpy(d, src, BAND_BYTES);
+  else
+    for (int r = 0; r < BAND_H; r++) {      // กลับจอ 180°: แถวกลับหัว + กลับซ้ายขวา
+      const uint16_t* s = src + r * LCD_W;
+      uint16_t* o = d + (BAND_H - 1 - r) * LCD_W + LCD_W - 1;
+      for (int x = 0; x < LCD_W; x++) *o-- = s[x];
+    }
+  esp_cache_msync(d, BAND_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+  esp_rom_delay_us(25);                     // เว้นจังหวะให้จออ่าน PSRAM
+  bbHash[w][dBand] = h;
+}
+// คัดลอกบัฟเฟอร์หลัง p ขึ้นจอ เฉพาะแถบที่ต่างจากบนจอ
+static void copyChanged(int p) {
+  if (bbFull[p]) {
+    paceCopy(fb, bb[p], FB_BYTES);
+    for (int b = 0; b < NB; b++) fbHash[b] = NOHASH;
+    bandsCopied += NB;
+    return;
+  }
+  int n = 0;
+  for (int b = 0; b < NB; b++) {
+    if (bbHash[p][b] == fbHash[b]) continue;
+    size_t o = (size_t)b * BAND_H * LCD_W;
+    memcpy(fb + o, bb[p] + o, BAND_BYTES);
+    esp_cache_msync(fb + o, BAND_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+    fbHash[b] = bbHash[p][b];
+    if (++n % 2 == 0) esp_rom_delay_us(60);
+  }
+  bandsCopied += n;
+}
+
 // งานคัดลอกภาพขึ้นจอ (คอร์ 1): รอ vsync แล้วคัดลอกทั้งจอ ระหว่างนั้นโปรแกรมหลักวาดเฟรมถัดไปลงอีกบัฟเฟอร์ได้เลย
 static void presenter(void*) {
   uint32_t lastF = 0;
@@ -123,7 +179,7 @@ static void presenter(void*) {
       xSemaphoreTake(vsyncSem, 0);
       xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60));
     } while ((int)(frames - lastF) < minVsyncs);
-    paceCopy(fb, bb[p], FB_BYTES);
+    copyChanged(p);
     lastF = frames;
     pending = -1;
     copied++;
@@ -178,6 +234,7 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true) {
   }
   fb = (uint16_t*)a;
   memset(fb, 0, FB_BYTES);
+  resetHashes();
   esp_cache_msync(fb, FB_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
   ledcAttach(PIN_BL, 5000, 8);
   ledcWrite(PIN_BL, 0);
@@ -223,7 +280,8 @@ inline void present() {
   if (!usePresenter) {                       // แบบเดิม: รอ vsync แล้วคัดลอกเอง
     xSemaphoreTake(vsyncSem, 0);
     xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60));
-    paceCopy(fb, bb[wIdx], FB_BYTES);
+    copyChanged(wIdx);
+    bbFull[wIdx] = false;
     return;
   }
   while (copied != handed) xSemaphoreTake(doneSem, pdMS_TO_TICKS(50));
@@ -231,6 +289,15 @@ inline void present() {
   handed++;
   xSemaphoreGive(pendSem);
   wIdx ^= 1;
+  bbFull[wIdx] = false;                      // ชุดที่จะวาดต่อ: คัดลอกเสร็จแล้ว ใช้ hash ตามปกติ
+}
+// ส่งขึ้นจอทั้งภาพ (ใช้เมื่อวาดลง back() ตรง ๆ ไม่ผ่าน putBand เช่น โลโก้/หน้าจอแจ้งปัญหา)
+inline void presentFull() {
+  if (!ok()) return;
+  int w = wIdx;
+  bbFull[w] = true;
+  for (int b = 0; b < NB; b++) bbHash[w][b] = NOHASH;
+  present();
 }
 // รอจนเฟรมล่าสุดขึ้นจอจริง (ใช้ตอนเปิดเครื่อง/หน้าจอแจ้งปัญหา)
 inline void flush() {

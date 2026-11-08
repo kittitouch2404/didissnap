@@ -62,13 +62,11 @@ void onHold2() {
 #define N_STRIPS (LCD_H / STRIP_H)
 static uint16_t* stripBuf = nullptr;
 static uint16_t* stripBuf2 = nullptr;
-static void copyStrip(uint16_t* fb, int y0, bool flip, const uint16_t* src) {
-  if (!flip) { lcd::paceCopy(fb + y0 * LCD_W, src, STRIP_H * LCD_W * 2); return; }
-  for (int r = 0; r < STRIP_H; r++) {     // กลับจอ 180°: แถวกลับหัว + กลับซ้ายขวา
-    const uint16_t* s = src + r * LCD_W;
-    uint16_t* d = fb + (LCD_H - 1 - (y0 + r)) * LCD_W + LCD_W - 1;
-    for (int x = 0; x < LCD_W; x++) *d-- = s[x];
-    if ((r & 7) == 7) esp_rom_delay_us(60);   // เว้นจังหวะให้จอ
+// คัดลอกแถบที่วาดเสร็จลงบัฟเฟอร์หลัง ทีละแถบเล็ก 4 แถว (ข้ามแถบที่เหมือนเดิม)
+static void copyStrip(int y0, bool flip, const uint16_t* src) {
+  for (int r = 0; r < STRIP_H; r += lcd::BAND_H) {
+    int band = (y0 + r) / lcd::BAND_H;
+    lcd::putBand(flip ? lcd::NB - 1 - band : band, src + r * LCD_W, flip);
   }
 }
 
@@ -90,12 +88,12 @@ static void drawStrip(int k, uint16_t* sb) {
   menu::drawToast();
   if (k == N_STRIPS - 1 && showPerf) {     // ตัวเลขวัดความเร็ว (ชั่วคราว) มุมล่างซ้าย
     char pb[80];
-    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz  %dcore %s", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd,
-             (workGo && menu::drawCores == 2) ? 2 : 1, menu::fontMem ? "FLASH" : "PSRAM");
+    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz  %dcore", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd,
+             (workGo && menu::drawCores == 2) ? 2 : 1);
     gfx::fillA(0, LCD_H - 14, gfx::textWidth(pb, 11, 600) + 8, 14, 0, 180);
     gfx::text(pb, 4, LCD_H - 3, 11, gfx::rgb(0x00E05A), gfx::LEFT, 600);
   }
-  copyStrip(jobFb, y0, jobFlip, sb);
+  copyStrip(y0, jobFlip, sb);
 }
 static void renderStrips(uint16_t* sb) {
   int k;
@@ -143,7 +141,7 @@ static void bootLogo() {
   if (!lcd::ok()) return;
   uint16_t* fb = lcd::back();
   bg::decodeJpeg(BI_LOGO, sizeof(BI_LOGO), fb);
-  lcd::present();
+  lcd::presentFull();
   for (int i = 0; i <= 100; i += 4) { lcd::brightness(i * didicfg::cfg.bri / 100); delay(12); }
   delay(1200);
 }
@@ -219,7 +217,7 @@ static void showCrash() {
     gfx::text(bt, 240, 214, 10, gfx::rgb(0x8FD3FF), gfx::CENTER, 500);
   }
   gfx::text("Take a photo and send it to Claude", 240, 240, 13, gfx::rgb(0x888888), gfx::CENTER, 600);
-  lcd::present();
+  lcd::presentFull();
   lcd::brightness(80);
   delay(cdOk ? 8000 : 4000);
   esp_core_dump_image_erase();
@@ -296,8 +294,8 @@ void setup() {
     xTaskCreatePinnedToCore(drawWorker, "draw2", 8192, nullptr, 3, nullptr, 0);
   } else Serial.println("2nd strip buffer: no internal RAM -> draw on 1 core");
   menu::onLcdMode = onLcdMode;
-  menu::drawCores = safeDraw ? 1 : constrain(prefs.getInt("cores", 1), 1, 2);
-  menu::fontMem = prefs.getInt("fontMem", 0) & 1;
+  menu::drawCores = safeDraw ? 1 : constrain(prefs.getInt("cores", 2), 1, 2);
+  menu::fontMem = 0;   // ทดสอบแล้ว PSRAM/แฟลชเร็วเท่ากัน
   menu::onPerfOpt = onPerfOpt;
   applyPerfOpt();
   perf::begin();
@@ -358,7 +356,8 @@ void loop() {
   }
   if (g_magic && millis() > 8000) { g_magic = 0; g_crashCount = 0; Serial.println("[boot] running OK"); }
   if (millis() - fpsT >= 5000) {
-    Serial.printf("fps %.1f  draw %u ms  max %d ms  lcd %d Hz  flash-pause %u  page %d  heap %u  psram %u\n", frames / 5.f, (unsigned)(perfDraw / 1000), perfMax, perfLcd, (unsigned)lcd::flashPauses, c.page + 1, ESP.getFreeHeap(), ESP.getFreePsram());
+    Serial.printf("fps %.1f  draw %u ms  max %d ms  lcd %d Hz  bands %u/s  flash-pause %u  page %d  heap %u  psram %u\n", frames / 5.f, (unsigned)(perfDraw / 1000), perfMax, perfLcd, (unsigned)(lcd::bandsCopied / 5), (unsigned)lcd::flashPauses, c.page + 1, ESP.getFreeHeap(), ESP.getFreePsram());
+    lcd::bandsCopied = 0;
     frames = 0;
     fpsT = millis();
   }

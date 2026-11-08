@@ -22,7 +22,6 @@ static const Item ITEMS[] = {
     {"GEARS", "gearCount", 3, 6, 1},
     {"REFRESH", "lcdMode", 0, 3, 1},
     {"DRAW CORES", "cores", 1, 2, 1},
-    {"FONT MEMORY", "fontMem", 0, 1, 1},
     {"PEAK RESET", nullptr, 0, 0, 0},
     {"TRIP RESET", nullptr, 0, 0, 0},
     {"WIFI", nullptr, 0, 0, 0},
