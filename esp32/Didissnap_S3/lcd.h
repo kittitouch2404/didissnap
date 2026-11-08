@@ -49,8 +49,8 @@ inline bool begin() {
   const int data[16] = {9, 10, 11, 12, 13, 16, 17, 18, 8, 3, 46, 4, 5, 6, 7, 15};
   for (int i = 0; i < 16; i++) c.data_gpio_nums[i] = data[i];
   c.flags.fb_in_psram = 1;
-  // บัฟเฟอร์สำรองใน RAM ภายใน: จอดึงภาพตรงกลับมาเองทุกเฟรม (กันภาพเลื่อนตอนชิปเขียนแฟลช)
-  c.bounce_buffer_size_px = LCD_W * 8;   // ต้องหาร 480x272 ลงตัว (272 / 8 = 34)
+  // ไม่ใช้ bounce buffer: core ตั้ง LCD_RGB_ISR_IRAM_SAFE ไว้ ถ้าใช้ bounce buffer ตอนชิปเขียนแฟลช (PSRAM ปิดชั่วคราว)
+  // จะค้างจน watchdog รีเซ็ต — ภาพที่เลื่อนตอนเขียนแฟลช core แก้ให้เองทุก vsync (LCD_RGB_RESTART_IN_VSYNC)
   if (esp_lcd_new_rgb_panel(&c, &panel) != ESP_OK) return false;
   vsyncSem = xSemaphoreCreateBinary();
   esp_lcd_rgb_panel_event_callbacks_t cb;
