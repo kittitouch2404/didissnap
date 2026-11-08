@@ -3,13 +3,17 @@
 #include "gfx.h"
 #include "data.h"
 #include "bg.h"
+#include "pages2.h"
 
 namespace pages {
 using namespace gfx;
 
-static const int N = 12;
+static const int N = 16;
 static const char* const NAMES[N] = {"Bar graph", "Yellow box", "Race bar", "Half gauge", "Round gauge", "Strip",
-                                     "Race dash", "Gear big", "Picture", "Car run", "Photo", "Pic by rpm"};
+                                     "Race dash", "Gear big", "Red stripe", "ECU", "Record", "OBD2 table",
+                                     "Picture", "Car run", "Photo", "Pic by rpm"};
+// หน้ารูป (ใช้ slot 0-2 ของรูปที่ส่งจากแอป) และหน้ารูปตามรอบ
+static const int PG_PIC = 12, PG_RUN = 13, PG_PHOTO = 14, PG_RPM = 15, PG_RECORD = 10;
 
 constexpr uint16_t ORG = rgb(0xFF7A00), YEL = rgb(0xFFC400), RD = rgb(0xFF2A2A), GR = rgb(0x00E05A),
                    BL = rgb(0x2E7BFF), WH = 0xFFFF, BK = 0x0000;
@@ -440,8 +444,12 @@ inline void draw(int p) {
     case 5: p6(); break;
     case 6: p7(); break;
     case 7: p8(); break;
-    case 8: p9(); break;
-    case 9: case 10: pTop(); break;
+    case 8: pages2::redstripe(); dots(); break;
+    case 9: pages2::ecu(); dots(); shiftFlash(); break;
+    case 10: pages2::record(); dots(); break;
+    case 11: pages2::pids(); dots(); break;
+    case 12: p9(); break;
+    case 13: case 14: pTop(); break;
     default: p12(); break;
   }
 }

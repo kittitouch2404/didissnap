@@ -142,6 +142,27 @@ inline void arc(float cx, float cy, float r, float a0, float a1, uint16_t c, flo
   }
 }
 
+// วงกลมไล่สีจากกลางออกขอบ (c0 กลาง → c1 ที่ระยะ mid → c2 ขอบ) จุดศูนย์กลางสีเลื่อนได้ (fy)
+static inline uint16_t lerp565(uint16_t a, uint16_t b, float t) { return blend(b, a, (uint8_t)(fminf(1.f, fmaxf(0.f, t)) * 255)); }
+inline void radial(float cx, float cy, float r, uint16_t c0, uint16_t c1, uint16_t c2, float mid = .55f, float fy = 0) {
+  int y0 = (int)floorf(cy - r - 1), y1 = (int)ceilf(cy + r + 1);
+  for (int yy = y0; yy <= y1; yy++) {
+    if ((unsigned)yy >= (unsigned)H) continue;
+    float dy = yy + 0.5f - cy;
+    if (fabsf(dy) > r + 1) continue;
+    float span = sqrtf(fmaxf(0.f, (r + 1) * (r + 1) - dy * dy));
+    for (int xx = (int)floorf(cx - span); xx <= (int)ceilf(cx + span); xx++) {
+      if ((unsigned)xx >= (unsigned)W) continue;
+      float dx = xx + 0.5f - cx, d = sqrtf(dx * dx + dy * dy);
+      float a = cov(r - d);
+      if (a <= 0) continue;
+      float ddy = dy - fy, t = sqrtf(dx * dx + ddy * ddy) / r;
+      uint16_t c = t < mid ? lerp565(c0, c1, t / mid) : lerp565(c1, c2, (t - mid) / (1 - mid));
+      pxa(xx, yy, c, (uint8_t)(a * 255));
+    }
+  }
+}
+
 // ---------------------------------------------------------------- รูปหลายเหลี่ยม / เส้นหนา
 inline void poly(const float* xs, const float* ys, int n, uint16_t c, uint8_t alpha = 255) {
   float mny = 1e9, mxy = -1e9;

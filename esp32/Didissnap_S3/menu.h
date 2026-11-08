@@ -1,5 +1,5 @@
 // menu.h — เมนูบนจอ ใช้ปุ่ม 2 ปุ่ม (เหมือนในพรีวิว)
-//  หน้าปกติ: ปุ่ม1 สั้น = หน้าถัดไป · ปุ่ม2 สั้น = หน้าก่อน · ปุ่ม1 ค้าง = เปิดเมนู
+//  หน้าปกติ: ปุ่ม1 สั้น = หน้าถัดไป · ปุ่ม2 สั้น = หน้าก่อน · ปุ่ม1 ค้าง = เปิดเมนู · ปุ่ม2 ค้าง = ARM/STOP (หน้า Record)
 //  ในเมนู : ปุ่ม1 = ลง · ปุ่ม2 = ขึ้น · ปุ่ม2 ค้าง = เลือก/แก้ค่า · ปุ่ม1 ค้าง = ออก
 //  แก้ค่า : ปุ่ม1 = เพิ่ม · ปุ่ม2 = ลด · ปุ่ม2 ค้าง = ตกลง
 #pragma once
@@ -30,6 +30,7 @@ static bool open = false, edit = false;
 static int sel = 0;
 static void (*onPeaks)() = nullptr;
 static void (*onTrip)() = nullptr;
+static void (*onHold2)() = nullptr;   // ปุ่ม 2 ค้างตอนอยู่หน้าปกติ (หน้า Record = ARM/STOP)
 
 static char toastMsg[32] = "";
 static uint32_t toastUntil = 0;
@@ -103,7 +104,7 @@ inline void drawToast() {
 inline void button(int b, bool lng) {
   if (!open) {
     if (b == 0 && lng) { open = true; sel = 0; edit = false; return; }
-    if (lng) return;
+    if (lng) { if (onHold2) onHold2(); return; }
     int p = didicfg::cfg.page + (b == 0 ? 1 : -1);
     didicfg::setPage(((p % pages::N) + pages::N) % pages::N);
     return;
