@@ -1,5 +1,5 @@
 /*
-  Didissnap_S3_Test v4 — ทดสอบบอร์ด Panlee ZX4D30NE01S (ESP32-S3 + จอ 4.3" 480x272 RGB)
+  Didissnap_S3_Test v5 — ทดสอบบอร์ด Panlee ZX4D30NE01S (ESP32-S3 + จอ 4.3" 480x272 RGB)
   ** ไม่ต้องลง Library เพิ่ม ** ใช้ไดรเวอร์จอ RGB (esp_lcd) ที่มากับ ESP32 core 3.x
   ค่าขา/timing เหมือนโค้ดของผู้ผลิตทุกตัว: github.com/wireless-tag-com/ZX4D30NE01S
 
@@ -114,15 +114,15 @@ void textf(int x, int y, int sc, uint16_t col, int bg, const char* f, ...) {
 }
 
 // ---- แพดที่น่าจะว่าง (ไม่ใช้กับจอ/PSRAM/USB)
-const int PROBE[] = {0, 1, 2, 38, 39, 41, 42};
+const int PROBE[] = {0, 1, 2, 21, 38, 39, 41, 42, 43, 44};   // v5: เพิ่ม 21, 43, 44
 const int NP = sizeof(PROBE) / sizeof(PROBE[0]);
 int last[NP], lows[NP];
 int bri = 255;
 void setBri(int v) { bri = v; ledcWrite(PIN_BL, v); }
 
 void drawPin(int i, int v) {
-  int x = 12 + (i % 4) * 116, y = 122 + (i / 4) * 54;
-  rect(x + 1, y + 26, 106, 19, v ? C_DARK : C_RED);
+  int x = 6 + (i % 5) * 94, y = 122 + (i / 5) * 54;
+  rect(x + 1, y + 26, 86, 19, v ? C_DARK : C_RED);
   textf(x + 6, y + 28, 2, C_WHITE, -1, "%s %d", v ? "HIGH" : "LOW", lows[i]);
 }
 
@@ -135,8 +135,8 @@ void drawStatic() {
   textf(12, 84, 1, C_GREY, -1, "480x272  heap %u KB  psram %u KB", ESP.getFreeHeap() / 1024, ESP.getFreePsram() / 1024);
   text(12, 98, "Touch a pad to GND -> its GPIO turns RED", 1, C_GREY);
   for (int i = 0; i < NP; i++) {
-    int x = 12 + (i % 4) * 116, y = 122 + (i / 4) * 54;
-    frame(x, y, 108, 46, C_GREY);
+    int x = 6 + (i % 5) * 94, y = 122 + (i / 5) * 54;
+    frame(x, y, 88, 46, C_GREY);
     textf(x + 6, y + 5, 2, C_WHITE, -1, "IO%d", PROBE[i]);
     last[i] = -1;
   }
@@ -159,25 +159,24 @@ void setup() {
   uint32_t t0 = millis();
   while (!Serial && millis() - t0 < 3000) delay(10);   // รอ Serial Monitor (USB CDC)
   esp_reset_reason_t rr = esp_reset_reason();
-  Serial.println("\n=== Didissnap S3 test v4 (esp_lcd) ===");
+  Serial.println("\n=== Didissnap S3 test v5 (esp_lcd) ===");
   Serial.printf("[0] reset reason: %s\n", why(rr));
   if (g_magic == 0xD1D1) Serial.printf("[0] รอบที่แล้วดับตอนขั้น %c\n", (char)g_stage);
   stage('A');
-  delay(6000);
+  delay(300);
   pinMode(PIN_BL, OUTPUT);
   ledcAttach(PIN_BL, 5000, 8);
   stage('B');
   ledcWrite(PIN_BL, 77);
-  delay(6000);
+  delay(300);
   stage('C');
   ledcWrite(PIN_BL, 255);
-  delay(6000);
+  delay(300);
   stage('D');
   Serial.printf("[1] chip %s  flash %u MB  PSRAM %u KB\n", ESP.getChipModel(), ESP.getFlashChipSize() >> 20, ESP.getPsramSize() / 1024);
   if (ESP.getPsramSize() == 0) Serial.println("    !! ไม่เจอ PSRAM -> Tools > PSRAM ต้องเป็น OPI PSRAM");
 
-  pinMode(PIN_DISP, OUTPUT);
-  digitalWrite(PIN_DISP, HIGH);
+  // v5: ไม่สั่งขา 21 แล้ว (จะได้อ่านค่าได้) — ถ้าจอยังติดปกติ แปลว่าไม่ต้องใช้ขา DISP
 
   bool ok = lcdBegin();
   Serial.printf("[3] lcd init = %s  fb=%p  PSRAM free %u KB\n", ok ? "OK" : "FAILED", fb, ESP.getFreePsram() / 1024);
