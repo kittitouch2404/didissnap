@@ -7,10 +7,16 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_cache.h"
 #include "freertos/semphr.h"
+#include "rom/ets_sys.h"
 
 #define LCD_W 480
 #define LCD_H 272
 #define PIN_BL 45
+// ความเร็วส่งภาพ: ผู้ผลิตใช้ 14 MHz แต่ตอนวาดทั้งจอ PSRAM ไม่พอ → ภาพเลื่อน/ซ้อน
+// 10 MHz = จอรีเฟรช ~44 ครั้ง/วินาที (หน้าปัดวาด 30 fps อยู่แล้ว)
+#ifndef LCD_PCLK_HZ
+#define LCD_PCLK_HZ 10000000
+#endif
 
 namespace lcd {
 
@@ -29,7 +35,7 @@ inline bool begin() {
   esp_lcd_rgb_panel_config_t c;
   memset(&c, 0, sizeof(c));
   c.clk_src = LCD_CLK_SRC_DEFAULT;
-  c.timings.pclk_hz = 14000000;
+  c.timings.pclk_hz = LCD_PCLK_HZ;
   c.timings.h_res = LCD_W;
   c.timings.v_res = LCD_H;
   c.timings.hsync_pulse_width = 10;
@@ -74,6 +80,21 @@ inline bool begin() {
 }
 
 inline bool ok() { return fb && bb; }
+
+// คัดลอกลง PSRAM ทีละช่วงเล็ก ๆ แล้วเขียน cache ลง PSRAM ทีละช่วง เว้นจังหวะให้จออ่าน PSRAM ได้
+// (คัดลอกรวดเดียวจะแย่ง PSRAM จนจออ่านไม่ทัน → บรรทัดเลื่อน ภาพซ้อน)
+// 8 แถวต่อช่วง ≈ 0.15 ms, เว้น 60 µs — ยังเร็วกว่าจอไล่แสดงภาพ (8 แถว ≈ 0.5 ms ที่ 10 MHz) จึงไม่ฉีก
+inline void paceCopy(uint16_t* dst, const uint16_t* src, size_t bytes) {
+  const size_t CH = LCD_W * 2 * 8;
+  uint8_t* d = (uint8_t*)dst;
+  const uint8_t* s = (const uint8_t*)src;
+  for (size_t o = 0; o < bytes; o += CH) {
+    size_t n = bytes - o < CH ? bytes - o : CH;
+    memcpy(d + o, s + o, n);
+    esp_cache_msync(d + o, n, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+    esp_rom_delay_us(60);
+  }
+}
 static uint16_t* dummy = nullptr;   // ถ้าจอเริ่มไม่ได้ วาดลงที่นี่แทน (ไม่ค้าง)
 inline uint16_t* back() {
   if (!ok()) { if (!dummy) dummy = (uint16_t*)heap_caps_malloc(LCD_W * LCD_H * 2, MALLOC_CAP_SPIRAM); return dummy; }
@@ -85,9 +106,8 @@ inline void present() {
   if (!ok()) { delay(16); return; }
   // รอจอเริ่มช่วงว่างระหว่างเฟรม แล้วคัดลอกทั้งจอ (เร็วกว่าจอไล่แสดงภาพ → ไม่ฉีก)
   xSemaphoreTake(vsyncSem, 0);
-  xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(40));
-  memcpy(fb, bb, LCD_W * LCD_H * 2);
-  esp_cache_msync(fb, LCD_W * LCD_H * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+  xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60));
+  paceCopy(fb, bb, LCD_W * LCD_H * 2);
 }
 
 inline void brightness(int pct) { ledcWrite(PIN_BL, constrain(pct, 0, 100) * 255 / 100); }

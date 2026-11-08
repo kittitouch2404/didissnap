@@ -55,11 +55,12 @@ void onHold2() {
 static uint16_t* stripBuf = nullptr;
 static void copyStrip(uint16_t* fb, int y0, bool flip) {
   const uint16_t* src = stripBuf;
-  if (!flip) { memcpy(fb + y0 * LCD_W, src, STRIP_H * LCD_W * 2); return; }
+  if (!flip) { lcd::paceCopy(fb + y0 * LCD_W, src, STRIP_H * LCD_W * 2); return; }
   for (int r = 0; r < STRIP_H; r++) {     // กลับจอ 180°: แถวกลับหัว + กลับซ้ายขวา
     const uint16_t* s = src + r * LCD_W;
     uint16_t* d = fb + (LCD_H - 1 - (y0 + r)) * LCD_W + LCD_W - 1;
     for (int x = 0; x < LCD_W; x++) *d-- = s[x];
+    if ((r & 7) == 7) esp_rom_delay_us(60);   // เว้นจังหวะให้จอ
   }
 }
 
@@ -104,7 +105,8 @@ static void step(int n, const char* what) {
 static void checkLastBoot() {
   esp_reset_reason_t r = esp_reset_reason();
   bool bad = r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT || r == ESP_RST_BROWNOUT;
-  crashWhy = r == ESP_RST_BROWNOUT ? "BROWNOUT (power too weak)" : r == ESP_RST_PANIC ? "PANIC (crash)" : bad ? "WATCHDOG (hang)" : "";
+  crashWhy = r == ESP_RST_BROWNOUT ? "BROWNOUT (power too weak)" : r == ESP_RST_PANIC ? "PANIC (crash)"
+           : r == ESP_RST_INT_WDT ? "WATCHDOG (interrupt)" : r == ESP_RST_TASK_WDT ? "WATCHDOG (task)" : bad ? "WATCHDOG (other)" : "";
   if (g_magic == 0xD1D1 && bad && g_step >= 1 && g_step <= 9) {
     crashedAt = g_step;
     if (g_crashStep == g_step && g_crashCount < 100) g_crashCount++; else { g_crashStep = g_step; g_crashCount = 1; }
@@ -166,7 +168,10 @@ void setup() {
     lcd::brightness(80);
     Serial.println("    formatting LittleFS (first boot) ...");
     uint32_t f0 = millis();
+    disableCore0WDT();                 // ฟอร์แมตพื้นที่ใหญ่ใช้เวลานาน — ปิดตัวกันค้างชั่วคราว
+    disableCore1WDT();
     LittleFS.begin(true);
+    enableCore0WDT();
     Serial.printf("    format done in %u s\n", (unsigned)((millis() - f0) / 1000));
   }
   if (skip(6)) Serial.println("SAFE MODE: skip pictures");
