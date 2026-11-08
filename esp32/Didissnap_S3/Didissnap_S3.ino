@@ -279,7 +279,7 @@ void loop() {
   }
   if (g_magic && millis() > 8000) { g_magic = 0; g_crashCount = 0; Serial.println("[boot] running OK"); }
   if (millis() - fpsT >= 5000) {
-    Serial.printf("fps %.1f  draw %u ms  lcd %d Hz  page %d  heap %u  psram %u\n", frames / 5.f, (unsigned)(perfDraw / 1000), perfLcd, c.page + 1, ESP.getFreeHeap(), ESP.getFreePsram());
+    Serial.printf("fps %.1f  draw %u ms  lcd %d Hz  flash-pause %u  page %d  heap %u  psram %u\n", frames / 5.f, (unsigned)(perfDraw / 1000), perfLcd, (unsigned)lcd::flashPauses, c.page + 1, ESP.getFreeHeap(), ESP.getFreePsram());
     frames = 0;
     fpsT = millis();
   }

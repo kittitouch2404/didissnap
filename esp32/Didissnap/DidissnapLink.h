@@ -61,6 +61,7 @@ static uint32_t lastSend = 0;
 
 // คืน true = ปล่อย WiFi สำเร็จ (false = แรมไม่พอ/เริ่ม WiFi ไม่ได้)
 inline bool begin() {
+  WiFi.persistent(false);              // ไม่ต้องเขียนค่า WiFi ลงแฟลชทุกครั้ง
   if (!WiFi.mode(WIFI_AP)) return false;
   // ช่อง 1, ไม่ซ่อนชื่อ, ต่อได้สูงสุด DIDI_MAX_STA เครื่อง
   if (!WiFi.softAP(DIDI_SSID, DIDI_PASS, 1, 0, DIDI_MAX_STA)) return false;
