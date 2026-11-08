@@ -21,8 +21,10 @@ static const Item ITEMS[] = {
     {"FLIP 180", "flip", 0, 1, 1},
     {"GEARS", "gearCount", 3, 6, 1},
     {"REFRESH", "lcdMode", 0, 3, 1},
-    {"P13 LEFT", "p13a", 0, 0, 1},
-    {"P13 RIGHT", "p13b", 0, 0, 1},
+    {"P13 SLOT 1", "p13a", 0, 0, 1},
+    {"P13 SLOT 2", "p13b", 0, 0, 1},
+    {"P13 SLOT 3", "p13c", 0, 0, 1},
+    {"P13 SLOT 4", "p13d", 0, 0, 1},
     {"DRAW CORES", "cores", 1, 2, 1},
     {"PERF INFO", "perf", 0, 1, 1},
     {"PEAK RESET", nullptr, 0, 0, 0},
@@ -60,6 +62,8 @@ inline int value(const char* k) {
   if (!strcmp(k, "gearCount")) return c.gearCount;
   if (!strcmp(k, "p13a")) return c.p13a;
   if (!strcmp(k, "p13b")) return c.p13b;
+  if (!strcmp(k, "p13c")) return c.p13c;
+  if (!strcmp(k, "p13d")) return c.p13d;
   if (!strcmp(k, "lcdMode")) return lcdMode;
   if (!strcmp(k, "cores")) return drawCores;
   if (!strcmp(k, "fontMem")) return fontMem;
@@ -78,7 +82,7 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "maxRpm")) snprintf(b, n, "%d rpm", v);
   else if (!strcmp(it.key, "tempAlert")) snprintf(b, n, "%d C", v);
   else if (!strcmp(it.key, "autoCycle")) { if (v) snprintf(b, n, "%d s", v); else snprintf(b, n, "OFF"); }
-  else if (!strcmp(it.key, "p13a") || !strcmp(it.key, "p13b")) snprintf(b, n, "%s", didicfg::SLOT_NAMES[v % didicfg::N_SLOTS]);
+  else if (!strncmp(it.key, "p13", 3)) snprintf(b, n, "%s", didicfg::SLOT_NAMES[v % didicfg::N_SLOTS]);
   else if (!strcmp(it.key, "fontMem")) snprintf(b, n, v ? "FLASH" : "PSRAM");
   else if (!strcmp(it.key, "lcdMode")) snprintf(b, n, "%s", LCD_MODE_NAME[v & 3]);
   else if (!strcmp(it.key, "briAuto") || !strcmp(it.key, "flip") || !strcmp(it.key, "perf")) snprintf(b, n, v ? "ON" : "OFF");
@@ -140,7 +144,7 @@ inline void button(int b, bool lng) {
     if (lng) return;
     int v = value(it.key) + (b == 0 ? it.st : -it.st);
     if (!strcmp(it.key, "page")) v = (v + pages::N) % pages::N;
-    else if (!strcmp(it.key, "p13a") || !strcmp(it.key, "p13b")) v = (v + didicfg::N_SLOTS) % didicfg::N_SLOTS;   // วนรอบ
+    else if (!strncmp(it.key, "p13", 3)) v = (v + didicfg::N_SLOTS) % didicfg::N_SLOTS;   // วนรอบ
     else v = constrain(v, it.mn, it.mx);
     set(it.key, v);
     return;

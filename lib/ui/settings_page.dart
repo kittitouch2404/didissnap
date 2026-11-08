@@ -1270,8 +1270,10 @@ class _Esp32TabState extends State<Esp32Tab> {
             onChanged: (v) => _set('flip', v ? 1 : 0),
           ),
           if (_slots.isNotEmpty) ...[
-            _slotRow('หน้า 13 ช่องล่างซ้าย', 'p13a', 0),
-            _slotRow('หน้า 13 ช่องล่างขวา', 'p13b', 1),
+            _slotRow('หน้า 13 แถวล่าง ช่อง 1', 'p13a', 0),
+            _slotRow('หน้า 13 แถวล่าง ช่อง 2', 'p13b', 1),
+            _slotRow('หน้า 13 แถวล่าง ช่อง 3', 'p13c', 2),
+            _slotRow('หน้า 13 แถวล่าง ช่อง 4', 'p13d', 3),
           ],
           const _Header('รอบ / ความร้อน'),
           _StepRow('Redline', _i('maxRpm', 7500), 2000, 12000, 250,

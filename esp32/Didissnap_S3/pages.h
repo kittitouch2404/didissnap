@@ -445,6 +445,18 @@ inline void p8() {
 }
 
 // ---------------------------------------------------------------- 9-12 หน้ารูป
+// ช่องค่าในแถวล่าง: ป้าย + ตัวเลข + หน่วยเล็ก
+inline void slotBox(int i, int x, int y, int k) {
+  SlotV d = slotVal(i);
+  pt(didicfg::SLOT_NAMES[i], x, y, PX_LAB);
+  int vy = y + lh() + 6;
+  pt(d.v, x, vy, k, d.c);
+  pt(d.unit, x + pxWidth(d.v, k) + 3, vy + 8 * k - 8, 1);
+}
+// ความกว้างที่ช่องต้องใช้ (คิดจากค่าที่กว้างสุดของช่องนั้น ช่องจะไม่ขยับไปมาตอนตัวเลขเปลี่ยน)
+inline int slotNeed(int i, int k) {
+  return max(pxWidth(didicfg::SLOT_NAMES[i], PX_LAB), pxWidth(slotWidest(i), k) + 3 + pxWidth(slotVal(i).unit, 1));
+}
 inline void p9() {                   // หน้า 13
   bg::draw();
   pt("RPM", 10, 10, PX_LAB);
@@ -452,21 +464,26 @@ inline void p9() {                   // หน้า 13
   pt(f0(D.rpm), rr, 10, PX_RPM, over() ? PXR : WH, RIGHT);
   int y = 10 + max(8 * PX_RPM, lh()) + 8;
   rpmHp(8, y, PX_BAR_W, PX_BAR_H);
-  y += PX_BAR_H + 12;
-  pt("SPEED", 10, y, PX_LAB);
-  int sr = 10 + pxWidth("SPEED", PX_LAB) + 12 + pxWidth("888", PX_SPD);
-  pt(f0(D.spd), sr, y, PX_SPD, WH, RIGHT);
-  pt("km/h", sr + 8, y + 8 * PX_SPD - lh(), PX_LAB);
-  y += max(8 * PX_SPD, lh()) + 12;
-  int vy = y + lh() + 6;
-  int a = constrain(didicfg::cfg.p13a, 0, didicfg::N_SLOTS - 1), b = constrain(didicfg::cfg.p13b, 0, didicfg::N_SLOTS - 1);
-  SlotV va = slotVal(a);
-  pt(didicfg::SLOT_NAMES[a], 10, y, PX_LAB);
-  valU(va.v, va.unit, 10, vy, PX_SM, va.c);
-  int ix = 10 + slotWidth(a) + 20;
-  SlotV vb = slotVal(b);
-  pt(didicfg::SLOT_NAMES[b], ix, y, PX_LAB);
-  valU(vb.v, vb.unit, ix, vy, PX_SM, vb.c);
+  // ความเร็ว: มุมขวาบน
+  int sx = 8 + PX_BAR_W + 22;
+  pt("SPEED", sx, 10, PX_LAB);
+  int sr = sx + pxWidth("888", PX_SPD);
+  pt(f0(D.spd), sr, 10 + lh() + 6, PX_SPD, WH, RIGHT);
+  pt("km/h", sr + 8, 10 + lh() + 6 + 8 * PX_SPD - lh(), PX_LAB);
+  // แถวล่าง 4 ช่อง (เลือกค่าได้จากเมนู/แอป/เว็บ)
+  const auto& c = didicfg::cfg;
+  const int sl[4] = {c.p13a, c.p13b, c.p13c, c.p13d};
+  int id[4], need[4], k = PX_SM, gap = 0;
+  for (int i = 0; i < 4; i++) id[i] = constrain(sl[i], 0, didicfg::N_SLOTS - 1);
+  for (;; k--) {                     // กระจายช่องให้เต็มความกว้าง ถ้าไม่พอใช้ตัวเลขเล็กลง
+    int sum = 0;
+    for (int i = 0; i < 4; i++) sum += need[i] = slotNeed(id[i], k);
+    gap = (W - 20 - sum) / 3;
+    if (gap >= 10 || k == 1) break;
+  }
+  int by = 250 - (lh() + 6 + 8 * PX_SM);
+  int x = 10;
+  for (int i = 0; i < 4; i++) { slotBox(id[i], x, by + 8 * (PX_SM - k), k); x += need[i] + gap; }
   obd(474, 14, RIGHT);
   dots();
   shiftFlash();
