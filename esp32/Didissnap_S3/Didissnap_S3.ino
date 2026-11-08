@@ -14,7 +14,8 @@
   Library: "AnimatedGIF" (Larry Bank) — ลงจาก Library Manager
   Arduino IDE (สำคัญทุกข้อ):
     Board: ESP32S3 Dev Module · Flash Mode: DIO 80MHz · Flash Size: 16MB · PSRAM: OPI PSRAM
-    USB CDC On Boot: Enabled · Partition Scheme: Custom (ใช้ partitions.csv ในโฟลเดอร์นี้)
+    USB CDC On Boot: Enabled · Partition Scheme: 16M Flash (3MB APP/9.9MB FATFS) หรือ Custom
+    (ตัวที่ใช้จริงคือ partitions.csv ในโฟลเดอร์นี้ — core หยิบไปใช้เองเสมอ)
 */
 #include <Arduino.h>
 #include <Preferences.h>
@@ -74,18 +75,39 @@ static void chooseBackground(int page) {
   } else bg::select(bg::NONE);
 }
 
+// บอกขั้นตอนตอนเปิดเครื่อง + จำขั้นที่ทำอยู่ข้ามการรีเซ็ต (ถ้าดับ จะรู้ว่าดับตรงไหน)
+RTC_NOINIT_ATTR uint32_t g_magic, g_step;
+static void step(int n, const char* what) {
+  g_magic = 0xD1D1;
+  g_step = n;
+  Serial.printf("[boot %d] %s\n", n, what);
+  Serial.flush();
+}
+
 void setup() {
   Serial.begin(115200);
+  uint32_t t0 = millis();
+  while (!Serial && millis() - t0 < 1500) delay(10);
+  Serial.printf("\n=== Didissnap_S3 === reset reason %d\n", (int)esp_reset_reason());
+  if (g_magic == 0xD1D1) Serial.printf("    รอบที่แล้วค้างที่ [boot %u]\n", (unsigned)g_step);
+  Serial.printf("    PSRAM %u KB  flash %u MB\n", ESP.getPsramSize() / 1024, ESP.getFlashChipSize() >> 20);
+  step(1, "prefs");
   prefs.begin("dash", false);
+  step(2, "lcd");
   if (!lcd::begin()) Serial.println("LCD init FAILED (เช็ค PSRAM = OPI PSRAM)");
 
+  step(3, "wifi");                                  // ต้องเปิด WiFi ก่อนเว็บเซิร์ฟเวอร์ (ไม่งั้น crash)
+  if (!didilink::begin()) Serial.println("WiFi FAILED");
+  step(4, "config + web");
   didicfg::onPeaksReset = resetPeaks;
   didicfg::onTripReset = resetTrip;
   didicfg::begin(prefs, pages::NAMES, pages::N);   // โหลดค่าตั้ง (ความสว่าง กลับจอ ฯลฯ)
+  step(5, "boot logo");
   bootLogo();
 
-  if (!didilink::begin()) Serial.println("WiFi FAILED");
-  if (!didipics::begin()) Serial.println("LittleFS FAILED (เช็ค Partition Scheme = Custom)");
+  step(6, "pictures (LittleFS - first boot formats, may take ~10 s)");
+  if (!didipics::begin()) Serial.println("LittleFS FAILED (เช็คว่ามี partitions.csv ในโฟลเดอร์)");
+  step(7, "background task");
   if (!bg::begin()) Serial.println("bg buffers FAILED");
   menu::onPeaks = resetPeaks;
   menu::onTrip = resetTrip;
@@ -93,6 +115,8 @@ void setup() {
   perf::begin();
   didibtn::onEvent = onButton;
   didibtn::begin(PIN_BTN1, PIN_BTN2, -1, PIN_BTN2_ALT);
+  step(8, "ready");
+  g_magic = 0;
   Serial.printf("Didissnap_S3 ready  heap %u  psram %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
 }
 
