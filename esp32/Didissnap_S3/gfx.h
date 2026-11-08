@@ -7,12 +7,16 @@
 namespace gfx {
 
 static const int W = 480, H = 272;
-static uint16_t* G = nullptr;   // บัฟเฟอร์ที่กำลังวาด (ตำแหน่ง G[y*W+x] ใช้ได้เฉพาะแถว Y0..Y1-1)
-static int Y0 = 0, Y1 = H;      // แถวที่วาดได้ตอนนี้ (วาดทีละแถบลง RAM ภายในชิป แล้วค่อยคัดลอกลงจอ)
+// thread_local: วาดพร้อมกัน 2 คอร์ (แต่ละคอร์วาดคนละแถบ)
+static thread_local uint16_t* G = nullptr;   // บัฟเฟอร์ที่กำลังวาด (ตำแหน่ง G[y*W+x] ใช้ได้เฉพาะแถว Y0..Y1-1)
+static thread_local int Y0 = 0, Y1 = H;      // แถวที่วาดได้ตอนนี้ (วาดทีละแถบลง RAM ภายในชิป แล้วค่อยคัดลอกลงจอ)
 // วาดลงบัฟเฟอร์เต็มจอ
 inline void target(uint16_t* full) { G = full; Y0 = 0; Y1 = H; }
 // วาดลงแถบ: buf เก็บแถว y0..y1-1
 inline void strip(uint16_t* buf, int y0, int y1) { G = buf - y0 * W; Y0 = y0; Y1 = y1; }
+// เวลาของเฟรมนี้ (ทุกแถบใช้ค่าเดียวกัน ไฟกะพริบจะไม่ขาดครึ่งจอ)
+static volatile uint32_t frameMs = 0;
+inline uint32_t nowMs() { return frameMs ? frameMs : millis(); }
 
 constexpr uint16_t rgb(uint32_t hex) {
   return (uint16_t)((((hex >> 16) & 0xF8) << 8) | (((hex >> 8) & 0xFC) << 3) | ((hex & 0xFF) >> 3));
@@ -242,10 +246,10 @@ inline void copyFontsToPsram() {
   }
 #endif
 }
-static const DFont* lastPick = nullptr;
-static float lastSize = -1;
-static int lastW = -1;
-static bool lastIt = false;
+static thread_local const DFont* lastPick = nullptr;
+static thread_local float lastSize = -1;
+static thread_local int lastW = -1;
+static thread_local bool lastIt = false;
 inline const DFont* pick(float size, int weight, bool italic) {
   if (size == lastSize && weight == lastW && italic == lastIt) return lastPick;
   const DFont* T = fontTable();

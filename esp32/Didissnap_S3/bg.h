@@ -39,6 +39,13 @@ static size_t fileLen = 0, fileCap = 0;
 static uint16_t* gifCanvas = nullptr;
 static AnimatedGIF* gif = nullptr;
 static char lastErr[48] = "";
+// รถวิ่ง: ถอดทั้ง 20 เฟรมเก็บไว้ใน PSRAM ครั้งเดียว (เฉพาะแถวที่ขยับ = ถนน/ล้อ) แล้วสลับเฟรมเฉย ๆ → ลื่น ไม่ต้องถอดใหม่ทุกเฟรม
+static const int RUN_Y0 = 95, RUN_ROWS = H - RUN_Y0;
+static uint16_t* runBlock = nullptr;
+static volatile int runReady = 0;    // ถอดเสร็จกี่เฟรม
+static volatile int runShow = -1;    // เฟรมที่แสดงอยู่
+inline uint16_t* runTop() { return runBlock; }                                  // แถวบน 0..RUN_Y0-1 (เหมือนกันทุกเฟรม)
+inline uint16_t* runFrame(int i) { return runBlock + (size_t)RUN_Y0 * W + (size_t)i * RUN_ROWS * W; }
 
 // ---------------------------------------------------------------- JPEG
 struct JCtx { const uint8_t* src; size_t len, pos; uint16_t* dst; int ox, oy; };
@@ -150,14 +157,30 @@ static void task(void*) {
       }
     }
     uint32_t now = millis();
-    if (have.kind == BI_RUN_ANIM && now >= nextT) {
-      float sp = runSpeed;
-      if (sp > 1 || shown < 0) {
-        int b = backIdx();
-        if (decodeJpeg(BI_RUN[runIdx], BI_RUN_LEN[runIdx], buf[b])) publish(b);
-        runIdx = (runIdx + 1) % BI_RUN_N;
+    if (have.kind == BI_RUN_ANIM) {
+      if (!runBlock) runBlock = (uint16_t*)heap_caps_malloc(((size_t)BI_RUN_N * RUN_ROWS + RUN_Y0) * W * 2, MALLOC_CAP_SPIRAM);
+      if (runBlock && runReady < BI_RUN_N) {             // ยังถอดไม่ครบ → ถอดเพิ่มทีละเฟรม
+        int i = runReady, b = backIdx();
+        if (decodeJpeg(BI_RUN[i], BI_RUN_LEN[i], buf[b])) {
+          memcpy(runFrame(i), buf[b] + RUN_Y0 * W, (size_t)RUN_ROWS * W * 2);
+          if (i == 0) { memcpy(runTop(), buf[b], (size_t)RUN_Y0 * W * 2); runShow = 0; }   // ส่วนบน (ฟ้า/ตึก) ใช้ของเฟรมแรก
+          runReady = i + 1;
+        } else runReady = BI_RUN_N;                       // ถอดไม่ได้ → เลิก
       }
-      nextT = now + (uint32_t)constrain(6000.f / fmaxf(sp, 1.f), 40.f, 400.f);   // เร็วขึ้นตามความเร็วรถ
+      if (runBlock && runReady > 0 && now >= nextT) {
+        float sp = runSpeed;
+        if (sp > 1) { runIdx = (runIdx + 1) % runReady; runShow = runIdx; }
+        nextT = now + (uint32_t)constrain(6000.f / fmaxf(sp, 1.f), 33.f, 400.f);   // เร็วขึ้นตามความเร็วรถ
+      } else if (!runBlock && now >= nextT) {             // PSRAM ไม่พอ → ถอดทีละเฟรมแบบเดิม
+        float sp = runSpeed;
+        if (sp > 1 || shown < 0) {
+          int b = backIdx();
+          runShow = -1;
+          if (decodeJpeg(BI_RUN[runIdx], BI_RUN_LEN[runIdx], buf[b])) publish(b);
+          runIdx = (runIdx + 1) % BI_RUN_N;
+        }
+        nextT = now + (uint32_t)constrain(6000.f / fmaxf(sp, 1.f), 40.f, 400.f);
+      }
     }
     if (gifOpen && now >= nextT) {
       if (gifPrevDisp == 2) {   // คืนพื้นหลังตรงเฟรมก่อน
@@ -204,7 +227,12 @@ inline bool draw() {
   bool ok = false;
   if (!lock) { gfx::clear(0); return false; }   // ยังไม่ได้เริ่มงานรูป (safe mode)
   xSemaphoreTake(lock, portMAX_DELAY);
-  if (shown >= 0 && want.kind != NONE) {   // คัดลอกเฉพาะแถวของแถบที่กำลังวาด
+  int rs = runShow;
+  if (want.kind == BI_RUN_ANIM && have.kind == BI_RUN_ANIM && runBlock && rs >= 0) {   // รถวิ่ง (เฟรมเก็บไว้แล้ว)
+    for (int y = gfx::Y0; y < gfx::Y1; y++)
+      memcpy(gfx::G + y * W, y < RUN_Y0 ? runTop() + y * W : runFrame(rs) + (y - RUN_Y0) * W, W * 2);
+    ok = true;
+  } else if (shown >= 0 && want.kind != NONE) {   // คัดลอกเฉพาะแถวของแถบที่กำลังวาด
     memcpy(gfx::G + gfx::Y0 * W, buf[shown] + gfx::Y0 * W, (gfx::Y1 - gfx::Y0) * W * 2);
     ok = true;
   }

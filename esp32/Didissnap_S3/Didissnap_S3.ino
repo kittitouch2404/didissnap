@@ -53,12 +53,14 @@ void onHold2() {
   if (didicfg::cfg.page == pages::PG_RECORD) { perf::toggle(RAW.spd); menu::toast(perf::state == perf::READY || perf::state == perf::WAIT ? "ARMED" : "STOP"); }
 }
 
-// วาดทีละแถบลง RAM ภายในชิป (เร็ว) แล้วคัดลอกลง PSRAM รวดเดียว
+// วาดทีละแถบลง RAM ภายในชิป (เร็ว) แล้วคัดลอกลง PSRAM
 // (ถ้าวาดตรงลง PSRAM ทั้งจอทุกเฟรม จอจะแย่ง PSRAM ไม่ทัน → ภาพเลื่อน/ซ้อน)
+// วาดพร้อมกัน 2 คอร์: คอร์ 1 (loop) กับงาน "draw2" บนคอร์ 0 แย่งกันหยิบแถบที่ยังไม่ได้วาด
 #define STRIP_H 68                       // 272 / 68 = 4 แถบ
+#define N_STRIPS (LCD_H / STRIP_H)
 static uint16_t* stripBuf = nullptr;
-static void copyStrip(uint16_t* fb, int y0, bool flip) {
-  const uint16_t* src = stripBuf;
+static uint16_t* stripBuf2 = nullptr;
+static void copyStrip(uint16_t* fb, int y0, bool flip, const uint16_t* src) {
   if (!flip) { lcd::paceCopy(fb + y0 * LCD_W, src, STRIP_H * LCD_W * 2); return; }
   for (int r = 0; r < STRIP_H; r++) {     // กลับจอ 180°: แถวกลับหัว + กลับซ้ายขวา
     const uint16_t* s = src + r * LCD_W;
@@ -66,6 +68,65 @@ static void copyStrip(uint16_t* fb, int y0, bool flip) {
     for (int x = 0; x < LCD_W; x++) *d-- = s[x];
     if ((r & 7) == 7) esp_rom_delay_us(60);   // เว้นจังหวะให้จอ
   }
+}
+
+static uint32_t perfDraw = 0;
+static bool showPerf = true;
+static int perfFps = 0, perfLcd = 0, perfMax = 0;
+
+static volatile int nextStrip = N_STRIPS;
+static uint16_t* volatile jobFb = nullptr;
+static volatile bool jobFlip = false, jobMenu = false;
+static volatile int jobPage = 0;
+static SemaphoreHandle_t workGo = nullptr, workDone = nullptr;
+
+static void drawStrip(int k, uint16_t* sb) {
+  int y0 = k * STRIP_H;
+  gfx::strip(sb, y0, y0 + STRIP_H);
+  if (jobMenu) menu::draw();
+  else pages::draw(jobPage);
+  menu::drawToast();
+  if (k == N_STRIPS - 1 && showPerf) {     // ตัวเลขวัดความเร็ว (ชั่วคราว) มุมล่างซ้าย
+    char pb[64];
+    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd);
+    gfx::fillA(0, LCD_H - 14, gfx::textWidth(pb, 11, 600) + 8, 14, 0, 180);
+    gfx::text(pb, 4, LCD_H - 3, 11, gfx::rgb(0x00E05A), gfx::LEFT, 600);
+  }
+  copyStrip(jobFb, y0, jobFlip, sb);
+}
+static void renderStrips(uint16_t* sb) {
+  int k;
+  while ((k = __atomic_fetch_add(&nextStrip, 1, __ATOMIC_SEQ_CST)) < N_STRIPS) drawStrip(k, sb);
+}
+static void drawWorker(void*) {
+  for (;;) {
+    xSemaphoreTake(workGo, portMAX_DELAY);
+    renderStrips(stripBuf2);
+    xSemaphoreGive(workDone);
+  }
+}
+// วาดทั้งเฟรมลง fb
+static void renderFrame(uint16_t* fb, int page, bool menuOpen, bool flip) {
+  jobFb = fb;
+  jobPage = page;
+  jobMenu = menuOpen;
+  jobFlip = flip;
+  gfx::frameMs = millis();
+  __atomic_store_n(&nextStrip, 0, __ATOMIC_SEQ_CST);
+  if (workGo) xSemaphoreGive(workGo);
+  renderStrips(stripBuf);
+  if (workGo) xSemaphoreTake(workDone, portMAX_DELAY);
+}
+
+// อัตรารีเฟรชจอตามเมนู REFRESH
+static void applyLcdMode(int m) {
+  static const int HZ[4] = {44, 30, 60, 60}, EVERY[4] = {1, 1, 2, 1};
+  m &= 3;
+  lcd::setRefresh(HZ[m], EVERY[m]);
+}
+static void onLcdMode(int m) {
+  applyLcdMode(m);
+  prefs.putInt("lcdMode", m);
 }
 
 static void bootLogo() {
@@ -206,24 +267,31 @@ void setup() {
   else if (!didipics::begin()) { Serial.println("LittleFS FAILED (เช็คว่ามี partitions.csv ในโฟลเดอร์)"); picsOn = false; }
   stripBuf = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (!stripBuf) { Serial.println("strip buffer: no internal RAM -> PSRAM"); stripBuf = (uint16_t*)ps_malloc(LCD_W * STRIP_H * 2); }
+  stripBuf2 = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (stripBuf2) {                                  // วาด 2 คอร์
+    workGo = xSemaphoreCreateBinary();
+    workDone = xSemaphoreCreateBinary();
+    xTaskCreatePinnedToCore(drawWorker, "draw2", 8192, nullptr, 3, nullptr, 0);
+  } else Serial.println("2nd strip buffer: no internal RAM -> draw on 1 core");
   step(8, "background task");
   if (!picsOn || skip(8)) Serial.println("background task OFF");
   else if (!bg::begin()) Serial.println("bg buffers FAILED");
   menu::onPeaks = resetPeaks;
   menu::onTrip = resetTrip;
   menu::onHold2 = onHold2;
+  menu::lcdMode = prefs.getInt("lcdMode", 0) & 3;
+  menu::onLcdMode = onLcdMode;
+  applyLcdMode(menu::lcdMode);
   perf::begin();
   didibtn::onEvent = onButton;
   didibtn::begin(PIN_BTN1, PIN_BTN2, -1, PIN_BTN2_ALT);
   if (skip(10)) didicfg::cfg.page = 0;   // ดับตอนวาดหน้าที่เลือกไว้ → เริ่มหน้า 1
   step(10, "first frames");
-  Serial.printf("Didissnap_S3 ready  heap %u  psram %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
+  Serial.printf("Didissnap_S3 ready  heap %u (internal %u)  psram %u  draw cores %d\n", ESP.getFreeHeap(), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), ESP.getFreePsram(), workGo ? 2 : 1);
 }
 
-static uint32_t lastUs = 0, fpsT = 0, drawAcc = 0, perfT = 0, lcdF0 = 0;
-static int frames = 0, perfFrames = 0, perfFps = 0, perfLcd = 0;
-static uint32_t perfDraw = 0;
-static bool showPerf = true;
+static uint32_t lastUs = 0, fpsT = 0, drawAcc = 0, perfT = 0, lcdF0 = 0, frameT0 = 0;
+static int frames = 0, perfFrames = 0, maxAcc = 0;
 
 void loop() {
   uint32_t us = micros();
@@ -247,24 +315,13 @@ void loop() {
 
   chooseBackground(menu::open ? -1 : c.page);
   uint32_t tr0 = micros();
-  uint16_t* fb = lcd::back();
-  for (int y0 = 0; y0 < LCD_H; y0 += STRIP_H) {
-    gfx::strip(stripBuf, y0, y0 + STRIP_H);
-    if (menu::open) menu::draw();
-    else pages::draw(c.page);
-    menu::drawToast();
-    if (y0 == LCD_H - STRIP_H && showPerf) {     // ตัวเลขวัดความเร็ว (ชั่วคราว) มุมล่างซ้าย
-      char pb[48];
-      snprintf(pb, sizeof(pb), "%d fps  draw %d ms  lcd %d Hz", perfFps, perfDraw / 1000, perfLcd);
-      gfx::fillA(0, LCD_H - 14, gfx::textWidth(pb, 11, 600) + 8, 14, 0, 180);
-      gfx::text(pb, 4, LCD_H - 3, 11, gfx::rgb(0x00E05A), gfx::LEFT, 600);
-    }
-    copyStrip(fb, y0, c.flip);
-  }
+  renderFrame(lcd::back(), c.page, menu::open, c.flip);
   uint32_t tr1 = micros();
   lcd::present();
   drawAcc += tr1 - tr0;
-  // present() รอ vsync อยู่แล้ว → เฟรมตรงจังหวะจอ (~44 fps หรือ 22 fps สม่ำเสมอ ไม่กระตุก)
+  int ft = frameT0 ? (int)((tr0 - frameT0) / 1000) : 0;   // เวลาระหว่างเฟรม (หาอาการกระตุก)
+  frameT0 = tr0;
+  if (ft > maxAcc) maxAcc = ft;
 
   frames++;
   perfFrames++;
@@ -272,6 +329,8 @@ void loop() {
     perfFps = perfFrames;
     perfDraw = perfFrames ? drawAcc / perfFrames : 0;
     perfLcd = lcd::frames - lcdF0;
+    perfMax = maxAcc;
+    maxAcc = 0;
     lcdF0 = lcd::frames;
     perfFrames = 0;
     drawAcc = 0;
@@ -279,7 +338,7 @@ void loop() {
   }
   if (g_magic && millis() > 8000) { g_magic = 0; g_crashCount = 0; Serial.println("[boot] running OK"); }
   if (millis() - fpsT >= 5000) {
-    Serial.printf("fps %.1f  draw %u ms  lcd %d Hz  flash-pause %u  page %d  heap %u  psram %u\n", frames / 5.f, (unsigned)(perfDraw / 1000), perfLcd, (unsigned)lcd::flashPauses, c.page + 1, ESP.getFreeHeap(), ESP.getFreePsram());
+    Serial.printf("fps %.1f  draw %u ms  max %d ms  lcd %d Hz  flash-pause %u  page %d  heap %u  psram %u\n", frames / 5.f, (unsigned)(perfDraw / 1000), perfMax, perfLcd, (unsigned)lcd::flashPauses, c.page + 1, ESP.getFreeHeap(), ESP.getFreePsram());
     frames = 0;
     fpsT = millis();
   }

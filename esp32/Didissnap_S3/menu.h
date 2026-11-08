@@ -20,6 +20,7 @@ static const Item ITEMS[] = {
     {"AUTO CYCLE", "autoCycle", 0, 120, 5},
     {"FLIP 180", "flip", 0, 1, 1},
     {"GEARS", "gearCount", 3, 6, 1},
+    {"REFRESH", "lcdMode", 0, 3, 1},
     {"PEAK RESET", nullptr, 0, 0, 0},
     {"TRIP RESET", nullptr, 0, 0, 0},
     {"WIFI", nullptr, 0, 0, 0},
@@ -30,7 +31,11 @@ static bool open = false, edit = false;
 static int sel = 0;
 static void (*onPeaks)() = nullptr;
 static void (*onTrip)() = nullptr;
-static void (*onHold2)() = nullptr;   // ปุ่ม 2 ค้างตอนอยู่หน้าปกติ (หน้า Record = ARM/STOP)
+static void (*onHold2)() = nullptr;
+// อัตรารีเฟรชจอ: 0 = 44 Hz · 1 = 30 Hz · 2 = 60 Hz ล็อก 30 fps · 3 = 60 Hz
+static int lcdMode = 0;
+static const char* const LCD_MODE_NAME[] = {"44 Hz", "30 Hz (30 fps)", "60 Hz lock 30 fps", "60 Hz"};
+static void (*onLcdMode)(int) = nullptr;   // ปุ่ม 2 ค้างตอนอยู่หน้าปกติ (หน้า Record = ARM/STOP)
 
 static char toastMsg[32] = "";
 static uint32_t toastUntil = 0;
@@ -46,6 +51,7 @@ inline int value(const char* k) {
   if (!strcmp(k, "autoCycle")) return c.autoCycle;
   if (!strcmp(k, "flip")) return c.flip;
   if (!strcmp(k, "gearCount")) return c.gearCount;
+  if (!strcmp(k, "lcdMode")) return lcdMode;
   return 0;
 }
 inline void fmt(const Item& it, char* b, size_t n) {
@@ -60,10 +66,12 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "maxRpm")) snprintf(b, n, "%d rpm", v);
   else if (!strcmp(it.key, "tempAlert")) snprintf(b, n, "%d C", v);
   else if (!strcmp(it.key, "autoCycle")) { if (v) snprintf(b, n, "%d s", v); else snprintf(b, n, "OFF"); }
+  else if (!strcmp(it.key, "lcdMode")) snprintf(b, n, "%s", LCD_MODE_NAME[v & 3]);
   else if (!strcmp(it.key, "briAuto") || !strcmp(it.key, "flip")) snprintf(b, n, v ? "ON" : "OFF");
   else snprintf(b, n, "%d", v);
 }
 inline void set(const char* k, int v) {
+  if (!strcmp(k, "lcdMode")) { lcdMode = v & 3; if (onLcdMode) onLcdMode(lcdMode); return; }
   int old = didicfg::cfg.page;
   didicfg::setKV(String(k), (float)v);
   didicfg::changed(old);
@@ -77,7 +85,7 @@ inline void draw() {
   text("Didissnap", 468, 20, 12, rgb(0x999999), RIGHT, 600);
   const int rows = 9;
   int top = max(0, min(sel - 4, N - rows));
-  bool bl = (millis() / 250) % 2 == 0;
+  bool bl = (nowMs() / 250) % 2 == 0;
   for (int r = 0; r < rows; r++) {
     int j = top + r;
     if (j >= N) break;
@@ -95,7 +103,7 @@ inline void draw() {
 }
 
 inline void drawToast() {
-  if (millis() >= toastUntil) return;
+  if (nowMs() >= toastUntil) return;
   rrect(W / 2 - 90, H / 2 - 18, 180, 36, 8, rgb(0x101010), pages::ORG, 1.5f);
   text(toastMsg, W / 2, H / 2 + 6, 16, pages::ORG, CENTER, 800);
 }

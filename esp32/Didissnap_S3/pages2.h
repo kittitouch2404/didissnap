@@ -20,8 +20,8 @@ inline void T(const char* s, float px, float py, float size, uint16_t c, int ax 
   text(s, (int)lroundf(X(px)), (int)lroundf(top + sz * .80f), sz, c, ax < 0 ? LEFT : (ax == 0 ? CENTER : RIGHT), w, it);
 }
 
-static char tb[8][24];
-static int tbi = 0;
+static thread_local char tb[8][24];
+static thread_local int tbi = 0;
 inline const char* f0(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 24, "%d", (int)lroundf(v)); return b; }
 inline const char* f1(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 24, "%.1f", v); return b; }
 inline const char* f2(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 24, "%.2f", v); return b; }
@@ -30,7 +30,7 @@ inline int scaleMax() { return (int)ceilf(redline() / 1000.f) * 1000 + 1000; }
 inline int shiftStart() { return redline() - 2000; }
 inline bool atRed() { return D.rpm >= redline(); }
 inline bool hot() { return D.ect >= didicfg::cfg.tempAlert; }
-inline bool blink() { return (millis() / 125) % 2 == 0; }
+inline bool blink() { return (gfx::nowMs() / 125) % 2 == 0; }
 inline float cl01(float v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
 
 // ---------------------------------------------------------------- 9 Red stripe (Civic แดง)
@@ -202,7 +202,7 @@ inline void record() {
 // ---------------------------------------------------------------- 12 ตารางค่า OBD2
 inline void pids() {
   clear(BK);
-  float tp = D.tps, T_ = millis() / 1000.f;
+  float tp = D.tps, T_ = gfx::nowMs() / 1000.f;
   char v[30][16];
   int n = 0;
   auto S = [&](const char* fmt, float x) { snprintf(v[n++], 16, fmt, x); };

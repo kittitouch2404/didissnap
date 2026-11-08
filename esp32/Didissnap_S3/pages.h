@@ -19,8 +19,8 @@ constexpr uint16_t ORG = rgb(0xFF7A00), YEL = rgb(0xFFC400), RD = rgb(0xFF2A2A),
                    BL = rgb(0x2E7BFF), WH = 0xFFFF, BK = 0x0000;
 
 // ---------------------------------------------------------------- ตัวช่วย
-static char tb[8][16];
-static int tbi = 0;
+static thread_local char tb[8][16];
+static thread_local int tbi = 0;
 inline const char* f0(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 16, "%d", (int)lroundf(v)); return b; }
 inline const char* f1(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 16, "%.1f", v); return b; }
 inline int maxRpm() { return didicfg::cfg.maxRpm; }
@@ -29,7 +29,7 @@ inline float rpmF() { return fminf(1.f, D.rpm / (kMax() * 1000.f)); }
 inline float redF() { return maxRpm() / (kMax() * 1000.f); }
 inline bool over() { return D.rpm >= maxRpm(); }
 inline bool hot() { return D.ect >= didicfg::cfg.tempAlert; }
-inline bool blink() { return (millis() / 250) % 2 == 0; }
+inline bool blink() { return (gfx::nowMs() / 250) % 2 == 0; }
 inline uint16_t ectC(uint16_t c = WH) { return hot() ? (blink() ? RD : rgb(0x550000)) : c; }
 inline float clamp01(float v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
 inline void obd(int x, int y, Align al = LEFT) {

@@ -30,12 +30,18 @@
 namespace lcd {
 
 static const size_t FB_BYTES = LCD_W * LCD_H * 2;
+static const uint32_t DOTS_PER_FRAME = (10 + 80 + LCD_W + 60) * (10 + 20 + LCD_H + 60);   // รวมช่วงว่าง
 static esp_lcd_panel_handle_t panel = nullptr;
-static uint16_t* fb = nullptr;     // บัฟเฟอร์ที่จออ่าน (PSRAM)
-static uint16_t* bb = nullptr;     // บัฟเฟอร์หลังที่เราวาด (PSRAM)
-static SemaphoreHandle_t vsyncSem = nullptr;
-static volatile uint32_t frames = 0;
-static volatile uint32_t flashPauses = 0;   // นับว่าหยุดจอเพราะใช้แฟลชกี่ครั้ง (ดูใน Serial)
+static uint16_t* fb = nullptr;               // บัฟเฟอร์ที่จออ่าน (PSRAM)
+static uint16_t* bb[2] = {nullptr, nullptr}; // บัฟเฟอร์หลัง 2 ชุด: วาดชุดหนึ่ง ระหว่างนั้นอีกชุดถูกคัดลอกขึ้นจอ
+static int wIdx = 0;
+static volatile int pending = -1;
+static volatile uint32_t handed = 0, copied = 0;
+static SemaphoreHandle_t vsyncSem = nullptr, pendSem = nullptr, doneSem = nullptr;
+static volatile uint32_t frames = 0;         // จอส่งภาพไปกี่เฟรมแล้ว (นับ vsync)
+static volatile uint32_t flashPauses = 0;    // นับว่าหยุดจอเพราะใช้แฟลชกี่ครั้ง (ดูใน Serial)
+static volatile int minVsyncs = 1;           // ขึ้นภาพใหม่ได้ทุกกี่ vsync (2 = ล็อกครึ่งหนึ่งของรีเฟรช)
+static int curHz = 0;
 
 static bool IRAM_ATTR onVsync(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t*, void*) {
   frames++;
@@ -104,6 +110,35 @@ static void findDma() {
   }
 }
 
+inline void paceCopy(uint16_t* dst, const uint16_t* src, size_t bytes);
+
+// งานคัดลอกภาพขึ้นจอ (คอร์ 1): รอ vsync แล้วคัดลอกทั้งจอ ระหว่างนั้นโปรแกรมหลักวาดเฟรมถัดไปลงอีกบัฟเฟอร์ได้เลย
+static void presenter(void*) {
+  uint32_t lastF = 0;
+  for (;;) {
+    xSemaphoreTake(pendSem, portMAX_DELAY);
+    int p = pending;
+    if (p < 0) continue;
+    do {
+      xSemaphoreTake(vsyncSem, 0);
+      xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60));
+    } while ((int)(frames - lastF) < minVsyncs);
+    paceCopy(fb, bb[p], FB_BYTES);
+    lastF = frames;
+    pending = -1;
+    copied++;
+    xSemaphoreGive(doneSem);
+  }
+}
+
+// อัตรารีเฟรชจอ (Hz) และ "ขึ้นภาพทุกกี่ vsync"
+inline void setRefresh(int hz, int every) {
+  minVsyncs = every < 1 ? 1 : every;
+  if (!panel || hz == curHz) return;
+  curHz = hz;
+  esp_lcd_rgb_panel_set_pclk(panel, (uint32_t)hz * DOTS_PER_FRAME);
+}
+
 inline bool begin() {
   esp_lcd_rgb_panel_config_t c;
   memset(&c, 0, sizeof(c));
@@ -139,23 +174,29 @@ inline bool begin() {
   esp_lcd_panel_init(panel);
   void* a = nullptr;
   if (esp_lcd_rgb_panel_get_frame_buffer(panel, 1, &a) != ESP_OK || !a) return false;
-  bb = (uint16_t*)heap_caps_aligned_alloc(64, FB_BYTES, MALLOC_CAP_SPIRAM);
-  if (!bb) return false;
+  for (int i = 0; i < 2; i++) {
+    bb[i] = (uint16_t*)heap_caps_aligned_alloc(64, FB_BYTES, MALLOC_CAP_SPIRAM);
+    if (!bb[i]) return false;
+    memset(bb[i], 0, FB_BYTES);
+  }
   fb = (uint16_t*)a;
   memset(fb, 0, FB_BYTES);
-  memset(bb, 0, FB_BYTES);
   esp_cache_msync(fb, FB_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
   ledcAttach(PIN_BL, 5000, 8);
   ledcWrite(PIN_BL, 0);
   delay(30);                 // ให้จอส่งภาพไปสักเฟรมก่อน ค่อยจำตำแหน่ง DMA
   findDma();
   hookFlash();
+  curHz = LCD_PCLK_HZ / DOTS_PER_FRAME;
+  pendSem = xSemaphoreCreateBinary();
+  doneSem = xSemaphoreCreateBinary();
+  xTaskCreatePinnedToCore(presenter, "lcd", 3072, nullptr, 6, nullptr, 1);
   Serial.printf("LCD stream mode, pclk %d Hz, DMA ch %d head 0x%05x, flash hook %s\n",
                 LCD_PCLK_HZ, dmaCh, (unsigned)dmaHead, origOs ? "on" : "OFF");
   return true;
 }
 
-inline bool ok() { return fb && bb; }
+inline bool ok() { return fb && bb[0] && bb[1]; }
 
 // คัดลอกลง PSRAM ทีละช่วงเล็ก ๆ เว้นจังหวะให้จออ่าน PSRAM ได้ (คัดลอกรวดเดียว → บรรทัดเลื่อน ภาพซ้อน)
 inline void paceCopy(uint16_t* dst, const uint16_t* src, size_t bytes) {
@@ -172,15 +213,23 @@ inline void paceCopy(uint16_t* dst, const uint16_t* src, size_t bytes) {
 static uint16_t* dummy = nullptr;   // ถ้าจอเริ่มไม่ได้ วาดลงที่นี่แทน (ไม่ค้าง)
 inline uint16_t* back() {
   if (!ok()) { if (!dummy) dummy = (uint16_t*)heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM); return dummy; }
-  return bb;
+  return bb[wIdx];
 }
 
-// รอจอเริ่มช่วงว่างระหว่างเฟรม แล้วคัดลอกทั้งจอ (เร็วกว่าจอไล่แสดงภาพ → ไม่ฉีก)
+// ส่งเฟรมที่วาดเสร็จให้งาน lcd ขึ้นจอที่ vsync ถัดไป แล้วสลับไปวาดอีกบัฟเฟอร์
+// (ถ้าเฟรมก่อนยังไม่ได้ขึ้นจอ รอก่อน — บัฟเฟอร์ที่จะวาดต่อต้องคัดลอกเสร็จแล้ว)
 inline void present() {
   if (!ok()) { delay(16); return; }
-  xSemaphoreTake(vsyncSem, 0);
-  xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60));
-  paceCopy(fb, bb, FB_BYTES);
+  while (copied != handed) xSemaphoreTake(doneSem, pdMS_TO_TICKS(50));
+  pending = wIdx;
+  handed++;
+  xSemaphoreGive(pendSem);
+  wIdx ^= 1;
+}
+// รอจนเฟรมล่าสุดขึ้นจอจริง (ใช้ตอนเปิดเครื่อง/หน้าจอแจ้งปัญหา)
+inline void flush() {
+  if (!ok()) return;
+  while (copied != handed) xSemaphoreTake(doneSem, pdMS_TO_TICKS(50));
 }
 
 inline void brightness(int pct) { ledcWrite(PIN_BL, constrain(pct, 0, 100) * 255 / 100); }
