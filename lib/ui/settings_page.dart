@@ -1101,6 +1101,7 @@ class Esp32Tab extends StatefulWidget {
 class _Esp32TabState extends State<Esp32Tab> {
   Map<String, dynamic>? _cfg;
   List<String> _pages = const [];
+  List<String> _slots = const []; // ค่าที่เลือกโชว์ในช่องล่างหน้า 13 ได้ (บอร์ดรุ่นใหม่เท่านั้น)
   bool _busy = false;
   String? _err;
 
@@ -1128,6 +1129,24 @@ class _Esp32TabState extends State<Esp32Tab> {
     if (c is Map) _cfg = Map<String, dynamic>.from(c);
     final p = j['pages'];
     if (p is List) _pages = p.map((e) => e.toString()).toList();
+    final sl = j['slots'];
+    if (sl is List) _slots = sl.map((e) => e.toString()).toList();
+  }
+
+  Widget _slotRow(String title, String key, int def) {
+    final v = _i(key, def).clamp(0, _slots.length - 1);
+    return ListTile(
+      dense: true,
+      title: Text(title),
+      trailing: DropdownButton<int>(
+        value: v,
+        items: [for (var i = 0; i < _slots.length; i++) DropdownMenuItem(value: i, child: Text(_slots[i]))],
+        onChanged: (n) {
+          if (n == null) return;
+          _set(key, n);
+        },
+      ),
+    );
   }
 
   Future<void> _run(Future<Map<String, dynamic>?> Function() f, [String? ok]) async {
@@ -1250,6 +1269,10 @@ class _Esp32TabState extends State<Esp32Tab> {
             value: _i('flip', 0) != 0,
             onChanged: (v) => _set('flip', v ? 1 : 0),
           ),
+          if (_slots.isNotEmpty) ...[
+            _slotRow('หน้า 13 ช่องล่างซ้าย', 'p13a', 0),
+            _slotRow('หน้า 13 ช่องล่างขวา', 'p13b', 1),
+          ],
           const _Header('รอบ / ความร้อน'),
           _StepRow('Redline', _i('maxRpm', 7500), 2000, 12000, 250,
               (v) => _set('maxRpm', v),

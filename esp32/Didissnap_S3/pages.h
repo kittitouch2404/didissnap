@@ -72,6 +72,37 @@ inline void valC(const char* v, int x, int y, int k, uint16_t c, int lab = PX_LA
   pt(v, x, y, k, c);
   pt("C", x + pxWidth(v, k) + 2 + 2 * lab, y + 8 * k - 8 * lab, lab);
 }
+// ช่องค่าที่เลือกได้ (หน้า 13 ช่องล่าง) — ลำดับตรงกับ didicfg::SLOT_NAMES
+struct SlotV { const char* v; const char* unit; uint16_t c; };
+inline SlotV slotVal(int i) {
+  switch (i) {
+    case 0: return {f0(D.ect), "C", ectC()};
+    case 1: return {f0(D.iat), "C", WH};
+    case 2: return {f1(D.volt), "V", D.volt < 12.f ? PXR : WH};
+    case 3: return {f1(D.boost), "bar", WH};
+    case 4: return {f0(D.load), "%", WH};
+    case 5: return {f0(D.tps), "%", WH};
+    case 6: return {f1(D.maf), "g/s", WH};
+    case 7: return {f0(D.fuel), "%", D.fuel < 12.f ? PXR : WH};
+    case 8: return {f0(D.spd), "km/h", WH};
+    case 9: return {f1(D.trip), "km", WH};
+    default: return {f1(D.stft), "%", WH};
+  }
+}
+// ความกว้างมากสุดที่ช่องนั้นน่าจะใช้ (จัดช่องขวาไม่ให้ทับ)
+inline const char* slotWidest(int i) {
+  static const char* const Wd[] = {"110", "60", "14.8", "-0.9", "100", "100", "99.9", "100", "300", "999.9", "-10.0"};
+  return (i >= 0 && i < (int)(sizeof(Wd) / sizeof(Wd[0]))) ? Wd[i] : "999";
+}
+inline void valU(const char* v, const char* u, int x, int y, int k, uint16_t c, int lab = PX_LAB) {
+  pt(v, x, y, k, c);
+  pt(u, x + pxWidth(v, k) + 2 + 2 * lab, y + 8 * k - 8 * lab, lab);
+}
+inline int slotWidth(int i) {
+  SlotV d = slotVal(i);
+  return max(pxWidth(didicfg::SLOT_NAMES[i], PX_LAB), pxWidth(slotWidest(i), PX_SM) + 2 + 2 * PX_LAB + pxWidth(d.unit, PX_LAB));
+}
+
 inline void topBar() {               // หน้า 14-16
   int vy = 8 + 8 * PXT_LAB + 4;
   int rr = 10 + pxWidth("8888", PXT_RPM);
@@ -428,11 +459,14 @@ inline void p9() {                   // หน้า 13
   pt("km/h", sr + 8, y + 8 * PX_SPD - lh(), PX_LAB);
   y += max(8 * PX_SPD, lh()) + 12;
   int vy = y + lh() + 6;
-  pt("COOLANT", 10, y, PX_LAB);
-  valC(f0(D.ect), 10, vy, PX_SM, ectC());
-  int ix = max(10 + pxWidth("COOLANT", PX_LAB), 10 + pxWidth("110", PX_SM) + pxWidth("C", PX_LAB) + 6) + 20;
-  pt("IAT", ix, y, PX_LAB);
-  valC(f0(D.iat), ix, vy, PX_SM, WH);
+  int a = constrain(didicfg::cfg.p13a, 0, didicfg::N_SLOTS - 1), b = constrain(didicfg::cfg.p13b, 0, didicfg::N_SLOTS - 1);
+  SlotV va = slotVal(a);
+  pt(didicfg::SLOT_NAMES[a], 10, y, PX_LAB);
+  valU(va.v, va.unit, 10, vy, PX_SM, va.c);
+  int ix = 10 + slotWidth(a) + 20;
+  SlotV vb = slotVal(b);
+  pt(didicfg::SLOT_NAMES[b], ix, y, PX_LAB);
+  valU(vb.v, vb.unit, ix, vy, PX_SM, vb.c);
   obd(474, 14, RIGHT);
   dots();
   shiftFlash();
