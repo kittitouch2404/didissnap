@@ -49,6 +49,8 @@ inline bool begin() {
   const int data[16] = {9, 10, 11, 12, 13, 16, 17, 18, 8, 3, 46, 4, 5, 6, 7, 15};
   for (int i = 0; i < 16; i++) c.data_gpio_nums[i] = data[i];
   c.flags.fb_in_psram = 1;
+  // บัฟเฟอร์สำรองใน RAM ภายใน: จอดึงภาพตรงกลับมาเองทุกเฟรม (กันภาพเลื่อนตอนชิปเขียนแฟลช)
+  c.bounce_buffer_size_px = LCD_W * 10;
   if (esp_lcd_new_rgb_panel(&c, &panel) != ESP_OK) return false;
   vsyncSem = xSemaphoreCreateBinary();
   esp_lcd_rgb_panel_event_callbacks_t cb;

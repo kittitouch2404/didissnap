@@ -202,6 +202,7 @@ inline void select(int kind, const String& path = String(""), uint32_t ver = 0) 
 // วาดรูปพื้นหลังลงเฟรม (ถ้ายังไม่พร้อม = พื้นดำ, คืน false)
 inline bool draw() {
   bool ok = false;
+  if (!lock) { gfx::clear(0); return false; }   // ยังไม่ได้เริ่มงานรูป (safe mode)
   xSemaphoreTake(lock, portMAX_DELAY);
   if (shown >= 0 && want.kind != NONE) { memcpy(gfx::G, buf[shown], NPX * 2); ok = true; }
   xSemaphoreGive(lock);

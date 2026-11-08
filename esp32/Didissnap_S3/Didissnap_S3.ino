@@ -19,6 +19,8 @@
 */
 #include <Arduino.h>
 #include <Preferences.h>
+#include "esp_system.h"
+#define DIDI_TX_POWER WIFI_POWER_8_5dBm   // กำลังส่ง WiFi ต่ำลง กินไฟน้อย (มือถืออยู่ในรถใกล้ ๆ)
 #include "DidissnapLink.h"
 #include "DidissnapConfig.h"
 #include "DidissnapButtons.h"
@@ -37,6 +39,7 @@
 
 Preferences prefs;
 static bool demo = true;
+static bool wifiOn = true;
 static int lastBri = -1;
 
 void resetPeaks() { data::resetPeaks(); }
@@ -76,47 +79,100 @@ static void chooseBackground(int page) {
 }
 
 // บอกขั้นตอนตอนเปิดเครื่อง + จำขั้นที่ทำอยู่ข้ามการรีเซ็ต (ถ้าดับ จะรู้ว่าดับตรงไหน)
-RTC_NOINIT_ATTR uint32_t g_magic, g_step;
+//  ถ้าดับที่ขั้นเดิม 2 รอบติด → รอบต่อไปข้ามขั้นนั้น (safe mode) แล้วขึ้นข้อความบนจอ
+RTC_NOINIT_ATTR uint32_t g_magic, g_step, g_crashStep, g_crashCount;
+static const char* const STEP_NAME[] = {"", "prefs", "lcd", "wifi", "config + web", "boot logo", "pictures (LittleFS)",
+                                        "background task", "ready", "first frames"};
+static int crashedAt = 0;          // ขั้นที่รอบที่แล้วดับ (0 = ไม่ได้ดับ)
+static const char* crashWhy = "";
+static bool skip(int n) { return crashedAt == n && g_crashCount >= 2; }
 static void step(int n, const char* what) {
   g_magic = 0xD1D1;
   g_step = n;
   Serial.printf("[boot %d] %s\n", n, what);
   Serial.flush();
 }
+static void checkLastBoot() {
+  esp_reset_reason_t r = esp_reset_reason();
+  bool bad = r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT || r == ESP_RST_BROWNOUT;
+  crashWhy = r == ESP_RST_BROWNOUT ? "BROWNOUT (power too weak)" : r == ESP_RST_PANIC ? "PANIC (crash)" : bad ? "WATCHDOG (hang)" : "";
+  if (g_magic == 0xD1D1 && bad && g_step >= 1 && g_step <= 9) {
+    crashedAt = g_step;
+    if (g_crashStep == g_step && g_crashCount < 100) g_crashCount++; else { g_crashStep = g_step; g_crashCount = 1; }
+  } else { g_crashStep = 0; g_crashCount = 0; }
+  if (r == ESP_RST_POWERON) { g_crashStep = 0; g_crashCount = 0; crashedAt = 0; }
+}
+// ขึ้นข้อความบนจอว่ารอบก่อนดับตรงไหน (ถ่ายรูปส่งมาได้เลย)
+static void showCrash() {
+  if (!crashedAt) return;
+  gfx::G = lcd::back();
+  gfx::clear(0);
+  gfx::text("LAST BOOT CRASHED", 240, 70, 26, gfx::rgb(0xFF2A2A), gfx::CENTER, 900);
+  char b[64];
+  snprintf(b, sizeof(b), "at step %d: %s", crashedAt, STEP_NAME[crashedAt]);
+  gfx::text(b, 240, 112, 19, 0xFFFF, gfx::CENTER, 700);
+  gfx::text(crashWhy, 240, 142, 16, gfx::rgb(0xFFC400), gfx::CENTER, 700);
+  snprintf(b, sizeof(b), "%u time(s) in a row%s", (unsigned)g_crashCount, g_crashCount >= 2 ? " -> SAFE MODE: step skipped" : "");
+  gfx::text(b, 240, 172, 14, gfx::rgb(0xAAAAAA), gfx::CENTER, 600);
+  gfx::text("Take a photo and send it to Claude", 240, 230, 13, gfx::rgb(0x888888), gfx::CENTER, 600);
+  lcd::present();
+  lcd::brightness(80);
+  delay(4000);
+}
 
 void setup() {
   Serial.begin(115200);
   uint32_t t0 = millis();
   while (!Serial && millis() - t0 < 1500) delay(10);
+  checkLastBoot();
   Serial.printf("\n=== Didissnap_S3 === reset reason %d\n", (int)esp_reset_reason());
-  if (g_magic == 0xD1D1) Serial.printf("    รอบที่แล้วค้างที่ [boot %u]\n", (unsigned)g_step);
+  if (crashedAt) Serial.printf("    รอบที่แล้วดับที่ [boot %d] %s (%s) ติดกัน %u ครั้ง\n", crashedAt, STEP_NAME[crashedAt], crashWhy, (unsigned)g_crashCount);
   Serial.printf("    PSRAM %u KB  flash %u MB\n", ESP.getPsramSize() / 1024, ESP.getFlashChipSize() >> 20);
   step(1, "prefs");
   prefs.begin("dash", false);
   step(2, "lcd");
   if (!lcd::begin()) Serial.println("LCD init FAILED (เช็ค PSRAM = OPI PSRAM)");
+  showCrash();
 
   step(3, "wifi");                                  // ต้องเปิด WiFi ก่อนเว็บเซิร์ฟเวอร์ (ไม่งั้น crash)
-  if (!didilink::begin()) Serial.println("WiFi FAILED");
+  if (skip(3)) { Serial.println("SAFE MODE: skip WiFi"); wifiOn = false; }
+  else if (!didilink::begin()) { Serial.println("WiFi FAILED"); wifiOn = false; }
   step(4, "config + web");
   didicfg::onPeaksReset = resetPeaks;
   didicfg::onTripReset = resetTrip;
-  didicfg::begin(prefs, pages::NAMES, pages::N);   // โหลดค่าตั้ง (ความสว่าง กลับจอ ฯลฯ)
+  if (wifiOn) didicfg::begin(prefs, pages::NAMES, pages::N);   // โหลดค่าตั้ง + เว็บตั้งค่า
+  else { didicfg::prefs = &prefs; didicfg::pageNames = pages::NAMES; didicfg::pageCount = pages::N; didicfg::load(); }
   step(5, "boot logo");
-  bootLogo();
+  if (!skip(5)) bootLogo();
+  else lcd::brightness(didicfg::cfg.bri);
 
   step(6, "pictures (LittleFS - first boot formats, may take ~10 s)");
-  if (!didipics::begin()) Serial.println("LittleFS FAILED (เช็คว่ามี partitions.csv ในโฟลเดอร์)");
+  if (!skip(6) && !LittleFS.begin(false)) {        // ยังไม่เคยเตรียมพื้นที่รูป → ฟอร์แมต (ครั้งแรกครั้งเดียว ~1 นาที)
+    gfx::G = lcd::back();
+    gfx::clear(0);
+    gfx::text("PREPARING PICTURE STORAGE", 240, 120, 20, gfx::rgb(0xFF7A00), gfx::CENTER, 900);
+    gfx::text("first boot only - about 1 minute", 240, 150, 14, 0xFFFF, gfx::CENTER, 600);
+    gfx::text("do not unplug", 240, 175, 14, gfx::rgb(0xAAAAAA), gfx::CENTER, 600);
+    lcd::present();
+    lcd::brightness(80);
+    Serial.println("    formatting LittleFS (first boot) ...");
+    uint32_t f0 = millis();
+    LittleFS.begin(true);
+    Serial.printf("    format done in %u s\n", (unsigned)((millis() - f0) / 1000));
+  }
+  if (skip(6)) Serial.println("SAFE MODE: skip pictures");
+  else if (!didipics::begin()) Serial.println("LittleFS FAILED (เช็คว่ามี partitions.csv ในโฟลเดอร์)");
   step(7, "background task");
-  if (!bg::begin()) Serial.println("bg buffers FAILED");
+  if (skip(7) || skip(6)) Serial.println("SAFE MODE: skip background task");
+  else if (!bg::begin()) Serial.println("bg buffers FAILED");
   menu::onPeaks = resetPeaks;
   menu::onTrip = resetTrip;
   menu::onHold2 = onHold2;
   perf::begin();
   didibtn::onEvent = onButton;
   didibtn::begin(PIN_BTN1, PIN_BTN2, -1, PIN_BTN2_ALT);
-  step(8, "ready");
-  g_magic = 0;
+  if (skip(9)) didicfg::cfg.page = 0;   // ดับตอนวาดหน้าที่เลือกไว้ → เริ่มหน้า 1
+  step(9, "first frames");
   Serial.printf("Didissnap_S3 ready  heap %u  psram %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
 }
 
@@ -128,14 +184,16 @@ void loop() {
   float dt = lastUs ? fminf(.1f, (us - lastUs) / 1e6f) : .016f;
   lastUs = us;
 
-  didilink::loop();
-  didicfg::loop();     // หน้าเว็บ + สลับหน้าอัตโนมัติ
+  if (wifiOn) {
+    didilink::loop();
+    didicfg::loop();   // หน้าเว็บ + สลับหน้าอัตโนมัติ
+  }
   didibtn::loop();
 
   D.link = demo ? 0 : 2;
   data::update(dt, demo);
   perf::sample(RAW.spd);
-  didilink::send(D.rpm, D.spd, D.ect, D.iat, D.volt, D.load, D.tps, D.map, D.maf, D.fuel);
+  if (wifiOn) didilink::send(D.rpm, D.spd, D.ect, D.iat, D.volt, D.load, D.tps, D.map, D.maf, D.fuel);
 
   const auto& c = didicfg::cfg;
   int bri = c.briAuto ? 85 : c.bri;
@@ -150,6 +208,7 @@ void loop() {
   lcd::present();
 
   frames++;
+  if (g_magic && millis() > 8000) { g_magic = 0; g_crashCount = 0; Serial.println("[boot] running OK"); }
   if (millis() - fpsT >= 5000) {
     Serial.printf("fps %.1f  page %d  heap %u  psram %u\n", frames / 5.f, c.page + 1, ESP.getFreeHeap(), ESP.getFreePsram());
     frames = 0;

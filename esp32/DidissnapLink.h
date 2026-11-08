@@ -64,6 +64,9 @@ inline bool begin() {
   if (!WiFi.mode(WIFI_AP)) return false;
   // ช่อง 1, ไม่ซ่อนชื่อ, ต่อได้สูงสุด DIDI_MAX_STA เครื่อง
   if (!WiFi.softAP(DIDI_SSID, DIDI_PASS, 1, 0, DIDI_MAX_STA)) return false;
+#ifdef DIDI_TX_POWER
+  WiFi.setTxPower(DIDI_TX_POWER);   // ลดกำลังส่ง = กินไฟน้อยลง (ในรถมือถืออยู่ใกล้)
+#endif
   // ห้าม WiFi.setSleep(false) เมื่อใช้ Bluetooth ไปด้วย (ESP32 จะ abort/รีบูต)
   server.begin();
   server.setNoDelay(true);
