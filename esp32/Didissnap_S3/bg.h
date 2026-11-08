@@ -7,7 +7,7 @@ namespace bg {
 enum Kind { NONE = 0, BI_JPG9, BI_RUN_ANIM, BI_JPG11, FILE_PIC };
 static float runSpeed = 0;
 static uint16_t* hostImg = nullptr;
-inline bool draw() { if (hostImg) { memcpy(gfx::G, hostImg, 480 * 272 * 2); return true; } gfx::clear(0); return false; }
+inline bool draw() { if (hostImg) { memcpy(gfx::G + gfx::Y0 * 480, hostImg + gfx::Y0 * 480, (gfx::Y1 - gfx::Y0) * 480 * 2); return true; } gfx::clear(0); return false; }
 }
 #else
 #include <Arduino.h>
@@ -204,7 +204,10 @@ inline bool draw() {
   bool ok = false;
   if (!lock) { gfx::clear(0); return false; }   // ยังไม่ได้เริ่มงานรูป (safe mode)
   xSemaphoreTake(lock, portMAX_DELAY);
-  if (shown >= 0 && want.kind != NONE) { memcpy(gfx::G, buf[shown], NPX * 2); ok = true; }
+  if (shown >= 0 && want.kind != NONE) {   // คัดลอกเฉพาะแถวของแถบที่กำลังวาด
+    memcpy(gfx::G + gfx::Y0 * W, buf[shown] + gfx::Y0 * W, (gfx::Y1 - gfx::Y0) * W * 2);
+    ok = true;
+  }
   xSemaphoreGive(lock);
   if (!ok) gfx::clear(0);
   return ok;

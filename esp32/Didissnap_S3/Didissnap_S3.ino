@@ -49,10 +49,18 @@ void onHold2() {
   if (didicfg::cfg.page == pages::PG_RECORD) { perf::toggle(RAW.spd); menu::toast(perf::state == perf::READY || perf::state == perf::WAIT ? "ARMED" : "STOP"); }
 }
 
-// กลับจอ 180° (หมุนทั้งเฟรม)
-static void flip180(uint16_t* p) {
-  uint16_t *a = p, *b = p + LCD_W * LCD_H - 1;
-  while (a < b) { uint16_t t = *a; *a++ = *b; *b-- = t; }
+// วาดทีละแถบลง RAM ภายในชิป (เร็ว) แล้วคัดลอกลง PSRAM รวดเดียว
+// (ถ้าวาดตรงลง PSRAM ทั้งจอทุกเฟรม จอจะแย่ง PSRAM ไม่ทัน → ภาพเลื่อน/ซ้อน)
+#define STRIP_H 68                       // 272 / 68 = 4 แถบ
+static uint16_t* stripBuf = nullptr;
+static void copyStrip(uint16_t* fb, int y0, bool flip) {
+  const uint16_t* src = stripBuf;
+  if (!flip) { memcpy(fb + y0 * LCD_W, src, STRIP_H * LCD_W * 2); return; }
+  for (int r = 0; r < STRIP_H; r++) {     // กลับจอ 180°: แถวกลับหัว + กลับซ้ายขวา
+    const uint16_t* s = src + r * LCD_W;
+    uint16_t* d = fb + (LCD_H - 1 - (y0 + r)) * LCD_W + LCD_W - 1;
+    for (int x = 0; x < LCD_W; x++) *d-- = s[x];
+  }
 }
 
 static void bootLogo() {
@@ -106,7 +114,7 @@ static void checkLastBoot() {
 // ขึ้นข้อความบนจอว่ารอบก่อนดับตรงไหน (ถ่ายรูปส่งมาได้เลย)
 static void showCrash() {
   if (!crashedAt || !lcd::ok()) return;
-  gfx::G = lcd::back();
+  gfx::target(lcd::back());
   gfx::clear(0);
   gfx::text("LAST BOOT CRASHED", 240, 70, 26, gfx::rgb(0xFF2A2A), gfx::CENTER, 900);
   char b[64];
@@ -149,7 +157,7 @@ void setup() {
 
   step(6, "pictures (LittleFS - first boot formats, may take ~10 s)");
   if (!skip(6) && !LittleFS.begin(false)) {        // ยังไม่เคยเตรียมพื้นที่รูป → ฟอร์แมต (ครั้งแรกครั้งเดียว ~1 นาที)
-    gfx::G = lcd::back();
+    gfx::target(lcd::back());
     gfx::clear(0);
     gfx::text("PREPARING PICTURE STORAGE", 240, 120, 20, gfx::rgb(0xFF7A00), gfx::CENTER, 900);
     gfx::text("first boot only - about 1 minute", 240, 150, 14, 0xFFFF, gfx::CENTER, 600);
@@ -163,6 +171,8 @@ void setup() {
   }
   if (skip(6)) Serial.println("SAFE MODE: skip pictures");
   else if (!didipics::begin()) Serial.println("LittleFS FAILED (เช็คว่ามี partitions.csv ในโฟลเดอร์)");
+  stripBuf = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (!stripBuf) { Serial.println("strip buffer: no internal RAM -> PSRAM"); stripBuf = (uint16_t*)ps_malloc(LCD_W * STRIP_H * 2); }
   step(7, "background task");
   if (skip(7) || skip(6)) Serial.println("SAFE MODE: skip background task");
   else if (!bg::begin()) Serial.println("bg buffers FAILED");
@@ -201,12 +211,19 @@ void loop() {
   if (bri != lastBri) { lcd::brightness(bri); lastBri = bri; }
 
   chooseBackground(menu::open ? -1 : c.page);
-  gfx::G = lcd::back();
-  if (menu::open) menu::draw();
-  else pages::draw(c.page);
-  menu::drawToast();
-  if (c.flip) flip180(gfx::G);
+  uint16_t* fb = lcd::back();
+  for (int y0 = 0; y0 < LCD_H; y0 += STRIP_H) {
+    gfx::strip(stripBuf, y0, y0 + STRIP_H);
+    if (menu::open) menu::draw();
+    else pages::draw(c.page);
+    menu::drawToast();
+    copyStrip(fb, y0, c.flip);
+  }
   lcd::present();
+  // จำกัด 30 fps (พอสำหรับหน้าปัด และลดงานของ PSRAM)
+  static uint32_t lastFrame = 0;
+  while (millis() - lastFrame < 33) vTaskDelay(1);
+  lastFrame = millis();
 
   frames++;
   if (g_magic && millis() > 8000) { g_magic = 0; g_crashCount = 0; Serial.println("[boot] running OK"); }

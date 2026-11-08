@@ -80,8 +80,7 @@ inline uint16_t* back() {
 // ส่งบัฟเฟอร์หลังขึ้นจอ แล้วรอจนจอเปลี่ยนไปแสดงเฟรมใหม่จริง
 inline void present() {
   if (!ok()) { delay(16); return; }
-  uint16_t* b = back();
-  esp_cache_msync(b, LCD_W * LCD_H * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+  uint16_t* b = back();   // (draw_bitmap เขียน cache ลง PSRAM ให้เองแล้ว)
   xSemaphoreTake(vsyncSem, 0);
   esp_lcd_panel_draw_bitmap(panel, 0, 0, LCD_W, LCD_H, b);
   front ^= 1;
