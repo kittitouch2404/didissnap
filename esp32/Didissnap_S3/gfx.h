@@ -68,44 +68,56 @@ static inline float cov(float d) { return d >= 0.5f ? 1.f : (d <= -0.5f ? 0.f : 
 inline void rrect(float x, float y, float w, float h, float r, int fillC, int strokeC = -1, float lw = 1) {
   if (r < 0.5f && strokeC < 0 && fillC >= 0) { fill((int)lroundf(x), (int)lroundf(y), (int)lroundf(w), (int)lroundf(h), (uint16_t)fillC); return; }
   r = fminf(r, fminf(w, h) / 2);
-  int y0 = (int)floorf(y), y1 = (int)ceilf(y + h), x0 = (int)floorf(x), x1 = (int)ceilf(x + w);
+  const float cxm = x + w / 2, cym = y + h / 2, hx = w / 2 - r, hy = h / 2 - r;
+  // ระยะจากขอบ (บวก = ข้างใน) ของจุด (px,py)
+  auto inside = [&](float pxf, float py) {
+    float qx = fabsf(pxf - cxm) - hx, qy = fabsf(py - cym) - hy;
+    if (qx > 0 && qy > 0) return r - sqrtf(qx * qx + qy * qy);
+    return r - fmaxf(qx, qy);
+  };
+  auto shade = [&](int xx, int yy, float in) {
+    float a = cov(in);
+    if (a <= 0) return;
+    uint16_t* p = &G[yy * W + xx];
+    if (fillC >= 0) *p = blend((uint16_t)fillC, *p, (uint8_t)(a * 255));
+    if (strokeC >= 0) {
+      float st = a * (1.f - cov(in - lw));
+      if (st > 0) *p = blend((uint16_t)strokeC, *p, (uint8_t)(st * 255));
+    }
+  };
+  int y0 = (int)floorf(y), y1 = (int)ceilf(y + h), x0 = max(0, (int)floorf(x)), x1 = min(W, (int)ceilf(x + w));
+  const float edge = (strokeC >= 0 ? lw : 0) + 1.5f;   // ความกว้างขอบที่ต้องคำนวณละเอียด
   for (int yy = max(y0, Y0); yy < min(y1, Y1); yy++) {
     float py = yy + 0.5f;
-    for (int xx = x0; xx < x1; xx++) {
-      if ((unsigned)xx >= (unsigned)W) continue;
-      float pxf = xx + 0.5f;
-      // ระยะจากขอบ (บวก = อยู่ข้างใน)
-      float qx = fmaxf(fabsf(pxf - (x + w / 2)) - (w / 2 - r), 0.f), qy = fmaxf(fabsf(py - (y + h / 2)) - (h / 2 - r), 0.f);
-      float ex = fminf(pxf - x, x + w - pxf), ey = fminf(py - y, y + h - py);
-      float inside = (qx > 0 && qy > 0) ? r - sqrtf(qx * qx + qy * qy) : fminf(ex, ey);
-      if (qx > 0 && qy == 0) inside = fminf(inside, ex); else if (qy > 0 && qx == 0) inside = fminf(inside, ey);
-      float a = cov(inside);
-      if (a <= 0) continue;
-      uint16_t* p = &G[yy * W + xx];
-      if (fillC >= 0) *p = blend((uint16_t)fillC, *p, (uint8_t)(a * 255));
-      if (strokeC >= 0) {
-        float s = a * (1.f - cov(inside - lw));
-        if (s > 0) *p = blend((uint16_t)strokeC, *p, (uint8_t)(s * 255));
-      }
-    }
+    bool corner = fabsf(py - cym) > hy - edge;           // แถวใกล้ขอบบน/ล่าง หรือมุม
+    if (corner) { for (int xx = x0; xx < x1; xx++) shade(xx, yy, inside(xx + 0.5f, py)); continue; }
+    int ea = min(x1, (int)ceilf(x + edge)), eb = max(ea, (int)floorf(x + w - edge));
+    for (int xx = x0; xx < ea; xx++) shade(xx, yy, inside(xx + 0.5f, py));
+    if (fillC >= 0) { uint16_t* rp = G + yy * W; for (int xx = ea; xx < eb; xx++) rp[xx] = (uint16_t)fillC; }
+    for (int xx = eb; xx < x1; xx++) shade(xx, yy, inside(xx + 0.5f, py));
   }
 }
 
 // ---------------------------------------------------------------- วงกลม / ส่วนโค้ง
 inline void circle(float cx, float cy, float r, uint16_t c, int strokeC = -1, float lw = 1) {
   int y0 = (int)floorf(cy - r - 1), y1 = (int)ceilf(cy + r + 1);
+  float rin = strokeC >= 0 ? r - lw - 1 : r - 1;          // ข้างในวงนี้ = สีเต็ม ไม่ต้องคำนวณ
+  float rin2 = rin > 0 ? rin * rin : -1;
   for (int yy = max(y0, Y0); yy <= min(y1, Y1 - 1); yy++) {
     float dy = yy + 0.5f - cy;
     if (fabsf(dy) > r + 1) continue;
     float span = sqrtf(fmaxf(0.f, (r + 1) * (r + 1) - dy * dy));
-    for (int xx = (int)floorf(cx - span); xx <= (int)ceilf(cx + span); xx++) {
-      float dx = xx + 0.5f - cx, d = sqrtf(dx * dx + dy * dy);
-      float a = cov(r - d);
+    int xa = max(0, (int)floorf(cx - span)), xb = min(W - 1, (int)ceilf(cx + span));
+    uint16_t* rp = G + yy * W;
+    for (int xx = xa; xx <= xb; xx++) {
+      float dx = xx + 0.5f - cx, d2 = dx * dx + dy * dy;
+      if (d2 < rin2) { rp[xx] = c; continue; }
+      float d = sqrtf(d2), a = cov(r - d);
       if (a <= 0) continue;
-      pxa(xx, yy, c, (uint8_t)(a * 255));
+      rp[xx] = blend(c, rp[xx], (uint8_t)(a * 255));
       if (strokeC >= 0) {
-        float s = a * (1.f - cov(r - d - lw));
-        if (s > 0) pxa(xx, yy, (uint16_t)strokeC, (uint8_t)(s * 255));
+        float st = a * (1.f - cov(r - d - lw));
+        if (st > 0) rp[xx] = blend((uint16_t)strokeC, rp[xx], (uint8_t)(st * 255));
       }
     }
   }
@@ -113,33 +125,40 @@ inline void circle(float cx, float cy, float r, uint16_t c, int strokeC = -1, fl
 
 // ส่วนโค้งหนา: รัศมีกลางเส้น r, หนา w, มุม a0→a1 (เรเดียน ตามเข็มนาฬิกา เริ่มจากแกน x)
 inline void arc(float cx, float cy, float r, float a0, float a1, uint16_t c, float w) {
-  if (a1 < a0) return;
+  if (a1 <= a0) return;
   const float TP = 6.2831853f;
   float span = a1 - a0;
-  if (span >= TP) { a0 = 0; span = TP; }
+  bool full = span >= TP - 1e-4f;
+  // ทดสอบมุมด้วย cross product (เร็วกว่า atan2)
+  float sx = cosf(a0), sy = sinf(a0), ex = cosf(a1), ey = sinf(a1);
+  bool big = span > (float)M_PI;
+  auto inAngle = [&](float dx, float dy) {
+    if (full) return true;
+    bool afterStart = sx * dy - sy * dx >= 0, beforeEnd = dx * ey - dy * ex >= 0;
+    return big ? (afterStart || beforeEnd) : (afterStart && beforeEnd);
+  };
   float ro = r + w / 2, ri = r - w / 2;
+  float ro2s = (ro - 1) * (ro - 1), ri2s = (ri + 1) * (ri + 1);   // ระหว่างนี้ = สีเต็ม
   int y0 = (int)floorf(cy - ro - 1), y1 = (int)ceilf(cy + ro + 1);
   for (int yy = max(y0, Y0); yy <= min(y1, Y1 - 1); yy++) {
     float dy = yy + 0.5f - cy;
     float so = sqrtf(fmaxf(0.f, (ro + 1) * (ro + 1) - dy * dy));
     float si = (fabsf(dy) < ri - 1) ? sqrtf((ri - 1) * (ri - 1) - dy * dy) : -1;
+    uint16_t* rp = G + yy * W;
     for (int pass = 0; pass < 2; pass++) {
       int xa, xb;
       if (si < 0) { if (pass) break; xa = (int)floorf(cx - so); xb = (int)ceilf(cx + so); }
       else if (pass == 0) { xa = (int)floorf(cx - so); xb = (int)ceilf(cx - si); }
       else { xa = (int)floorf(cx + si); xb = (int)ceilf(cx + so); }
+      xa = max(xa, 0);
+      xb = min(xb, W - 1);
       for (int xx = xa; xx <= xb; xx++) {
-        if ((unsigned)xx >= (unsigned)W) continue;
-        float dx = xx + 0.5f - cx, d = sqrtf(dx * dx + dy * dy);
-        float a = fminf(cov(ro - d), cov(d - ri));
-        if (a <= 0) continue;
-        if (span < TP) {
-          float ang = atan2f(dy, dx) - a0;
-          ang = fmodf(ang, TP);
-          if (ang < 0) ang += TP;
-          if (ang > span) continue;
-        }
-        pxa(xx, yy, c, (uint8_t)(a * 255));
+        float dx = xx + 0.5f - cx;
+        if (!inAngle(dx, dy)) continue;
+        float d2 = dx * dx + dy * dy;
+        if (d2 <= ro2s && d2 >= ri2s) { rp[xx] = c; continue; }
+        float d = sqrtf(d2), a = fminf(cov(ro - d), cov(d - ri));
+        if (a > 0) rp[xx] = blend(c, rp[xx], (uint8_t)(a * 255));
       }
     }
   }
@@ -155,8 +174,8 @@ inline void radial(float cx, float cy, float r, uint16_t c0, uint16_t c1, uint16
     float span = sqrtf(fmaxf(0.f, (r + 1) * (r + 1) - dy * dy));
     for (int xx = (int)floorf(cx - span); xx <= (int)ceilf(cx + span); xx++) {
       if ((unsigned)xx >= (unsigned)W) continue;
-      float dx = xx + 0.5f - cx, d = sqrtf(dx * dx + dy * dy);
-      float a = cov(r - d);
+      float dx = xx + 0.5f - cx, d2 = dx * dx + dy * dy;
+      float a = d2 < (r - 1) * (r - 1) ? 1.f : cov(r - sqrtf(d2));
       if (a <= 0) continue;
       float ddy = dy - fy, t = sqrtf(dx * dx + ddy * ddy) / r;
       uint16_t c = t < mid ? lerp565(c0, c1, t / mid) : lerp565(c1, c2, (t - mid) / (1 - mid));

@@ -91,8 +91,8 @@ static void chooseBackground(int page) {
 // บอกขั้นตอนตอนเปิดเครื่อง + จำขั้นที่ทำอยู่ข้ามการรีเซ็ต (ถ้าดับ จะรู้ว่าดับตรงไหน)
 //  ถ้าดับที่ขั้นเดิม 2 รอบติด → รอบต่อไปข้ามขั้นนั้น (safe mode) แล้วขึ้นข้อความบนจอ
 RTC_NOINIT_ATTR uint32_t g_magic, g_step, g_crashStep, g_crashCount;
-static const char* const STEP_NAME[] = {"", "prefs", "lcd", "wifi", "config + web", "boot logo", "pictures (LittleFS)",
-                                        "background task", "ready", "first frames"};
+static const char* const STEP_NAME[] = {"", "prefs", "picture storage (format)", "lcd", "wifi", "config + web", "boot logo",
+                                        "pictures (LittleFS)", "background task", "ready", "first frames"};
 static int crashedAt = 0;          // ขั้นที่รอบที่แล้วดับ (0 = ไม่ได้ดับ)
 static const char* crashWhy = "";
 static bool skip(int n) { return crashedAt == n && g_crashCount >= 2; }
@@ -107,7 +107,7 @@ static void checkLastBoot() {
   bool bad = r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT || r == ESP_RST_BROWNOUT;
   crashWhy = r == ESP_RST_BROWNOUT ? "BROWNOUT (power too weak)" : r == ESP_RST_PANIC ? "PANIC (crash)"
            : r == ESP_RST_INT_WDT ? "WATCHDOG (interrupt)" : r == ESP_RST_TASK_WDT ? "WATCHDOG (task)" : bad ? "WATCHDOG (other)" : "";
-  if (g_magic == 0xD1D1 && bad && g_step >= 1 && g_step <= 9) {
+  if (g_magic == 0xD1D1 && bad && g_step >= 1 && g_step <= 10) {
     crashedAt = g_step;
     if (g_crashStep == g_step && g_crashCount < 100) g_crashCount++; else { g_crashStep = g_step; g_crashCount = 1; }
   } else { g_crashStep = 0; g_crashCount = 0; }
@@ -141,45 +141,48 @@ void setup() {
   Serial.printf("    PSRAM %u KB  flash %u MB\n", ESP.getPsramSize() / 1024, ESP.getFlashChipSize() >> 20);
   step(1, "prefs");
   prefs.begin("dash", false);
-  step(2, "lcd");
+
+  // เตรียมพื้นที่รูป "ก่อน" เปิดจอ: ตอนลบแฟลชก้อนใหญ่ถ้าจอทำงานอยู่ จะค้าง (WATCHDOG interrupt)
+  step(2, "picture storage");
+  bool fsOk = false;
+  if (!skip(2)) {
+    fsOk = LittleFS.begin(false);
+    if (!fsOk) {
+      Serial.println("    formatting LittleFS (first boot only, ~1 min, screen stays dark) ...");
+      Serial.flush();
+      uint32_t f0 = millis();
+      disableCore0WDT();
+      disableCore1WDT();
+      fsOk = LittleFS.begin(true);
+      enableCore0WDT();
+      Serial.printf("    format %s in %u s\n", fsOk ? "done" : "FAILED", (unsigned)((millis() - f0) / 1000));
+    }
+  } else Serial.println("SAFE MODE: skip picture storage");
+
+  step(3, "lcd");
   if (!lcd::begin()) Serial.println("LCD init FAILED (เช็ค PSRAM = OPI PSRAM)");
   showCrash();
 
-  step(3, "wifi");                                  // ต้องเปิด WiFi ก่อนเว็บเซิร์ฟเวอร์ (ไม่งั้น crash)
-  if (skip(3)) { Serial.println("SAFE MODE: skip WiFi"); wifiOn = false; }
+  step(4, "wifi");                                  // ต้องเปิด WiFi ก่อนเว็บเซิร์ฟเวอร์ (ไม่งั้น crash)
+  if (skip(4)) { Serial.println("SAFE MODE: skip WiFi"); wifiOn = false; }
   else if (!didilink::begin()) { Serial.println("WiFi FAILED"); wifiOn = false; }
-  step(4, "config + web");
+  step(5, "config + web");
   didicfg::onPeaksReset = resetPeaks;
   didicfg::onTripReset = resetTrip;
   if (wifiOn) didicfg::begin(prefs, pages::NAMES, pages::N);   // โหลดค่าตั้ง + เว็บตั้งค่า
   else { didicfg::prefs = &prefs; didicfg::pageNames = pages::NAMES; didicfg::pageCount = pages::N; didicfg::load(); }
-  step(5, "boot logo");
-  if (!skip(5)) bootLogo();
+  step(6, "boot logo");
+  if (!skip(6)) bootLogo();
   else lcd::brightness(didicfg::cfg.bri);
 
-  step(6, "pictures (LittleFS - first boot formats, may take ~10 s)");
-  if (!skip(6) && !LittleFS.begin(false)) {        // ยังไม่เคยเตรียมพื้นที่รูป → ฟอร์แมต (ครั้งแรกครั้งเดียว ~1 นาที)
-    gfx::target(lcd::back());
-    gfx::clear(0);
-    gfx::text("PREPARING PICTURE STORAGE", 240, 120, 20, gfx::rgb(0xFF7A00), gfx::CENTER, 900);
-    gfx::text("first boot only - about 1 minute", 240, 150, 14, 0xFFFF, gfx::CENTER, 600);
-    gfx::text("do not unplug", 240, 175, 14, gfx::rgb(0xAAAAAA), gfx::CENTER, 600);
-    lcd::present();
-    lcd::brightness(80);
-    Serial.println("    formatting LittleFS (first boot) ...");
-    uint32_t f0 = millis();
-    disableCore0WDT();                 // ฟอร์แมตพื้นที่ใหญ่ใช้เวลานาน — ปิดตัวกันค้างชั่วคราว
-    disableCore1WDT();
-    LittleFS.begin(true);
-    enableCore0WDT();
-    Serial.printf("    format done in %u s\n", (unsigned)((millis() - f0) / 1000));
-  }
-  if (skip(6)) Serial.println("SAFE MODE: skip pictures");
-  else if (!didipics::begin()) Serial.println("LittleFS FAILED (เช็คว่ามี partitions.csv ในโฟลเดอร์)");
+  step(7, "pictures");
+  bool picsOn = fsOk && !skip(7);
+  if (!picsOn) Serial.println("pictures OFF");
+  else if (!didipics::begin()) { Serial.println("LittleFS FAILED (เช็คว่ามี partitions.csv ในโฟลเดอร์)"); picsOn = false; }
   stripBuf = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (!stripBuf) { Serial.println("strip buffer: no internal RAM -> PSRAM"); stripBuf = (uint16_t*)ps_malloc(LCD_W * STRIP_H * 2); }
-  step(7, "background task");
-  if (skip(7) || skip(6)) Serial.println("SAFE MODE: skip background task");
+  step(8, "background task");
+  if (!picsOn || skip(8)) Serial.println("background task OFF");
   else if (!bg::begin()) Serial.println("bg buffers FAILED");
   menu::onPeaks = resetPeaks;
   menu::onTrip = resetTrip;
@@ -187,8 +190,8 @@ void setup() {
   perf::begin();
   didibtn::onEvent = onButton;
   didibtn::begin(PIN_BTN1, PIN_BTN2, -1, PIN_BTN2_ALT);
-  if (skip(9)) didicfg::cfg.page = 0;   // ดับตอนวาดหน้าที่เลือกไว้ → เริ่มหน้า 1
-  step(9, "first frames");
+  if (skip(10)) didicfg::cfg.page = 0;   // ดับตอนวาดหน้าที่เลือกไว้ → เริ่มหน้า 1
+  step(10, "first frames");
   Serial.printf("Didissnap_S3 ready  heap %u  psram %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
 }
 
@@ -225,10 +228,7 @@ void loop() {
     copyStrip(fb, y0, c.flip);
   }
   lcd::present();
-  // จำกัด 30 fps (พอสำหรับหน้าปัด และลดงานของ PSRAM)
-  static uint32_t lastFrame = 0;
-  while (millis() - lastFrame < 33) vTaskDelay(1);
-  lastFrame = millis();
+  // present() รอ vsync อยู่แล้ว → เฟรมตรงจังหวะจอ (~44 fps หรือ 22 fps สม่ำเสมอ ไม่กระตุก)
 
   frames++;
   if (g_magic && millis() > 8000) { g_magic = 0; g_crashCount = 0; Serial.println("[boot] running OK"); }

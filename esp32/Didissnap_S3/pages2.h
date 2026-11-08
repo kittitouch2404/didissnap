@@ -37,7 +37,10 @@ inline float cl01(float v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
 inline void redstripe() {
   const int max_ = scaleMax();
   clear(rgb(0x161616));
-  for (int i = -H; i < W; i += 6) line(i, 0, i + H, H, rgb(0x262626), 1);                 // ลายคาร์บอน
+  {                                                                                      // ลายคาร์บอน (เส้นทแยงทุก 6 px)
+    const uint16_t cc = rgb(0x262626);
+    for (int y = Y0; y < Y1; y++) { uint16_t* rp = G + y * W; for (int x = ((y % 6) + 6) % 6; x < W; x += 6) rp[x] = cc; }
+  }
   const int sx = (int)X(12), sy = (int)Y(12), sw = (int)X(976), sh = (int)Y(410);
   for (int i = 0; i < 9; i++) fill(sx, sy + i * sh / 9, sw, sh / 9 + 1, i % 2 ? rgb(0xB80E18) : rgb(0xD01420));
   // ค่าทางขวา 4 แถว
