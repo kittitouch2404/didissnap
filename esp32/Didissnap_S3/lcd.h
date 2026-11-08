@@ -131,19 +131,16 @@ static void presenter(void*) {
   }
 }
 
-// อัตรารีเฟรชจอ (Hz) และ "ขึ้นภาพทุกกี่ vsync"
-inline void setRefresh(int hz, int every) {
-  minVsyncs = every < 1 ? 1 : every;
-  if (!panel || hz == curHz) return;
-  curHz = hz;
-  esp_lcd_rgb_panel_set_pclk(panel, (uint32_t)hz * DOTS_PER_FRAME);
-}
+static bool usePresenter = false;
 
-inline bool begin() {
+// hz = อัตรารีเฟรช (ตั้งตอนเริ่มเท่านั้น — เปลี่ยนระหว่างทำงานแล้วเสี่ยงดับ), every = ขึ้นภาพทุกกี่ vsync
+// presenter = false → คัดลอกขึ้นจอเองในโปรแกรมหลักแบบเดิม (โหมดปลอดภัย)
+inline bool begin(int hz = 44, int every = 1, bool presenter = true) {
   esp_lcd_rgb_panel_config_t c;
   memset(&c, 0, sizeof(c));
   c.clk_src = LCD_CLK_SRC_DEFAULT;
-  c.timings.pclk_hz = LCD_PCLK_HZ;
+  c.timings.pclk_hz = (uint32_t)hz * DOTS_PER_FRAME;
+  minVsyncs = every < 1 ? 1 : every;
   c.timings.h_res = LCD_W;
   c.timings.v_res = LCD_H;
   c.timings.hsync_pulse_width = 10;
@@ -187,12 +184,15 @@ inline bool begin() {
   delay(30);                 // ให้จอส่งภาพไปสักเฟรมก่อน ค่อยจำตำแหน่ง DMA
   findDma();
   hookFlash();
-  curHz = LCD_PCLK_HZ / DOTS_PER_FRAME;
-  pendSem = xSemaphoreCreateBinary();
-  doneSem = xSemaphoreCreateBinary();
-  xTaskCreatePinnedToCore(presenter, "lcd", 3072, nullptr, 6, nullptr, 1);
-  Serial.printf("LCD stream mode, pclk %d Hz, DMA ch %d head 0x%05x, flash hook %s\n",
-                LCD_PCLK_HZ, dmaCh, (unsigned)dmaHead, origOs ? "on" : "OFF");
+  curHz = hz;
+  Serial.printf("LCD stream %d Hz (every %d), DMA ch %d head 0x%05x, flash hook %s, presenter %s\n", hz, minVsyncs, dmaCh,
+                (unsigned)dmaHead, origOs ? "on" : "OFF", presenter ? "on" : "off");
+  if (presenter) {
+    pendSem = xSemaphoreCreateBinary();
+    doneSem = xSemaphoreCreateBinary();
+    usePresenter = xTaskCreatePinnedToCore(lcd::presenter, "lcd", 4096, nullptr, 6, nullptr, 1) == pdPASS;
+  }
+  
   return true;
 }
 
@@ -220,6 +220,12 @@ inline uint16_t* back() {
 // (ถ้าเฟรมก่อนยังไม่ได้ขึ้นจอ รอก่อน — บัฟเฟอร์ที่จะวาดต่อต้องคัดลอกเสร็จแล้ว)
 inline void present() {
   if (!ok()) { delay(16); return; }
+  if (!usePresenter) {                       // แบบเดิม: รอ vsync แล้วคัดลอกเอง
+    xSemaphoreTake(vsyncSem, 0);
+    xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60));
+    paceCopy(fb, bb[wIdx], FB_BYTES);
+    return;
+  }
   while (copied != handed) xSemaphoreTake(doneSem, pdMS_TO_TICKS(50));
   pending = wIdx;
   handed++;
@@ -228,7 +234,7 @@ inline void present() {
 }
 // รอจนเฟรมล่าสุดขึ้นจอจริง (ใช้ตอนเปิดเครื่อง/หน้าจอแจ้งปัญหา)
 inline void flush() {
-  if (!ok()) return;
+  if (!ok() || !usePresenter) return;
   while (copied != handed) xSemaphoreTake(doneSem, pdMS_TO_TICKS(50));
 }
 

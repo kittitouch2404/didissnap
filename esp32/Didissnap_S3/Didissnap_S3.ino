@@ -118,15 +118,13 @@ static void renderFrame(uint16_t* fb, int page, bool menuOpen, bool flip) {
   if (workGo) xSemaphoreTake(workDone, portMAX_DELAY);
 }
 
-// อัตรารีเฟรชจอตามเมนู REFRESH
-static void applyLcdMode(int m) {
-  static const int HZ[4] = {44, 30, 60, 60}, EVERY[4] = {1, 1, 2, 1};
-  m &= 3;
-  lcd::setRefresh(HZ[m], EVERY[m]);
-}
+// อัตรารีเฟรชจอตามเมนู REFRESH (ตั้งตอนเปิดเครื่อง — เปลี่ยนในเมนูแล้วเครื่องรีสตาร์ทเอง)
+static const int LCD_HZ[4] = {44, 30, 60, 60}, LCD_EVERY[4] = {1, 1, 2, 1};
+static uint32_t restartAt = 0;
 static void onLcdMode(int m) {
-  applyLcdMode(m);
-  prefs.putInt("lcdMode", m);
+  prefs.putInt("lcdMode", m & 3);
+  menu::toast("RESTARTING...");
+  restartAt = millis() + 1200;
 }
 
 static void bootLogo() {
@@ -246,7 +244,11 @@ void setup() {
 
   gfx::copyFontsToPsram();
   step(3, "lcd");
-  if (!lcd::begin()) Serial.println("LCD init FAILED (เช็ค PSRAM = OPI PSRAM)");
+  bool safeLcd = skip(3);                           // ดับตอนเปิดจอ 2 รอบติด → แบบเดิมทั้งหมด
+  bool safeDraw = safeLcd || skip(9) || skip(10);   // ดับตอนวาด 2 รอบติด → วาดคอร์เดียว + 44 Hz
+  menu::lcdMode = safeDraw ? 0 : (prefs.getInt("lcdMode", 0) & 3);
+  if (safeLcd) Serial.println("SAFE MODE: LCD without presenter task");
+  if (!lcd::begin(LCD_HZ[menu::lcdMode], LCD_EVERY[menu::lcdMode], !safeLcd)) Serial.println("LCD init FAILED (เช็ค PSRAM = OPI PSRAM)");
   showCrash();
 
   step(4, "wifi");                                  // ต้องเปิด WiFi ก่อนเว็บเซิร์ฟเวอร์ (ไม่งั้น crash)
@@ -274,7 +276,6 @@ void setup() {
   menu::onTrip = resetTrip;
   menu::onHold2 = onHold2;
   step(9, "2-core draw + refresh");
-  bool safeDraw = skip(9) || skip(10);              // ดับตอนวาด 2 รอบติด → วาดคอร์เดียว + 44 Hz
   if (!safeDraw) stripBuf2 = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (safeDraw) Serial.println("SAFE MODE: draw on 1 core, 44 Hz");
   else if (stripBuf2) {                                  // วาด 2 คอร์
@@ -282,10 +283,7 @@ void setup() {
     workDone = xSemaphoreCreateBinary();
     xTaskCreatePinnedToCore(drawWorker, "draw2", 8192, nullptr, 3, nullptr, 0);
   } else Serial.println("2nd strip buffer: no internal RAM -> draw on 1 core");
-  menu::lcdMode = prefs.getInt("lcdMode", 0) & 3;
   menu::onLcdMode = onLcdMode;
-  if (safeDraw) menu::lcdMode = 0;
-  applyLcdMode(menu::lcdMode);
   perf::begin();
   didibtn::onEvent = onButton;
   didibtn::begin(PIN_BTN1, PIN_BTN2, -1, PIN_BTN2_ALT);
@@ -298,6 +296,7 @@ static uint32_t lastUs = 0, fpsT = 0, drawAcc = 0, perfT = 0, lcdF0 = 0, frameT0
 static int frames = 0, perfFrames = 0, maxAcc = 0;
 
 void loop() {
+  if (restartAt && millis() > restartAt) ESP.restart();
   uint32_t us = micros();
   float dt = lastUs ? fminf(.1f, (us - lastUs) / 1e6f) : .016f;
   lastUs = us;
