@@ -4,12 +4,22 @@
 #include <math.h>
 #include "fonts.h"
 
+// วาด 2 คอร์ (DIDI_2CORE 1) ต้องให้ตัวแปรวาดแยกกันต่อคอร์ (thread_local)
+#ifndef DIDI_2CORE
+#define DIDI_2CORE 0
+#endif
+#if DIDI_2CORE
+#define GFX_TLS thread_local
+#else
+#define GFX_TLS
+#endif
+
 namespace gfx {
 
 static const int W = 480, H = 272;
 // thread_local: วาดพร้อมกัน 2 คอร์ (แต่ละคอร์วาดคนละแถบ)
-static thread_local uint16_t* G = nullptr;   // บัฟเฟอร์ที่กำลังวาด (ตำแหน่ง G[y*W+x] ใช้ได้เฉพาะแถว Y0..Y1-1)
-static thread_local int Y0 = 0, Y1 = H;      // แถวที่วาดได้ตอนนี้ (วาดทีละแถบลง RAM ภายในชิป แล้วค่อยคัดลอกลงจอ)
+static GFX_TLS uint16_t* G = nullptr;   // บัฟเฟอร์ที่กำลังวาด (ตำแหน่ง G[y*W+x] ใช้ได้เฉพาะแถว Y0..Y1-1)
+static GFX_TLS int Y0 = 0, Y1 = H;      // แถวที่วาดได้ตอนนี้ (วาดทีละแถบลง RAM ภายในชิป แล้วค่อยคัดลอกลงจอ)
 // วาดลงบัฟเฟอร์เต็มจอ
 inline void target(uint16_t* full) { G = full; Y0 = 0; Y1 = H; }
 // วาดลงแถบ: buf เก็บแถว y0..y1-1
@@ -246,10 +256,10 @@ inline void copyFontsToPsram() {
   }
 #endif
 }
-static thread_local const DFont* lastPick = nullptr;
-static thread_local float lastSize = -1;
-static thread_local int lastW = -1;
-static thread_local bool lastIt = false;
+static GFX_TLS const DFont* lastPick = nullptr;
+static GFX_TLS float lastSize = -1;
+static GFX_TLS int lastW = -1;
+static GFX_TLS bool lastIt = false;
 inline const DFont* pick(float size, int weight, bool italic) {
   if (size == lastSize && weight == lastW && italic == lastIt) return lastPick;
   const DFont* T = fontTable();

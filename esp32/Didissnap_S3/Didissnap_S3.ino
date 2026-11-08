@@ -17,6 +17,8 @@
     USB CDC On Boot: Enabled · Partition Scheme: 16M Flash (3MB APP/9.9MB FATFS) หรือ Custom
     (ตัวที่ใช้จริงคือ partitions.csv ในโฟลเดอร์นี้ — core หยิบไปใช้เองเสมอ)
 */
+// 1 = วาด 2 คอร์ (ยังทดสอบอยู่) · 0 = คอร์เดียวแบบที่ใช้ได้
+#define DIDI_2CORE 0
 #include <Arduino.h>
 #include <Preferences.h>
 #include "esp_system.h"
@@ -276,7 +278,7 @@ void setup() {
   menu::onTrip = resetTrip;
   menu::onHold2 = onHold2;
   step(9, "2-core draw + refresh");
-  if (!safeDraw) stripBuf2 = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (!safeDraw && DIDI_2CORE) stripBuf2 = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (safeDraw) Serial.println("SAFE MODE: draw on 1 core, 44 Hz");
   else if (stripBuf2) {                                  // วาด 2 คอร์
     workGo = xSemaphoreCreateBinary();

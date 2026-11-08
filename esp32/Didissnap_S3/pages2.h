@@ -20,8 +20,8 @@ inline void T(const char* s, float px, float py, float size, uint16_t c, int ax 
   text(s, (int)lroundf(X(px)), (int)lroundf(top + sz * .80f), sz, c, ax < 0 ? LEFT : (ax == 0 ? CENTER : RIGHT), w, it);
 }
 
-static thread_local char tb[8][24];
-static thread_local int tbi = 0;
+static GFX_TLS char tb[8][24];
+static GFX_TLS int tbi = 0;
 inline const char* f0(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 24, "%d", (int)lroundf(v)); return b; }
 inline const char* f1(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 24, "%.1f", v); return b; }
 inline const char* f2(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 24, "%.2f", v); return b; }

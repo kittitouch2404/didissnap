@@ -19,8 +19,8 @@ constexpr uint16_t ORG = rgb(0xFF7A00), YEL = rgb(0xFFC400), RD = rgb(0xFF2A2A),
                    BL = rgb(0x2E7BFF), WH = 0xFFFF, BK = 0x0000;
 
 // ---------------------------------------------------------------- ตัวช่วย
-static thread_local char tb[8][16];
-static thread_local int tbi = 0;
+static GFX_TLS char tb[8][16];
+static GFX_TLS int tbi = 0;
 inline const char* f0(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 16, "%d", (int)lroundf(v)); return b; }
 inline const char* f1(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 16, "%.1f", v); return b; }
 inline int maxRpm() { return didicfg::cfg.maxRpm; }
