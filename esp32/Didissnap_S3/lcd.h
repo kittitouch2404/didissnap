@@ -50,7 +50,7 @@ inline bool begin() {
   for (int i = 0; i < 16; i++) c.data_gpio_nums[i] = data[i];
   c.flags.fb_in_psram = 1;
   // บัฟเฟอร์สำรองใน RAM ภายใน: จอดึงภาพตรงกลับมาเองทุกเฟรม (กันภาพเลื่อนตอนชิปเขียนแฟลช)
-  c.bounce_buffer_size_px = LCD_W * 10;
+  c.bounce_buffer_size_px = LCD_W * 8;   // ต้องหาร 480x272 ลงตัว (272 / 8 = 34)
   if (esp_lcd_new_rgb_panel(&c, &panel) != ESP_OK) return false;
   vsyncSem = xSemaphoreCreateBinary();
   esp_lcd_rgb_panel_event_callbacks_t cb;
@@ -70,10 +70,16 @@ inline bool begin() {
   return true;
 }
 
-inline uint16_t* back() { return fb[front ^ 1]; }
+inline bool ok() { return fb[0] && fb[1]; }
+static uint16_t* dummy = nullptr;   // ถ้าจอเริ่มไม่ได้ วาดลงที่นี่แทน (ไม่ค้าง)
+inline uint16_t* back() {
+  if (!ok()) { if (!dummy) dummy = (uint16_t*)heap_caps_malloc(LCD_W * LCD_H * 2, MALLOC_CAP_SPIRAM); return dummy; }
+  return fb[front ^ 1];
+}
 
 // ส่งบัฟเฟอร์หลังขึ้นจอ แล้วรอจนจอเปลี่ยนไปแสดงเฟรมใหม่จริง
 inline void present() {
+  if (!ok()) { delay(16); return; }
   uint16_t* b = back();
   esp_cache_msync(b, LCD_W * LCD_H * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
   xSemaphoreTake(vsyncSem, 0);

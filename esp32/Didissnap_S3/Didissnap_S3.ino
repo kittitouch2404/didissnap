@@ -56,6 +56,7 @@ static void flip180(uint16_t* p) {
 }
 
 static void bootLogo() {
+  if (!lcd::ok()) return;
   uint16_t* fb = lcd::back();
   bg::decodeJpeg(BI_LOGO, sizeof(BI_LOGO), fb);
   lcd::present();
@@ -104,7 +105,7 @@ static void checkLastBoot() {
 }
 // ขึ้นข้อความบนจอว่ารอบก่อนดับตรงไหน (ถ่ายรูปส่งมาได้เลย)
 static void showCrash() {
-  if (!crashedAt) return;
+  if (!crashedAt || !lcd::ok()) return;
   gfx::G = lcd::back();
   gfx::clear(0);
   gfx::text("LAST BOOT CRASHED", 240, 70, 26, gfx::rgb(0xFF2A2A), gfx::CENTER, 900);
