@@ -10,7 +10,8 @@
 
   ไฟล์ที่ต้องอยู่ในโฟลเดอร์เดียวกัน: DidissnapLink.h, DidissnapConfig.h, DidissnapButtons.h,
                                     DidissnapPics.h, partitions.csv
-  Board: ESP32S3 Dev Module · Flash Size 16MB · PSRAM: OPI PSRAM · Partition Scheme: Custom
+  Board: ESP32S3 Dev Module · Flash Mode: DIO 80MHz (สำคัญ! QIO = บูตไม่ขึ้น) · Flash Size 16MB
+         PSRAM: OPI PSRAM · USB CDC On Boot: Enabled · Partition Scheme: Custom
          (ใช้ partitions.csv ในโฟลเดอร์นี้: แอป 4MB + พื้นที่รูป ~11.9MB)
 */
 #include <Arduino.h>

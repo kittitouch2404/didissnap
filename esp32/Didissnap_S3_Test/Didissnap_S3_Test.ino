@@ -15,8 +15,10 @@
    2) ตาราง GPIO สด: เอาสายแตะแพด (RXD2 / TXD2) กับ GND → ช่องที่เป็น LOW สีแดง = เลข GPIO ของแพดนั้น
    3) แตะ IO0 กับ GND ค้าง = วนความสว่าง 100 / 50 / 15 %
 
-  Arduino IDE: Board = ESP32S3 Dev Module · Flash Size = 16MB · PSRAM = OPI PSRAM
-               USB CDC On Boot = Disabled (ถ้า Serial Monitor เงียบ ลอง Enabled)
+  Arduino IDE: Board = ESP32S3 Dev Module · Flash Mode = DIO 80MHz (QIO = บูตไม่ขึ้น วนรีเซ็ต)
+               Flash Size = 16MB · PSRAM = OPI PSRAM
+               USB CDC On Boot = Enabled (USB-C ต่อตรงเข้าชิป)
+  ผลทดสอบบอร์ดจริง: จอติด สีถูก 100 fps, PSRAM 7.9 MB, IO38 เป็น LOW ค้าง (มีวงจรอื่นต่ออยู่ ห้ามใช้)
   ต้องใช้ ESP32 core 3.x (Boards Manager → esp32 by Espressif)
 */
 #include <Arduino.h>
