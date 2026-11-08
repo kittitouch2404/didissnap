@@ -57,21 +57,32 @@ inline void gearBox(int x, int y, int w, int h, uint16_t bgc, uint16_t fg) {
   text(D.gear, x + w / 2, y + (int)(h * .83f), h * .78f, fg, CENTER, 900);
 }
 // หน้ารูป 13-16: ตัวอักษรพิกเซลแบบเกม 16-bit (Press Start 2P + ขอบดำ) + แถบรอบแบบหลอดพลัง
+// ขนาด (k = พิกเซลต่อจุด, สูง 8k) — ตั้งจากตัวปรับในพรีวิว
+static const int PX_LAB = 2, PX_RPM = 4, PX_SPD = 3, PX_SM = 3, PX_BAR_W = 226, PX_BAR_H = 19, PX_OL = 1;
 constexpr uint16_t PXG = rgb(0x39E05A), PXY = rgb(0xFFD21E), PXR = rgb(0xFF3030);
 inline void rpmHp(int x, int y, int w, int h) {
   float rf = redF();
   hpBar(x, y, w, h, rpmF(), rf - .2f, rf, PXG, PXY, PXR);
 }
-inline void topBar() {
-  fillA(0, 0, W, 102, BK, 40);
-  pxText("RPM", 10, 8, 2, WH);
-  pxText(f0(D.rpm), 214, 30, 5, over() ? PXR : WH, RIGHT);
-  pxText("COOLANT", 244, 8, 2, WH);
-  const char* e = f0(D.ect);
-  pxText(e, 244, 30, 5, ectC());
-  pxText("C", 244 + pxWidth(e, 5) + 8, 54, 2, WH);
+inline void pt(const char* s, int x, int y, int k, uint16_t c = WH, Align al = LEFT) { pxText(s, x, y, k, c, al, PX_OL); }
+inline int lh() { return 8 * PX_LAB; }
+// ค่าตัวเลข + หน่วย "C" ต่อท้าย (ชิดล่างของตัวเลข)
+inline void valC(const char* v, int x, int y, int k, uint16_t c) {
+  pt(v, x, y, k, c);
+  pt("C", x + pxWidth(v, k) + 6, y + 8 * k - lh(), PX_LAB);
+}
+inline void topBar() {               // หน้า 14-16
+  int vy = 8 + lh() + 4;
+  int rr = 10 + pxWidth("8888", PX_RPM);
+  int by = vy + 8 * PX_RPM + 6;
+  fillA(0, 0, W, by + PX_BAR_H + 4, BK, 40);
+  pt("RPM", 10, 8, PX_LAB);
+  pt(f0(D.rpm), rr, vy, PX_RPM, over() ? PXR : WH, RIGHT);
+  int cx = rr + 24;
+  pt("COOLANT", cx, 8, PX_LAB);
+  valC(f0(D.ect), cx, vy, PX_RPM, ectC());
   obd(474, 14, RIGHT);
-  rpmHp(8, 76, 340, 24);
+  rpmHp(8, by, PX_BAR_W, PX_BAR_H);
 }
 inline void noPics() {
   clear(BK);
@@ -402,22 +413,25 @@ inline void p8() {
 }
 
 // ---------------------------------------------------------------- 9-12 หน้ารูป
-inline void p9() {
+inline void p9() {                   // หน้า 13
   bg::draw();
-  pxText("RPM", 10, 10, 2, WH);
-  pxText(f0(D.rpm), 250, 10, 6, over() ? PXR : WH, RIGHT);
-  rpmHp(8, 66, 300, 26);
-  pxText("SPEED", 10, 106, 2, WH);
-  pxText(f0(D.spd), 220, 104, 5, WH, RIGHT);
-  pxText("km/h", 230, 128, 2, WH);
-  pxText("COOLANT", 10, 168, 2, WH);
-  const char* e = f0(D.ect);
-  pxText(e, 10, 190, 4, ectC());
-  pxText("C", 10 + pxWidth(e, 4) + 6, 206, 2, WH);
-  pxText("IAT", 140, 168, 2, WH);
-  const char* a = f0(D.iat);
-  pxText(a, 140, 190, 4, WH);
-  pxText("C", 140 + pxWidth(a, 4) + 6, 206, 2, WH);
+  pt("RPM", 10, 10, PX_LAB);
+  int rr = 10 + pxWidth("RPM", PX_LAB) + 12 + pxWidth("8888", PX_RPM);
+  pt(f0(D.rpm), rr, 10, PX_RPM, over() ? PXR : WH, RIGHT);
+  int y = 10 + max(8 * PX_RPM, lh()) + 8;
+  rpmHp(8, y, PX_BAR_W, PX_BAR_H);
+  y += PX_BAR_H + 12;
+  pt("SPEED", 10, y, PX_LAB);
+  int sr = 10 + pxWidth("SPEED", PX_LAB) + 12 + pxWidth("888", PX_SPD);
+  pt(f0(D.spd), sr, y, PX_SPD, WH, RIGHT);
+  pt("km/h", sr + 8, y + 8 * PX_SPD - lh(), PX_LAB);
+  y += max(8 * PX_SPD, lh()) + 12;
+  int vy = y + lh() + 6;
+  pt("COOLANT", 10, y, PX_LAB);
+  valC(f0(D.ect), 10, vy, PX_SM, ectC());
+  int ix = max(10 + pxWidth("COOLANT", PX_LAB), 10 + pxWidth("110", PX_SM) + pxWidth("C", PX_LAB) + 6) + 20;
+  pt("IAT", ix, y, PX_LAB);
+  valC(f0(D.iat), ix, vy, PX_SM, WH);
   obd(474, 14, RIGHT);
   dots();
   shiftFlash();
