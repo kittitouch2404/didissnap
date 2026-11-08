@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <math.h>
 #include "fonts.h"
+#include "pixfont.h"
 
 namespace gfx {
 
@@ -368,6 +369,63 @@ inline void seg7(const char* str, float xr, float y, float h, uint16_t c, uint8_
     vseg(x + w - t, y + h / 2 + g, h / 2 - 2 * g, t, S('c'), Al('c'));
     x -= gap;
   }
+}
+
+// ---------------------------------------------------------------- ตัวอักษรพิกเซล (Press Start 2P) — หน้ารูป 13-16
+// k = ขนาดพิกเซลต่อจุด (สูง 8k พิกเซล), y = ขอบบนของตัวอักษร
+inline int pxWidth(const char* s, int k) { int n = (int)strlen(s); return n ? n * 8 * k - k : 0; }
+inline void pxGlyphs(const char* s, int x, int y, int k, uint16_t c) {
+  if (y >= GY1 || y + 8 * k <= GY0) return;
+  for (const unsigned char* p = (const unsigned char*)s; *p; p++, x += 8 * k) {
+    int ch = *p;
+    if (ch < 32 || ch > 126) ch = '?';
+    const uint8_t* g = PIX8[ch - 32];
+    for (int r = 0; r < 8; r++) {
+      int yy = y + r * k;
+      if (yy >= GY1 || yy + k <= GY0) continue;
+      uint8_t b = g[r];
+      int cx = 0;
+      while (b) {                       // ช่วงจุดติดกันในแถว → สี่เหลี่ยมเดียว
+        while (!(b & 0x80)) { b <<= 1; cx++; }
+        int run = 0;
+        while (b & 0x80) { b <<= 1; run++; }
+        fill(x + cx * k, yy, run * k, k, c);
+        cx += run;
+      }
+    }
+  }
+}
+// ตัวพิกเซล + ขอบดำ (o = ความหนาขอบ, -1 = ตามขนาด)
+inline void pxText(const char* s, int x, int y, int k, uint16_t c, Align al = LEFT, int o = -1) {
+  if (o < 0) o = k >= 4 ? 3 : 2;
+  int w = pxWidth(s, k);
+  if (al == CENTER) x -= w / 2;
+  else if (al == RIGHT) x -= w;
+  if (y - o >= GY1 || y + 8 * k + o <= GY0) return;
+  if (o) {
+    for (int dy = -o; dy <= o; dy += o)
+      for (int dx = -o; dx <= o; dx += o)
+        if (dx || dy) pxGlyphs(s, x + dx, y + dy, k, 0);
+    pxGlyphs(s, x + o, y + o + 1, k, 0);       // เงาล่างขวา
+  }
+  pxGlyphs(s, x, y, k, c);
+}
+// หลอดพลังแบบเกม: กรอบดำ-ขาว-ดำ, เติมเป็นแท่ง 4 พิกเซล สีตามโซนรอบ, แถบเงาด้านบน
+inline void hpBar(int x, int y, int w, int h, float frac, float yelFrom, float redFrom, uint16_t g, uint16_t yl, uint16_t rd) {
+  fill(x, y, w, h, 0);
+  fill(x + 2, y + 2, w - 4, h - 4, 0xFFFF);
+  fill(x + 4, y + 4, w - 8, h - 8, 0);
+  int x0 = x + 5, y0 = y + 5, iw = w - 10, ih = h - 10;
+  if (iw <= 0 || ih <= 0) return;
+  frac = frac < 0 ? 0 : (frac > 1 ? 1 : frac);
+  int filled = ((int)(iw * frac) / 4) * 4;
+  for (int i = 0; i < filled; i += 4) {
+    float f = (float)i / iw;
+    fill(x0 + i, y0, (i + 4 <= iw ? 4 : iw - i), ih, f < yelFrom ? g : (f < redFrom ? yl : rd));
+  }
+  if (filled > 0) fillA(x0, y0, filled, ih / 4 > 0 ? ih / 4 : 1, 0xFFFF, 115);
+  int rx = x0 + (int)(iw * redFrom);
+  if (rx > x0 && rx < x0 + iw) fill(rx, y + h - 3, 2, 3, rd);   // ขีดเรดไลน์ที่ขอบล่าง
 }
 
 }  // namespace gfx

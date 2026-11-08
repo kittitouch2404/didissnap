@@ -71,7 +71,6 @@ static void copyStrip(int y0, bool flip, const uint16_t* src) {
 }
 
 static uint32_t perfDraw = 0;
-static bool showPerf = true;
 static int perfFps = 0, perfLcd = 0, perfMax = 0;
 
 static volatile int nextStrip = N_STRIPS;
@@ -86,7 +85,7 @@ static void drawStrip(int k, uint16_t* sb) {
   if (jobMenu) menu::draw();
   else pages::draw(jobPage);
   menu::drawToast();
-  if (k == N_STRIPS - 1 && showPerf) {     // ตัวเลขวัดความเร็ว (ชั่วคราว) มุมล่างซ้าย
+  if (k == N_STRIPS - 1 && menu::perfInfo) {     // ตัวเลขวัดความเร็ว (ชั่วคราว) มุมล่างซ้าย
     char pb[80];
     snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz  %dcore", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd,
              (workGo && menu::drawCores == 2) ? 2 : 1);
@@ -130,6 +129,7 @@ static void onPerfOpt() {
   applyPerfOpt();
   prefs.putInt("cores", menu::drawCores);
   prefs.putInt("fontMem", menu::fontMem);
+  prefs.putInt("perf", menu::perfInfo);
 }
 static void onLcdMode(int m) {
   prefs.putInt("lcdMode", m & 3);
@@ -296,6 +296,7 @@ void setup() {
   menu::onLcdMode = onLcdMode;
   menu::drawCores = safeDraw ? 1 : constrain(prefs.getInt("cores", 2), 1, 2);
   menu::fontMem = 0;   // ทดสอบแล้ว PSRAM/แฟลชเร็วเท่ากัน
+  menu::perfInfo = prefs.getInt("perf", 0) & 1;   // ตัวเลข fps มุมล่างซ้าย (เมนู PERF INFO)
   menu::onPerfOpt = onPerfOpt;
   applyPerfOpt();
   perf::begin();
