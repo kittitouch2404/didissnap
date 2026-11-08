@@ -25,6 +25,7 @@ namespace didibtn {
 
 struct Btn {
   int pin = -1;
+  int alt = -1;             // ขาสำรอง (กดได้ทั้งสองขา) ไม่ใช้ = -1
   bool stable = false;      // สถานะหลังกันเด้ง (true = กดอยู่)
   bool raw = false;
   uint32_t rawT = 0;        // เวลาที่สถานะดิบเปลี่ยนล่าสุด
@@ -36,11 +37,14 @@ static Btn b[2];
 typedef void (*EventFn)(int button, bool longPress);
 static EventFn onEvent = nullptr;
 
-inline void begin(int pinA, int pinB) {
+inline void begin(int pinA, int pinB, int altA = -1, int altB = -1) {
   b[0].pin = pinA;
   b[1].pin = pinB;
+  b[0].alt = altA;
+  b[1].alt = altB;
   for (int i = 0; i < 2; i++) {
     if (b[i].pin >= 0) pinMode(b[i].pin, INPUT_PULLUP);
+    if (b[i].alt >= 0) pinMode(b[i].alt, INPUT_PULLUP);
   }
 }
 
@@ -49,7 +53,7 @@ inline void loop() {
   for (int i = 0; i < 2; i++) {
     Btn& x = b[i];
     if (x.pin < 0) continue;
-    bool r = digitalRead(x.pin) == LOW;
+    bool r = digitalRead(x.pin) == LOW || (x.alt >= 0 && digitalRead(x.alt) == LOW);
     if (r != x.raw) {
       x.raw = r;
       x.rawT = now;
