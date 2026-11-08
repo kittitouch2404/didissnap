@@ -4,26 +4,38 @@
 #include <math.h>
 #include "fonts.h"
 
-// วาด 2 คอร์ (DIDI_2CORE 1) ต้องให้ตัวแปรวาดแยกกันต่อคอร์ (thread_local)
-#ifndef DIDI_2CORE
-#define DIDI_2CORE 0
-#endif
-#if DIDI_2CORE
-#define GFX_TLS thread_local
-#else
-#define GFX_TLS
-#endif
-
 namespace gfx {
 
 static const int W = 480, H = 272;
-// thread_local: วาดพร้อมกัน 2 คอร์ (แต่ละคอร์วาดคนละแถบ)
-static GFX_TLS uint16_t* G = nullptr;   // บัฟเฟอร์ที่กำลังวาด (ตำแหน่ง G[y*W+x] ใช้ได้เฉพาะแถว Y0..Y1-1)
-static GFX_TLS int Y0 = 0, Y1 = H;      // แถวที่วาดได้ตอนนี้ (วาดทีละแถบลง RAM ภายในชิป แล้วค่อยคัดลอกลงจอ)
+// สถานะการวาด แยกต่อคอร์ (วาดพร้อมกัน 2 คอร์ คนละแถบ)
+//  ไม่ใช้ thread_local: เวอร์ชันที่ใช้ thread_local ดับตั้งแต่เปิดเครื่อง (น่าจะเพราะกินสแตกของทุกงานในระบบ)
+struct Ctx {
+  uint16_t* g;          // บัฟเฟอร์ที่กำลังวาด (ตำแหน่ง g[y*W+x] ใช้ได้เฉพาะแถว y0..y1-1)
+  int y0, y1;           // แถวที่วาดได้ตอนนี้
+  const DFont* lastPick;
+  float lastSize;
+  int lastW;
+  bool lastIt;
+};
+static Ctx ctxs[2] = {{nullptr, 0, H, nullptr, -1, -1, false}, {nullptr, 0, H, nullptr, -1, -1, false}};
+// เลขคอร์ (อ่านรีจิสเตอร์ PRID — ไม่ใส่ volatile ให้คอมไพเลอร์อ่านครั้งเดียวต่อฟังก์ชัน)
+static inline int core() {
+#if defined(__XTENSA__)
+  int id;
+  __asm__("rsr.prid %0\n extui %0, %0, 13, 1" : "=r"(id));
+  return id;
+#else
+  return 0;
+#endif
+}
+static inline Ctx& C() { return ctxs[core()]; }
+#define GBUF (::gfx::C().g)
+#define GY0 (::gfx::C().y0)
+#define GY1 (::gfx::C().y1)
 // วาดลงบัฟเฟอร์เต็มจอ
-inline void target(uint16_t* full) { G = full; Y0 = 0; Y1 = H; }
+inline void target(uint16_t* full) { GBUF = full; GY0 = 0; GY1 = H; }
 // วาดลงแถบ: buf เก็บแถว y0..y1-1
-inline void strip(uint16_t* buf, int y0, int y1) { G = buf - y0 * W; Y0 = y0; Y1 = y1; }
+inline void strip(uint16_t* buf, int y0, int y1) { GBUF = buf - y0 * W; GY0 = y0; GY1 = y1; }
 // เวลาของเฟรมนี้ (ทุกแถบใช้ค่าเดียวกัน ไฟกะพริบจะไม่ขาดครึ่งจอ)
 static volatile uint32_t frameMs = 0;
 inline uint32_t nowMs() { return frameMs ? frameMs : millis(); }
@@ -41,11 +53,11 @@ static inline uint16_t blend(uint16_t fg, uint16_t bg, uint8_t a) {
   return (uint16_t)(r | (r >> 16));
 }
 static inline void px(int x, int y, uint16_t c) {
-  if ((unsigned)x < (unsigned)W && y >= Y0 && y < Y1) G[y * W + x] = c;
+  if ((unsigned)x < (unsigned)W && y >= GY0 && y < GY1) GBUF[y * W + x] = c;
 }
 static inline void pxa(int x, int y, uint16_t c, uint8_t a) {
-  if ((unsigned)x < (unsigned)W && y >= Y0 && y < Y1) {
-    uint16_t* p = &G[y * W + x];
+  if ((unsigned)x < (unsigned)W && y >= GY0 && y < GY1) {
+    uint16_t* p = &GBUF[y * W + x];
     *p = blend(c, *p, a);
   }
 }
@@ -53,23 +65,23 @@ static inline void pxa(int x, int y, uint16_t c, uint8_t a) {
 // ---------------------------------------------------------------- สี่เหลี่ยม
 inline void fill(int x, int y, int w, int h, uint16_t c) {
   if (x < 0) { w += x; x = 0; }
-  if (y < Y0) { h -= Y0 - y; y = Y0; }
+  if (y < GY0) { h -= GY0 - y; y = GY0; }
   if (x + w > W) w = W - x;
-  if (y + h > Y1) h = Y1 - y;
+  if (y + h > GY1) h = GY1 - y;
   if (w <= 0 || h <= 0) return;
   for (int j = 0; j < h; j++) {
-    uint16_t* r = G + (y + j) * W + x;
+    uint16_t* r = GBUF + (y + j) * W + x;
     for (int i = 0; i < w; i++) r[i] = c;
   }
 }
 inline void clear(uint16_t c) { fill(0, 0, W, H, c); }
 inline void fillA(int x, int y, int w, int h, uint16_t c, uint8_t a) {   // ทับแบบโปร่ง
   if (x < 0) { w += x; x = 0; }
-  if (y < Y0) { h -= Y0 - y; y = Y0; }
+  if (y < GY0) { h -= GY0 - y; y = GY0; }
   if (x + w > W) w = W - x;
-  if (y + h > Y1) h = Y1 - y;
+  if (y + h > GY1) h = GY1 - y;
   for (int j = 0; j < h; j++) {
-    uint16_t* r = G + (y + j) * W + x;
+    uint16_t* r = GBUF + (y + j) * W + x;
     for (int i = 0; i < w; i++) r[i] = blend(c, r[i], a);
   }
 }
@@ -92,7 +104,7 @@ inline void rrect(float x, float y, float w, float h, float r, int fillC, int st
   auto shade = [&](int xx, int yy, float in) {
     float a = cov(in);
     if (a <= 0) return;
-    uint16_t* p = &G[yy * W + xx];
+    uint16_t* p = &GBUF[yy * W + xx];
     if (fillC >= 0) *p = blend((uint16_t)fillC, *p, (uint8_t)(a * 255));
     if (strokeC >= 0) {
       float st = a * (1.f - cov(in - lw));
@@ -101,13 +113,13 @@ inline void rrect(float x, float y, float w, float h, float r, int fillC, int st
   };
   int y0 = (int)floorf(y), y1 = (int)ceilf(y + h), x0 = max(0, (int)floorf(x)), x1 = min(W, (int)ceilf(x + w));
   const float edge = (strokeC >= 0 ? lw : 0) + 1.5f;   // ความกว้างขอบที่ต้องคำนวณละเอียด
-  for (int yy = max(y0, Y0); yy < min(y1, Y1); yy++) {
+  for (int yy = max(y0, GY0); yy < min(y1, GY1); yy++) {
     float py = yy + 0.5f;
     bool corner = fabsf(py - cym) > hy - edge;           // แถวใกล้ขอบบน/ล่าง หรือมุม
     if (corner) { for (int xx = x0; xx < x1; xx++) shade(xx, yy, inside(xx + 0.5f, py)); continue; }
     int ea = min(x1, (int)ceilf(x + edge)), eb = max(ea, (int)floorf(x + w - edge));
     for (int xx = x0; xx < ea; xx++) shade(xx, yy, inside(xx + 0.5f, py));
-    if (fillC >= 0) { uint16_t* rp = G + yy * W; for (int xx = ea; xx < eb; xx++) rp[xx] = (uint16_t)fillC; }
+    if (fillC >= 0) { uint16_t* rp = GBUF + yy * W; for (int xx = ea; xx < eb; xx++) rp[xx] = (uint16_t)fillC; }
     for (int xx = eb; xx < x1; xx++) shade(xx, yy, inside(xx + 0.5f, py));
   }
 }
@@ -117,12 +129,12 @@ inline void circle(float cx, float cy, float r, uint16_t c, int strokeC = -1, fl
   int y0 = (int)floorf(cy - r - 1), y1 = (int)ceilf(cy + r + 1);
   float rin = strokeC >= 0 ? r - lw - 1 : r - 1;          // ข้างในวงนี้ = สีเต็ม ไม่ต้องคำนวณ
   float rin2 = rin > 0 ? rin * rin : -1;
-  for (int yy = max(y0, Y0); yy <= min(y1, Y1 - 1); yy++) {
+  for (int yy = max(y0, GY0); yy <= min(y1, GY1 - 1); yy++) {
     float dy = yy + 0.5f - cy;
     if (fabsf(dy) > r + 1) continue;
     float span = sqrtf(fmaxf(0.f, (r + 1) * (r + 1) - dy * dy));
     int xa = max(0, (int)floorf(cx - span)), xb = min(W - 1, (int)ceilf(cx + span));
-    uint16_t* rp = G + yy * W;
+    uint16_t* rp = GBUF + yy * W;
     for (int xx = xa; xx <= xb; xx++) {
       float dx = xx + 0.5f - cx, d2 = dx * dx + dy * dy;
       if (d2 < rin2) { rp[xx] = c; continue; }
@@ -154,11 +166,11 @@ inline void arc(float cx, float cy, float r, float a0, float a1, uint16_t c, flo
   float ro = r + w / 2, ri = r - w / 2;
   float ro2s = (ro - 1) * (ro - 1), ri2s = (ri + 1) * (ri + 1);   // ระหว่างนี้ = สีเต็ม
   int y0 = (int)floorf(cy - ro - 1), y1 = (int)ceilf(cy + ro + 1);
-  for (int yy = max(y0, Y0); yy <= min(y1, Y1 - 1); yy++) {
+  for (int yy = max(y0, GY0); yy <= min(y1, GY1 - 1); yy++) {
     float dy = yy + 0.5f - cy;
     float so = sqrtf(fmaxf(0.f, (ro + 1) * (ro + 1) - dy * dy));
     float si = (fabsf(dy) < ri - 1) ? sqrtf((ri - 1) * (ri - 1) - dy * dy) : -1;
-    uint16_t* rp = G + yy * W;
+    uint16_t* rp = GBUF + yy * W;
     for (int pass = 0; pass < 2; pass++) {
       int xa, xb;
       if (si < 0) { if (pass) break; xa = (int)floorf(cx - so); xb = (int)ceilf(cx + so); }
@@ -182,7 +194,7 @@ inline void arc(float cx, float cy, float r, float a0, float a1, uint16_t c, flo
 static inline uint16_t lerp565(uint16_t a, uint16_t b, float t) { return blend(b, a, (uint8_t)(fminf(1.f, fmaxf(0.f, t)) * 255)); }
 inline void radial(float cx, float cy, float r, uint16_t c0, uint16_t c1, uint16_t c2, float mid = .55f, float fy = 0) {
   int y0 = (int)floorf(cy - r - 1), y1 = (int)ceilf(cy + r + 1);
-  for (int yy = max(y0, Y0); yy <= min(y1, Y1 - 1); yy++) {
+  for (int yy = max(y0, GY0); yy <= min(y1, GY1 - 1); yy++) {
     float dy = yy + 0.5f - cy;
     if (fabsf(dy) > r + 1) continue;
     float span = sqrtf(fmaxf(0.f, (r + 1) * (r + 1) - dy * dy));
@@ -202,7 +214,7 @@ inline void radial(float cx, float cy, float r, uint16_t c0, uint16_t c1, uint16
 inline void poly(const float* xs, const float* ys, int n, uint16_t c, uint8_t alpha = 255) {
   float mny = 1e9, mxy = -1e9;
   for (int i = 0; i < n; i++) { mny = fminf(mny, ys[i]); mxy = fmaxf(mxy, ys[i]); }
-  int ya = max(Y0, (int)floorf(mny)), yb = min(Y1 - 1, (int)ceilf(mxy));
+  int ya = max(GY0, (int)floorf(mny)), yb = min(GY1 - 1, (int)ceilf(mxy));
   float xi[16];
   for (int yy = ya; yy <= yb; yy++) {
     float py = yy + 0.5f;
@@ -217,7 +229,7 @@ inline void poly(const float* xs, const float* ys, int n, uint16_t c, uint8_t al
       int xa = (int)ceilf(xi[a] - 0.5f), xb = (int)floorf(xi[a + 1] - 0.5f);
       if (xa < 0) xa = 0;
       if (xb >= W) xb = W - 1;
-      uint16_t* r = G + yy * W;
+      uint16_t* r = GBUF + yy * W;
       if (alpha >= 250) for (int xx = xa; xx <= xb; xx++) r[xx] = c;
       else for (int xx = xa; xx <= xb; xx++) r[xx] = blend(c, r[xx], alpha);
     }
@@ -256,12 +268,9 @@ inline void copyFontsToPsram() {
   }
 #endif
 }
-static GFX_TLS const DFont* lastPick = nullptr;
-static GFX_TLS float lastSize = -1;
-static GFX_TLS int lastW = -1;
-static GFX_TLS bool lastIt = false;
 inline const DFont* pick(float size, int weight, bool italic) {
-  if (size == lastSize && weight == lastW && italic == lastIt) return lastPick;
+  Ctx& cx = C();
+  if (size == cx.lastSize && weight == cx.lastW && italic == cx.lastIt) return cx.lastPick;
   const DFont* T = fontTable();
   int wc = weight <= 600 ? 600 : (weight <= 800 ? 800 : 900);
   const DFont* best = nullptr;
@@ -271,7 +280,7 @@ inline const DFont* pick(float size, int weight, bool italic) {
     float d = fabsf(f.size - size) * 10 + (f.weight != wc ? (f.weight > wc ? 3 : 6) * 4 : 0) + ((f.italic != 0) != italic ? 25 : 0);
     if (d < bd) { bd = d; best = &f; }
   }
-  lastPick = best; lastSize = size; lastW = weight; lastIt = italic;
+  cx.lastPick = best; cx.lastSize = size; cx.lastW = weight; cx.lastIt = italic;
   return best;
 }
 static inline int glyphIndex(const DFont* f, const unsigned char*& s) {
@@ -299,10 +308,10 @@ inline void text(const char* str, int x, int y, float size, uint16_t col, Align 
     const DGlyph& g = f->g[gi];
     const uint8_t* b = f->bmp + g.off;
     int gx = x + g.xo, gy = y + g.yo, stride = (g.w + 1) / 2;
-    if (gy >= Y1 || gy + g.h <= Y0) { x += g.adv; continue; }
+    if (gy >= GY1 || gy + g.h <= GY0) { x += g.adv; continue; }
     for (int r = 0; r < g.h; r++) {
       int yy = gy + r;
-      if (yy < Y0 || yy >= Y1) continue;
+      if (yy < GY0 || yy >= GY1) continue;
       const uint8_t* row = b + r * stride;
       for (int c = 0; c < g.w; c++) {
         uint8_t v = (c & 1) ? (row[c >> 1] & 15) : (row[c >> 1] >> 4);

@@ -19,10 +19,10 @@ constexpr uint16_t ORG = rgb(0xFF7A00), YEL = rgb(0xFFC400), RD = rgb(0xFF2A2A),
                    BL = rgb(0x2E7BFF), WH = 0xFFFF, BK = 0x0000;
 
 // ---------------------------------------------------------------- ตัวช่วย
-static GFX_TLS char tb[8][16];
-static GFX_TLS int tbi = 0;
-inline const char* f0(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 16, "%d", (int)lroundf(v)); return b; }
-inline const char* f1(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 16, "%.1f", v); return b; }
+static char tbs[2][8][16];   // ข้อความชั่วคราว (แยกต่อคอร์)
+static int tbis[2] = {0, 0};
+inline const char* f0(float v) { char* b = tbs[gfx::core()][tbis[gfx::core()]++ & 7]; snprintf(b, 16, "%d", (int)lroundf(v)); return b; }
+inline const char* f1(float v) { char* b = tbs[gfx::core()][tbis[gfx::core()]++ & 7]; snprintf(b, 16, "%.1f", v); return b; }
 inline int maxRpm() { return didicfg::cfg.maxRpm; }
 inline int kMax() { return max(6, (int)ceilf(maxRpm() / 1000.f) + 1); }
 inline float rpmF() { return fminf(1.f, D.rpm / (kMax() * 1000.f)); }

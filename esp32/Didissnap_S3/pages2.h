@@ -20,11 +20,11 @@ inline void T(const char* s, float px, float py, float size, uint16_t c, int ax 
   text(s, (int)lroundf(X(px)), (int)lroundf(top + sz * .80f), sz, c, ax < 0 ? LEFT : (ax == 0 ? CENTER : RIGHT), w, it);
 }
 
-static GFX_TLS char tb[8][24];
-static GFX_TLS int tbi = 0;
-inline const char* f0(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 24, "%d", (int)lroundf(v)); return b; }
-inline const char* f1(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 24, "%.1f", v); return b; }
-inline const char* f2(float v) { char* b = tb[tbi++ & 7]; snprintf(b, 24, "%.2f", v); return b; }
+static char tbs[2][8][24];   // ข้อความชั่วคราว (แยกต่อคอร์)
+static int tbis[2] = {0, 0};
+inline const char* f0(float v) { char* b = tbs[gfx::core()][tbis[gfx::core()]++ & 7]; snprintf(b, 24, "%d", (int)lroundf(v)); return b; }
+inline const char* f1(float v) { char* b = tbs[gfx::core()][tbis[gfx::core()]++ & 7]; snprintf(b, 24, "%.1f", v); return b; }
+inline const char* f2(float v) { char* b = tbs[gfx::core()][tbis[gfx::core()]++ & 7]; snprintf(b, 24, "%.2f", v); return b; }
 inline int redline() { return didicfg::cfg.maxRpm; }
 inline int scaleMax() { return (int)ceilf(redline() / 1000.f) * 1000 + 1000; }
 inline int shiftStart() { return redline() - 2000; }
@@ -39,7 +39,7 @@ inline void redstripe() {
   clear(rgb(0x161616));
   {                                                                                      // ลายคาร์บอน (เส้นทแยงทุก 6 px)
     const uint16_t cc = rgb(0x262626);
-    for (int y = Y0; y < Y1; y++) { uint16_t* rp = G + y * W; for (int x = ((y % 6) + 6) % 6; x < W; x += 6) rp[x] = cc; }
+    for (int y = GY0; y < GY1; y++) { uint16_t* rp = GBUF + y * W; for (int x = ((y % 6) + 6) % 6; x < W; x += 6) rp[x] = cc; }
   }
   const int sx = (int)X(12), sy = (int)Y(12), sw = (int)X(976), sh = (int)Y(410);
   for (int i = 0; i < 9; i++) fill(sx, sy + i * sh / 9, sw, sh / 9 + 1, i % 2 ? rgb(0xB80E18) : rgb(0xD01420));

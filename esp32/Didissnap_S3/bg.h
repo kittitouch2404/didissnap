@@ -7,7 +7,7 @@ namespace bg {
 enum Kind { NONE = 0, BI_JPG9, BI_RUN_ANIM, BI_JPG11, FILE_PIC };
 static float runSpeed = 0;
 static uint16_t* hostImg = nullptr;
-inline bool draw() { if (hostImg) { memcpy(gfx::G + gfx::Y0 * 480, hostImg + gfx::Y0 * 480, (gfx::Y1 - gfx::Y0) * 480 * 2); return true; } gfx::clear(0); return false; }
+inline bool draw() { if (hostImg) { memcpy(GBUF + GY0 * 480, hostImg + GY0 * 480, (GY1 - GY0) * 480 * 2); return true; } gfx::clear(0); return false; }
 }
 #else
 #include <Arduino.h>
@@ -170,7 +170,7 @@ static void task(void*) {
       if (runBlock && runReady > 0 && now >= nextT) {
         float sp = runSpeed;
         if (sp > 1) { runIdx = (runIdx + 1) % runReady; runShow = runIdx; }
-        nextT = now + (uint32_t)constrain(6000.f / fmaxf(sp, 1.f), 33.f, 400.f);   // เร็วขึ้นตามความเร็วรถ
+        nextT = now + (uint32_t)constrain(2500.f / fmaxf(sp, 1.f), 40.f, 90.f);   // 11-25 เฟรม/วินาที ตามความเร็วรถ (ช้าเกินไปจะดูกระตุก)
       } else if (!runBlock && now >= nextT) {             // PSRAM ไม่พอ → ถอดทีละเฟรมแบบเดิม
         float sp = runSpeed;
         if (sp > 1 || shown < 0) {
@@ -229,11 +229,11 @@ inline bool draw() {
   xSemaphoreTake(lock, portMAX_DELAY);
   int rs = runShow;
   if (want.kind == BI_RUN_ANIM && have.kind == BI_RUN_ANIM && runBlock && rs >= 0) {   // รถวิ่ง (เฟรมเก็บไว้แล้ว)
-    for (int y = gfx::Y0; y < gfx::Y1; y++)
-      memcpy(gfx::G + y * W, y < RUN_Y0 ? runTop() + y * W : runFrame(rs) + (y - RUN_Y0) * W, W * 2);
+    for (int y = GY0; y < GY1; y++)
+      memcpy(GBUF + y * W, y < RUN_Y0 ? runTop() + y * W : runFrame(rs) + (y - RUN_Y0) * W, W * 2);
     ok = true;
   } else if (shown >= 0 && want.kind != NONE) {   // คัดลอกเฉพาะแถวของแถบที่กำลังวาด
-    memcpy(gfx::G + gfx::Y0 * W, buf[shown] + gfx::Y0 * W, (gfx::Y1 - gfx::Y0) * W * 2);
+    memcpy(GBUF + GY0 * W, buf[shown] + GY0 * W, (GY1 - GY0) * W * 2);
     ok = true;
   }
   xSemaphoreGive(lock);
