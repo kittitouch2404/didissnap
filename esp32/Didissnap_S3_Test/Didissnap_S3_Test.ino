@@ -1,8 +1,14 @@
 /*
-  Didissnap_S3_Test v3 — ทดสอบบอร์ด Panlee ZX4D30NE01S (ESP32-S3 + จอ 4.3" 480x272 RGB)
+  Didissnap_S3_Test v4 — ทดสอบบอร์ด Panlee ZX4D30NE01S (ESP32-S3 + จอ 4.3" 480x272 RGB)
   ** ไม่ต้องลง Library เพิ่ม ** ใช้ไดรเวอร์จอ RGB (esp_lcd) ที่มากับ ESP32 core 3.x
   ค่าขา/timing เหมือนโค้ดของผู้ผลิตทุกตัว: github.com/wireless-tag-com/ZX4D30NE01S
 
+  v4: แยกขั้นตอนให้ห่างกัน เพื่อดูว่าบอร์ดดับ (เสียง USB เด้ง) ตอนไหน
+   ขั้น A (0-6 วิ)  : จอดำ ไฟจอปิด ยังไม่ทำอะไร       → ถ้าเด้งช่วงนี้ = ไม่ใช่โค้ด (ไฟ/สาย/บอร์ด)
+   ขั้น B (6-12 วิ) : เปิดไฟจอ 30% ค้างไว้             → ถ้าเด้งตอนไฟจอติด = ไฟเลี้ยงไม่พอ
+   ขั้น C (12-18 วิ): เปิดไฟจอ 100% ค้างไว้
+   ขั้น D           : เริ่มจอ RGB แล้วเต็มจอทีละสี     → ถ้าเด้งตอนนี้ = ต้องแก้โค้ดจอ
+   บอร์ดจำได้ว่ารอบก่อนดับที่ขั้นไหน และพิมพ์บอกใน Serial Monitor ตอนเปิดรอบถัดไป
   ทำอะไร
    0) ไฟจอกะพริบ 3 ครั้ง แล้วเต็มจอ แดง → เขียว → น้ำเงิน → ขาว (ดูขั้นตอนใน Serial Monitor 115200)
    1) หน้าทดสอบ: แถบสี + กรอบขอบจอ + แถบวิ่ง + fps
@@ -18,6 +24,10 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_cache.h"
 #include "font6x10.h"
+#include "esp_system.h"
+
+RTC_NOINIT_ATTR uint32_t g_magic, g_stage;   // จำขั้นตอนข้ามการรีเซ็ต
+void stage(uint32_t s) { g_magic = 0xD1D1; g_stage = s; Serial.printf("[stage %c]\n", (char)s); }
 
 #define W 480
 #define H 272
@@ -130,23 +140,46 @@ void drawStatic() {
   }
 }
 
+const char* why(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON: return "POWER ON (เสียบไฟใหม่)";
+    case ESP_RST_BROWNOUT: return "BROWNOUT (ไฟตก/ไฟไม่พอ)";
+    case ESP_RST_PANIC: return "PANIC (โค้ดค้าง/crash)";
+    case ESP_RST_INT_WDT: case ESP_RST_TASK_WDT: case ESP_RST_WDT: return "WATCHDOG (ค้าง)";
+    case ESP_RST_SW: return "SOFTWARE reset";
+    case ESP_RST_USB: return "USB reset";
+    case ESP_RST_EXT: return "EXTERNAL (ปุ่ม/ขา EN)";
+    default: return "OTHER";
+  }
+}
+
 void setup() {
   Serial.begin(115200);
-  delay(500);
-  Serial.println("\n=== Didissnap S3 test v3 (esp_lcd) ===");
+  uint32_t t0 = millis();
+  while (!Serial && millis() - t0 < 3000) delay(10);   // รอ Serial Monitor (USB CDC)
+  esp_reset_reason_t rr = esp_reset_reason();
+  Serial.println("\n=== Didissnap S3 test v4 (esp_lcd) ===");
+  Serial.printf("[0] reset reason: %s\n", why(rr));
+  if (g_magic == 0xD1D1) Serial.printf("[0] รอบที่แล้วดับตอนขั้น %c\n", (char)g_stage);
+  stage('A');
+  delay(6000);
+  pinMode(PIN_BL, OUTPUT);
+  ledcAttach(PIN_BL, 5000, 8);
+  stage('B');
+  ledcWrite(PIN_BL, 77);
+  delay(6000);
+  stage('C');
+  ledcWrite(PIN_BL, 255);
+  delay(6000);
+  stage('D');
   Serial.printf("[1] chip %s  flash %u MB  PSRAM %u KB\n", ESP.getChipModel(), ESP.getFlashChipSize() >> 20, ESP.getPsramSize() / 1024);
   if (ESP.getPsramSize() == 0) Serial.println("    !! ไม่เจอ PSRAM -> Tools > PSRAM ต้องเป็น OPI PSRAM");
 
   pinMode(PIN_DISP, OUTPUT);
   digitalWrite(PIN_DISP, HIGH);
-  pinMode(PIN_BL, OUTPUT);
-  for (int i = 0; i < 3; i++) { digitalWrite(PIN_BL, HIGH); delay(400); digitalWrite(PIN_BL, LOW); delay(300); }
-  digitalWrite(PIN_BL, HIGH);
-  Serial.println("[2] backlight blink x3 done");
 
   bool ok = lcdBegin();
   Serial.printf("[3] lcd init = %s  fb=%p  PSRAM free %u KB\n", ok ? "OK" : "FAILED", fb, ESP.getFreePsram() / 1024);
-  ledcAttach(PIN_BL, 5000, 8);
   setBri(255);
   if (!ok) return;
 
@@ -162,6 +195,7 @@ void setup() {
   drawStatic();
   flush();
   Serial.println("[5] test screen ready");
+  stage('E');
 }
 
 uint32_t frames = 0, fpsT = 0, briT = 0;
