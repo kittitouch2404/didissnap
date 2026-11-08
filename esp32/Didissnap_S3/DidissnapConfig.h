@@ -47,6 +47,7 @@ static void (*onPage)(int) = nullptr;
 
 static WebServer web(80);
 static uint32_t lastCycle = 0;
+static uint32_t saveAt = 0;     // บันทึกลงแฟลชทีหลัง (กดปุ่มรัว ๆ ไม่ต้องเขียนแฟลชทุกครั้ง → จอไม่สะดุด)
 
 // ------------------------------------------------------------------ เก็บ/โหลด
 inline void load() {
@@ -155,8 +156,9 @@ inline bool numField(const String& s, const char* key, float& out) {
 }
 
 // หลังค่าตั้งเปลี่ยน: บันทึก + บอกสเก็ตช์
+inline void saveLater() { saveAt = millis() + 2500; if (!saveAt) saveAt = 1; }
 inline void changed(int oldPage) {
-  save();
+  saveLater();
   if (cfg.page != oldPage && onPage) onPage(cfg.page);
   if (onApply) onApply();
   lastCycle = millis();
@@ -168,7 +170,7 @@ inline void setPage(int p) {
   p = ((p % pageCount) + pageCount) % pageCount;
   int old = cfg.page;
   cfg.page = p;
-  if (prefs) prefs->putInt("page", p);
+  if (p != old) saveLater();
   if (p != old && onPage) onPage(p);
   lastCycle = millis();
 }
@@ -341,9 +343,15 @@ inline void begin(Preferences& p, const char* const* names, int count) {
   lastCycle = millis();
 }
 
+// บันทึกค่าที่ค้างไว้ (เรียกได้ทุกรอบ แม้ปิด WiFi)
+inline void tick() {
+  if (saveAt && (int32_t)(millis() - saveAt) >= 0) { saveAt = 0; save(); }
+}
+
 // เรียกทุกรอบใน loop()
 inline void loop() {
   web.handleClient();
+  tick();
   if (cfg.autoCycle > 0 && millis() - lastCycle >= (uint32_t)cfg.autoCycle * 1000UL) {
     int p = (cfg.page + 1) % pageCount;
     cfg.page = p;                 // สลับอัตโนมัติไม่บันทึกลงแฟลชทุกครั้ง (ถนอมแฟลช)

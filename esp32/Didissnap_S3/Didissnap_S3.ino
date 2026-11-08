@@ -89,8 +89,9 @@ static void drawStrip(int k, uint16_t* sb) {
   else pages::draw(jobPage);
   menu::drawToast();
   if (k == N_STRIPS - 1 && showPerf) {     // ตัวเลขวัดความเร็ว (ชั่วคราว) มุมล่างซ้าย
-    char pb[64];
-    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd);
+    char pb[80];
+    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz  %dcore %s", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd,
+             (workGo && menu::drawCores == 2) ? 2 : 1, menu::fontMem ? "FLASH" : "PSRAM");
     gfx::fillA(0, LCD_H - 14, gfx::textWidth(pb, 11, 600) + 8, 14, 0, 180);
     gfx::text(pb, 4, LCD_H - 3, 11, gfx::rgb(0x00E05A), gfx::LEFT, 600);
   }
@@ -115,14 +116,23 @@ static void renderFrame(uint16_t* fb, int page, bool menuOpen, bool flip) {
   jobFlip = flip;
   gfx::frameMs = millis();
   __atomic_store_n(&nextStrip, 0, __ATOMIC_SEQ_CST);
-  if (workGo) xSemaphoreGive(workGo);
+  bool two = workGo && menu::drawCores == 2;
+  if (two) xSemaphoreGive(workGo);
   renderStrips(stripBuf);
-  if (workGo) xSemaphoreTake(workDone, portMAX_DELAY);
+  if (two) xSemaphoreTake(workDone, portMAX_DELAY);
 }
 
 // อัตรารีเฟรชจอตามเมนู REFRESH (ตั้งตอนเปิดเครื่อง — เปลี่ยนในเมนูแล้วเครื่องรีสตาร์ทเอง)
 static const int LCD_HZ[4] = {44, 30, 60, 60}, LCD_EVERY[4] = {1, 1, 2, 1};
 static uint32_t restartAt = 0;
+static void applyPerfOpt() {
+  gfx::fontsFrom(menu::fontMem == 1);
+}
+static void onPerfOpt() {
+  applyPerfOpt();
+  prefs.putInt("cores", menu::drawCores);
+  prefs.putInt("fontMem", menu::fontMem);
+}
 static void onLcdMode(int m) {
   prefs.putInt("lcdMode", m & 3);
   menu::toast("RESTARTING...");
@@ -286,12 +296,16 @@ void setup() {
     xTaskCreatePinnedToCore(drawWorker, "draw2", 8192, nullptr, 3, nullptr, 0);
   } else Serial.println("2nd strip buffer: no internal RAM -> draw on 1 core");
   menu::onLcdMode = onLcdMode;
+  menu::drawCores = safeDraw ? 1 : constrain(prefs.getInt("cores", 1), 1, 2);
+  menu::fontMem = prefs.getInt("fontMem", 0) & 1;
+  menu::onPerfOpt = onPerfOpt;
+  applyPerfOpt();
   perf::begin();
   didibtn::onEvent = onButton;
   didibtn::begin(PIN_BTN1, PIN_BTN2, -1, PIN_BTN2_ALT);
   if (skip(10)) didicfg::cfg.page = 0;   // ดับตอนวาดหน้าที่เลือกไว้ → เริ่มหน้า 1
   step(10, "first frames");
-  Serial.printf("Didissnap_S3 ready  heap %u (internal %u)  psram %u  draw cores %d\n", ESP.getFreeHeap(), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), ESP.getFreePsram(), workGo ? 2 : 1);
+  Serial.printf("Didissnap_S3 ready  heap %u (internal %u)  psram %u  draw cores %d\n", ESP.getFreeHeap(), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), ESP.getFreePsram(), (workGo && menu::drawCores == 2) ? 2 : 1);
 }
 
 static uint32_t lastUs = 0, fpsT = 0, drawAcc = 0, perfT = 0, lcdF0 = 0, frameT0 = 0;
@@ -308,6 +322,7 @@ void loop() {
     didicfg::loop();   // หน้าเว็บ + สลับหน้าอัตโนมัติ
   }
   didibtn::loop();
+  didicfg::tick();   // บันทึกค่าตั้งลงแฟลชทีหลัง
 
   D.link = demo ? 0 : 2;
   data::update(dt, demo);

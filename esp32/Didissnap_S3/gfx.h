@@ -248,6 +248,7 @@ enum Align { LEFT, CENTER, RIGHT };
 // ฟอนต์ที่ใช้จริง (ตอนเปิดเครื่อง copyFontsToPsram() ย้ายรูปตัวอักษรจากแฟลชไป PSRAM — เร็วกว่าแฟลช DIO มาก)
 static DFont fontsRt[N_FONTS];
 static bool fontsInit = false;
+static DFont fontsPs[N_FONTS];   // ชุดที่ชี้ไป PSRAM
 inline const DFont* fontTable() {
   if (!fontsInit) { memcpy(fontsRt, FONTS, sizeof(FONTS)); fontsInit = true; }
   return fontsRt;
@@ -267,6 +268,12 @@ inline void copyFontsToPsram() {
     fontsRt[i].g = g;
   }
 #endif
+  memcpy(fontsPs, fontsRt, sizeof(fontsRt));
+}
+// เลือกที่อ่านรูปตัวอักษร: PSRAM (ค่าเริ่ม) หรือแฟลช — ไว้ทดสอบว่าแบบไหนเร็วกว่า (เรียกตอนไม่ได้วาดเท่านั้น)
+inline void fontsFrom(bool flash) {
+  if (flash) memcpy(fontsRt, FONTS, sizeof(FONTS));
+  else memcpy(fontsRt, fontsPs, sizeof(fontsPs));
 }
 inline const DFont* pick(float size, int weight, bool italic) {
   Ctx& cx = C();

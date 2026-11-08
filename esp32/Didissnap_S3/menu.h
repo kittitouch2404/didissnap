@@ -21,6 +21,8 @@ static const Item ITEMS[] = {
     {"FLIP 180", "flip", 0, 1, 1},
     {"GEARS", "gearCount", 3, 6, 1},
     {"REFRESH", "lcdMode", 0, 3, 1},
+    {"DRAW CORES", "cores", 1, 2, 1},
+    {"FONT MEMORY", "fontMem", 0, 1, 1},
     {"PEAK RESET", nullptr, 0, 0, 0},
     {"TRIP RESET", nullptr, 0, 0, 0},
     {"WIFI", nullptr, 0, 0, 0},
@@ -35,7 +37,10 @@ static void (*onHold2)() = nullptr;
 // อัตรารีเฟรชจอ: 0 = 44 Hz · 1 = 30 Hz · 2 = 60 Hz ล็อก 30 fps · 3 = 60 Hz
 static int lcdMode = 0;
 static const char* const LCD_MODE_NAME[] = {"44 Hz", "30 Hz (30 fps)", "60 Hz lock 30 fps", "60 Hz"};
-static void (*onLcdMode)(int) = nullptr;   // ปุ่ม 2 ค้างตอนอยู่หน้าปกติ (หน้า Record = ARM/STOP)
+static void (*onLcdMode)(int) = nullptr;
+// ทดสอบความเร็ว: วาดกี่คอร์ / อ่านตัวอักษรจาก PSRAM หรือแฟลช
+static int drawCores = 1, fontMem = 0;
+static void (*onPerfOpt)() = nullptr;   // ปุ่ม 2 ค้างตอนอยู่หน้าปกติ (หน้า Record = ARM/STOP)
 
 static char toastMsg[32] = "";
 static uint32_t toastUntil = 0;
@@ -52,6 +57,8 @@ inline int value(const char* k) {
   if (!strcmp(k, "flip")) return c.flip;
   if (!strcmp(k, "gearCount")) return c.gearCount;
   if (!strcmp(k, "lcdMode")) return lcdMode;
+  if (!strcmp(k, "cores")) return drawCores;
+  if (!strcmp(k, "fontMem")) return fontMem;
   return 0;
 }
 inline void fmt(const Item& it, char* b, size_t n) {
@@ -66,12 +73,15 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "maxRpm")) snprintf(b, n, "%d rpm", v);
   else if (!strcmp(it.key, "tempAlert")) snprintf(b, n, "%d C", v);
   else if (!strcmp(it.key, "autoCycle")) { if (v) snprintf(b, n, "%d s", v); else snprintf(b, n, "OFF"); }
+  else if (!strcmp(it.key, "fontMem")) snprintf(b, n, v ? "FLASH" : "PSRAM");
   else if (!strcmp(it.key, "lcdMode")) snprintf(b, n, "%s", LCD_MODE_NAME[v & 3]);
   else if (!strcmp(it.key, "briAuto") || !strcmp(it.key, "flip")) snprintf(b, n, v ? "ON" : "OFF");
   else snprintf(b, n, "%d", v);
 }
 inline void set(const char* k, int v) {
   if (!strcmp(k, "lcdMode")) { lcdMode = v & 3; if (onLcdMode) onLcdMode(lcdMode); return; }
+  if (!strcmp(k, "cores")) { drawCores = v; if (onPerfOpt) onPerfOpt(); return; }
+  if (!strcmp(k, "fontMem")) { fontMem = v; if (onPerfOpt) onPerfOpt(); return; }
   int old = didicfg::cfg.page;
   didicfg::setKV(String(k), (float)v);
   didicfg::changed(old);
