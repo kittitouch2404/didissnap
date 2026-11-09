@@ -24,7 +24,10 @@ namespace didipics {
 
 static const int SLOTS = 3;                 // หน้า 9, 10, 11
 static const int MAX_PICS = 40;
-static const size_t MAX_FILE = 1536 * 1024; // ต่อไฟล์ (GIF ยาว ๆ)
+#ifndef DIDI_MAX_FILE
+#define DIDI_MAX_FILE (1536 * 1024)
+#endif
+static const size_t MAX_FILE = DIDI_MAX_FILE; // ต่อไฟล์ (GIF ยาว ๆ) — บอร์ดที่มี PSRAM เยอะตั้งให้ใหญ่ขึ้นได้
 static const size_t KEEP_FREE = 24 * 1024;  // เผื่อพื้นที่ให้ LittleFS
 static const char* PIC_DIR = "/pics";
 static const char* META = "/pics/_meta.txt";

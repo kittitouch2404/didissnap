@@ -22,6 +22,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include "esp_system.h"
+#define DIDI_MAX_FILE (4 * 1024 * 1024)   // รูป/GIF ไฟล์ละไม่เกิน 4 MB (โหลดลง PSRAM ตอนแสดง)
 #define DIDI_TX_POWER WIFI_POWER_8_5dBm   // กำลังส่ง WiFi ต่ำลง กินไฟน้อย (มือถืออยู่ในรถใกล้ ๆ)
 #include "DidissnapLink.h"
 #include "DidissnapConfig.h"

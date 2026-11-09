@@ -13,7 +13,7 @@ import '../data/hub.dart';
 import 'paint_utils.dart';
 
 const int kBoardW = 480, kBoardH = 272;
-const int kMaxUpload = 1536 * 1024;
+const int kMaxUpload = 4 * 1024 * 1024; // บอร์ด S3 รับได้ 4 MB (บอร์ดรุ่นเก่าจะตอบ "ใหญ่เกิน" เอง)
 const _slotNames = ['หน้า 9 · Picture', 'หน้า 10 · Car run', 'หน้า 11 · Photo'];
 
 String fmtBytes(int b) =>
@@ -34,6 +34,9 @@ Uint8List processPic(PicJob j) {
   if (gif) {
     final info = img.GifDecoder().startDecode(j.src);
     if (info == null) throw Exception('อ่านไฟล์ GIF ไม่ได้');
+    // GIF ที่ขนาด 480×272 อยู่แล้วและไม่ได้ครอป → ส่งไฟล์เดิมเลย (เข้ารหัสใหม่ทุกเฟรมจะใหญ่ขึ้นหลายเท่า)
+    final full = j.x < 0.002 && j.y < 0.002 && j.w > 0.996 && j.h > 0.996;
+    if (full && info.width == kBoardW && info.height == kBoardH) return j.src;
     if (info.numFrames * info.width * info.height > 40000000) {
       throw Exception('GIF ใหญ่/ยาวเกินไป (${info.numFrames} เฟรม ${info.width}×${info.height}) '
           '— ลองตัดให้สั้นลงหรือย่อก่อน');
@@ -247,7 +250,7 @@ class _Esp32PicsSectionState extends State<Esp32PicsSection> {
       setState(() {
         _busy = false;
         _step = null;
-        _err = 'ไฟล์หลังย่อยังใหญ่ ${fmtBytes(out.length)} (เกิน 1.5 MB) — ใช้ GIF ที่สั้นลง';
+        _err = 'ไฟล์หลังย่อยังใหญ่ ${fmtBytes(out.length)} (เกิน ${fmtBytes(kMaxUpload)}) — ใช้ GIF ที่สั้นลง';
       });
       return;
     }

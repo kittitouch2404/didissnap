@@ -138,6 +138,12 @@ static void task(void*) {
     if (want.kind != have.kind || strcmp(want.path, have.path) != 0 || want.ver != have.ver) {
       have = want;
       if (gifOpen) { gif->close(); gifOpen = false; }
+      if (have.kind != BI_RUN_ANIM && runBlock) {   // ออกจากหน้ารถวิ่ง → คืน PSRAM 3.4 MB (ให้ GIF ใหญ่ ๆ ใช้)
+        heap_caps_free(runBlock); runBlock = nullptr; runReady = 0; runShow = -1;
+      }
+      if (have.kind != FILE_PIC && fileBuf && fileCap > 1024 * 1024) {   // คืนที่ไฟล์ใหญ่
+        free(fileBuf); fileBuf = nullptr; fileCap = 0; fileLen = 0;
+      }
       publish(-1);
       lastErr[0] = 0;
       int b = backIdx();
