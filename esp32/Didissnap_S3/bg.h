@@ -15,6 +15,7 @@ inline bool draw() { if (hostImg) { memcpy(GBUF + GY0 * 480, hostImg + GY0 * 480
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <AnimatedGIF.h>
+#include <new>
 #include "esp32s3/rom/tjpgd.h"
 #include "freertos/semphr.h"
 #include "rom/ets_sys.h"
@@ -255,7 +256,11 @@ inline bool begin() {
   buf[0] = (uint16_t*)ps_malloc(NPX * 2);
   buf[1] = (uint16_t*)ps_malloc(NPX * 2);
   gifCanvas = (uint16_t*)ps_malloc(NPX * 2);
-  gif = new AnimatedGIF();
+  // ตัวถอด GIF (~24 KB: ตาราง LZW ที่ถูกอ่านแบบสุ่มตลอด) ต้องอยู่ใน RAM ภายในชิป
+  // ถ้าไปอยู่ใน PSRAM (malloc ก้อนใหญ่ไป PSRAM อัตโนมัติ) จะแย่ง PSRAM กับจอหนักมาก → จอวูบทั้งหน้า GIF
+  void* gm = heap_caps_malloc(sizeof(AnimatedGIF), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (gm) gif = new (gm) AnimatedGIF();
+  else { gif = new AnimatedGIF(); Serial.println("GIF decoder: no internal RAM -> PSRAM (screen may flicker)"); }
   if (!buf[0] || !buf[1] || !gifCanvas || !gif) return false;
   gif->begin(GIF_PALETTE_RGB565_LE);
   xTaskCreatePinnedToCore(task, "bg", 8192, nullptr, 2, nullptr, 0);
