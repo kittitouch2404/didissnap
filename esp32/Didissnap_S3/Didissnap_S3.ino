@@ -351,6 +351,11 @@ void loop() {
   uint32_t tr1 = micros();
   lcd::present();
   drawAcc += tr1 - tr0;
+  // หน้าที่เล่น GIF: วาดไม่เกิน 20 fps (GIF เองก็ 20 fps) — ลดงาน PSRAM ไม่ให้จอวูบ
+  if (bg::gifPlaying && !menu::open) {
+    uint32_t el = (micros() - tr0) / 1000;
+    if (el < 50) delay(50 - el);
+  }
   int ft = frameT0 ? (int)((tr0 - frameT0) / 1000) : 0;   // เวลาระหว่างเฟรม (หาอาการกระตุก)
   frameT0 = tr0;
   if (ft > maxAcc) maxAcc = ft;

@@ -6,6 +6,7 @@
 namespace bg {
 enum Kind { NONE = 0, BI_JPG9, BI_RUN_ANIM, BI_JPG11, FILE_PIC };
 static float runSpeed = 0;
+static bool gifPlaying = false;
 static uint16_t* hostImg = nullptr;
 inline bool draw() { if (hostImg) { memcpy(GBUF + GY0 * 480, hostImg + GY0 * 480, (GY1 - GY0) * 480 * 2); return true; } gfx::clear(0); return false; }
 }
@@ -103,6 +104,8 @@ inline bool decodeJpeg(const uint8_t* src, size_t len, uint16_t* dst) {
 
 // ---------------------------------------------------------------- GIF
 static int gifOx = 0, gifOy = 0, gifPrevDisp = 0, gifPx = 0, gifPy = 0, gifPw = 0, gifPh = 0;
+static bool gifPlaying = false;   // กำลังเล่น GIF (หน้าหลักจำกัด fps ลง ลดงาน PSRAM)
+static int gifFull = 0, rx0 = 0, ry0 = 0, rx1 = 0, ry1 = 0;   // กรอบที่เปลี่ยนของเฟรมก่อน
 static void gifDraw(GIFDRAW* d) {
   int y = d->iY + d->y + gifOy;
   if ((unsigned)y >= (unsigned)H) return;
@@ -145,7 +148,7 @@ static bool loadFile(const char* path) {
 static void task(void*) {
   uint32_t nextT = 0;
   int runIdx = 0;
-  bool gifOpen = false;
+  bool& gifOpen = gifPlaying;
   for (;;) {
     // เปลี่ยนรูป?
     if (want.kind != have.kind || strcmp(want.path, have.path) != 0 || want.ver != have.ver) {
@@ -172,6 +175,7 @@ static void task(void*) {
           gifOy = (H - gif->getCanvasHeight()) / 2;
           memset(gifCanvas, 0, NPX * 2);
           gifPrevDisp = 0;
+          gifFull = 2;                    // 2 เฟรมแรก: คัดลอกเต็มทั้งสองบัฟเฟอร์
           nextT = 0;
         } else snprintf(lastErr, sizeof(lastErr), "gif open");
       }
@@ -210,7 +214,19 @@ static void task(void*) {
       int delayMs = 100;
       int r = gif->playFrame(false, &delayMs);
       int b = backIdx();
-      pcopy(buf[b], gifCanvas, NPX * 2, 40);
+      // บัฟเฟอร์ b มีภาพของ 2 เฟรมก่อน → คัดลอกเฉพาะส่วนที่เปลี่ยนใน 2 เฟรมล่าสุด (ลดงาน PSRAM มาก)
+      int cx0 = max(0, gifPx), cy0 = max(0, gifPy), cx1 = min(W, gifPx + gifPw), cy1 = min(H, gifPy + gifPh);
+      int ux0 = min(cx0, rx0), uy0 = min(cy0, ry0), ux1 = max(cx1, rx1), uy1 = max(cy1, ry1);
+      rx0 = cx0; ry0 = cy0; rx1 = cx1; ry1 = cy1;
+      if (gifFull > 0) { gifFull--; ux0 = 0; uy0 = 0; ux1 = W; uy1 = H; }
+      if (ux1 > ux0 && uy1 > uy0) {
+        if (ux0 == 0 && ux1 == W) pcopy(buf[b] + uy0 * W, gifCanvas + uy0 * W, (size_t)(uy1 - uy0) * W * 2, 60);
+        else
+          for (int y = uy0; y < uy1; y++) {
+            memcpy(buf[b] + y * W + ux0, gifCanvas + y * W + ux0, (ux1 - ux0) * 2);
+            if ((y & 7) == 7) esp_rom_delay_us(20);
+          }
+      }
       publish(b);
       if (r == 0) gif->reset();           // จบรอบ → วนใหม่
       if (r < 0) { snprintf(lastErr, sizeof(lastErr), "gif frame"); gifOpen = false; }
