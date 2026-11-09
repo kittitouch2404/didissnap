@@ -7,6 +7,7 @@ namespace bg {
 enum Kind { NONE = 0, BI_JPG9, BI_RUN_ANIM, BI_JPG11, FILE_PIC };
 static float runSpeed = 0;
 static bool gifPlaying = false;
+static volatile int gifTest = 0;
 static uint16_t* hostImg = nullptr;
 inline bool draw() { if (hostImg) { memcpy(GBUF + GY0 * 480, hostImg + GY0 * 480, (GY1 - GY0) * 480 * 2); return true; } gfx::clear(0); return false; }
 }
@@ -106,6 +107,7 @@ inline bool decodeJpeg(const uint8_t* src, size_t len, uint16_t* dst) {
 
 // ---------------------------------------------------------------- GIF
 static int gifOx = 0, gifOy = 0, gifPrevDisp = 0, gifPx = 0, gifPy = 0, gifPw = 0, gifPh = 0;
+static volatile int gifTest = 0;   // ทดสอบ: 0 ปกติ · 1 ถอดแต่ไม่ขึ้นจอ · 2 ไม่ถอด (ภาพนิ่ง)
 static bool gifPlaying = false;   // กำลังเล่น GIF (หน้าหลักจำกัด fps ลง ลดงาน PSRAM)
 static int gifFull = 0, rx0 = 0, ry0 = 0, rx1 = 0, ry1 = 0;   // กรอบที่เปลี่ยนของเฟรมก่อน
 static uint16_t gifLine[480];   // แถวชั่วคราวใน RAM ภายในชิป
@@ -216,6 +218,7 @@ static void task(void*) {
         nextT = now + (uint32_t)constrain(6000.f / fmaxf(sp, 1.f), 40.f, 400.f);
       }
     }
+    if (gifOpen && now >= nextT && gifTest == 2) nextT = now + 50;
     if (gifOpen && now >= nextT) {
       if (gifPrevDisp == 2) {   // คืนพื้นหลังตรงเฟรมก่อน
         for (int y = max(0, gifPy); y < min(H, gifPy + gifPh); y++)
@@ -224,6 +227,7 @@ static void task(void*) {
       int delayMs = 100;
       int r = gif->playFrame(false, &delayMs);
       int b = backIdx();
+      if (gifTest == 1 && gifFull == 0) { if (r == 0) gif->reset(); nextT = now + constrain(delayMs, 20, 2000); vTaskDelay(1); continue; }
       // บัฟเฟอร์ b มีภาพของ 2 เฟรมก่อน → คัดลอกเฉพาะส่วนที่เปลี่ยนใน 2 เฟรมล่าสุด (ลดงาน PSRAM มาก)
       int cx0 = max(0, gifPx), cy0 = max(0, gifPy), cx1 = min(W, gifPx + gifPw), cy1 = min(H, gifPy + gifPh);
       int ux0 = min(cx0, rx0), uy0 = min(cy0, ry0), ux1 = max(cx1, rx1), uy1 = max(cy1, ry1);
