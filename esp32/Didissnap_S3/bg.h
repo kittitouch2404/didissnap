@@ -15,6 +15,7 @@ inline bool draw() { if (hostImg) { memcpy(GBUF + GY0 * 480, hostImg + GY0 * 480
 #include <AnimatedGIF.h>
 #include "esp32s3/rom/tjpgd.h"
 #include "freertos/semphr.h"
+#include "rom/ets_sys.h"
 #include "gfx.h"
 #include "bimg.h"
 
@@ -47,6 +48,18 @@ static volatile int runReady = 0;    // ถอดเสร็จกี่เฟ�
 static volatile int runShow = -1;    // เฟรมที่แสดงอยู่
 inline uint16_t* runTop() { return runBlock; }                                  // แถวบน 0..RUN_Y0-1 (เหมือนกันทุกเฟรม)
 inline uint16_t* runFrame(int i) { return runBlock + (size_t)RUN_Y0 * W + (size_t)i * RUN_ROWS * W; }
+
+// คัดลอกก้อนใหญ่ใน PSRAM ทีละช่วง เว้นจังหวะให้จออ่าน PSRAM ทัน
+// (คัดลอกรวดเดียว 261 KB → จอแย่ง PSRAM ไม่ทัน → จอวูบมืด/ภาพเลื่อนแป๊บหนึ่ง)
+static void pcopy(void* dst, const void* src, size_t bytes, uint32_t gapUs = 30) {
+  const size_t CH = (size_t)W * 2 * 8;
+  uint8_t* d = (uint8_t*)dst;
+  const uint8_t* q = (const uint8_t*)src;
+  for (size_t o = 0; o < bytes; o += CH) {
+    memcpy(d + o, q + o, bytes - o < CH ? bytes - o : CH);
+    if (gapUs) esp_rom_delay_us(gapUs);
+  }
+}
 
 // ---------------------------------------------------------------- JPEG
 struct JCtx { const uint8_t* src; size_t len, pos; uint16_t* dst; int ox, oy; };
@@ -169,8 +182,8 @@ static void task(void*) {
       if (runBlock && runReady < BI_RUN_N) {             // ยังถอดไม่ครบ → ถอดเพิ่มทีละเฟรม
         int i = runReady, b = backIdx();
         if (decodeJpeg(BI_RUN[i], BI_RUN_LEN[i], buf[b])) {
-          memcpy(runFrame(i), buf[b] + RUN_Y0 * W, (size_t)RUN_ROWS * W * 2);
-          if (i == 0) { memcpy(runTop(), buf[b], (size_t)RUN_Y0 * W * 2); runShow = 0; }   // ส่วนบน (ฟ้า/ตึก) ใช้ของเฟรมแรก
+          pcopy(runFrame(i), buf[b] + RUN_Y0 * W, (size_t)RUN_ROWS * W * 2);
+          if (i == 0) { pcopy(runTop(), buf[b], (size_t)RUN_Y0 * W * 2); runShow = 0; }   // ส่วนบน (ฟ้า/ตึก) ใช้ของเฟรมแรก
           runReady = i + 1;
         } else runReady = BI_RUN_N;                       // ถอดไม่ได้ → เลิก
       }
@@ -197,7 +210,7 @@ static void task(void*) {
       int delayMs = 100;
       int r = gif->playFrame(false, &delayMs);
       int b = backIdx();
-      memcpy(buf[b], gifCanvas, NPX * 2);
+      pcopy(buf[b], gifCanvas, NPX * 2, 40);
       publish(b);
       if (r == 0) gif->reset();           // จบรอบ → วนใหม่
       if (r < 0) { snprintf(lastErr, sizeof(lastErr), "gif frame"); gifOpen = false; }
@@ -236,11 +249,13 @@ inline bool draw() {
   xSemaphoreTake(lock, portMAX_DELAY);
   int rs = runShow;
   if (want.kind == BI_RUN_ANIM && have.kind == BI_RUN_ANIM && runBlock && rs >= 0) {   // รถวิ่ง (เฟรมเก็บไว้แล้ว)
-    for (int y = GY0; y < GY1; y++)
+    for (int y = GY0; y < GY1; y++) {
       memcpy(GBUF + y * W, y < RUN_Y0 ? runTop() + y * W : runFrame(rs) + (y - RUN_Y0) * W, W * 2);
+      if ((y & 7) == 7) esp_rom_delay_us(10);
+    }
     ok = true;
   } else if (shown >= 0 && want.kind != NONE) {   // คัดลอกเฉพาะแถวของแถบที่กำลังวาด
-    memcpy(GBUF + GY0 * W, buf[shown] + GY0 * W, (GY1 - GY0) * W * 2);
+    pcopy(GBUF + GY0 * W, buf[shown] + GY0 * W, (GY1 - GY0) * W * 2, 10);
     ok = true;
   }
   xSemaphoreGive(lock);

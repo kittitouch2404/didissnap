@@ -73,7 +73,7 @@ static void copyStrip(int y0, bool flip, const uint16_t* src) {
 }
 
 static uint32_t perfDraw = 0;
-static int perfFps = 0, perfLcd = 0, perfMax = 0;
+static int perfFps = 0, perfLcd = 0, perfMax = 0, perfFlash = 0;   // perfFlash = หยุดจอเพราะใช้แฟลช (ครั้ง/วินาที)
 
 static volatile int nextStrip = N_STRIPS;
 static uint16_t* volatile jobFb = nullptr;
@@ -89,8 +89,8 @@ static void drawStrip(int k, uint16_t* sb) {
   menu::drawToast();
   if (k == N_STRIPS - 1 && menu::perfInfo) {     // ตัวเลขวัดความเร็ว (ชั่วคราว) มุมล่างซ้าย
     char pb[80];
-    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz  %dcore", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd,
-             (workGo && menu::drawCores == 2) ? 2 : 1);
+    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz  %dcore  fl %d", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd,
+             (workGo && menu::drawCores == 2) ? 2 : 1, perfFlash);
     gfx::fillA(0, LCD_H - 14, gfx::textWidth(pb, 11, 600) + 8, 14, 0, 180);
     gfx::text(pb, 4, LCD_H - 3, 11, gfx::rgb(0x00E05A), gfx::LEFT, 600);
   }
@@ -362,6 +362,9 @@ void loop() {
     perfDraw = perfFrames ? drawAcc / perfFrames : 0;
     perfLcd = lcd::frames - lcdF0;
     perfMax = maxAcc;
+    static uint32_t fl0 = 0;
+    perfFlash = (int)(lcd::flashPauses - fl0);
+    fl0 = lcd::flashPauses;
     maxAcc = 0;
     lcdF0 = lcd::frames;
     perfFrames = 0;
