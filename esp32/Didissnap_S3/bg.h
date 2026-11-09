@@ -108,20 +108,28 @@ inline bool decodeJpeg(const uint8_t* src, size_t len, uint16_t* dst) {
 static int gifOx = 0, gifOy = 0, gifPrevDisp = 0, gifPx = 0, gifPy = 0, gifPw = 0, gifPh = 0;
 static bool gifPlaying = false;   // กำลังเล่น GIF (หน้าหลักจำกัด fps ลง ลดงาน PSRAM)
 static int gifFull = 0, rx0 = 0, ry0 = 0, rx1 = 0, ry1 = 0;   // กรอบที่เปลี่ยนของเฟรมก่อน
+static uint16_t gifLine[480];   // แถวชั่วคราวใน RAM ภายในชิป
 static void gifDraw(GIFDRAW* d) {
   int y = d->iY + d->y + gifOy;
-  if ((unsigned)y >= (unsigned)H) return;
-  uint16_t* row = gifCanvas + y * W;
-  const uint8_t* s = d->pPixels;
-  const uint16_t* pal = d->pPalette;
-  for (int x = 0; x < d->iWidth; x++) {
-    int X = d->iX + x + gifOx;
-    uint8_t v = s[x];
-    if ((unsigned)X >= (unsigned)W) continue;
-    if (d->ucHasTransparency && v == d->ucTransparent) continue;
-    row[X] = pal[v];
-  }
   if (d->y == 0) { gifPrevDisp = d->ucDisposalMethod; gifPx = d->iX + gifOx; gifPy = d->iY + gifOy; gifPw = d->iWidth; gifPh = d->iHeight; }
+  if ((unsigned)y >= (unsigned)H) return;
+  int x0 = d->iX + gifOx, x1 = x0 + d->iWidth;
+  if (x0 < 0) x0 = 0;
+  if (x1 > W) x1 = W;
+  if (x1 <= x0) return;
+  uint16_t* row = gifCanvas + y * W;
+  const uint8_t* s = d->pPixels + (x0 - (d->iX + gifOx));
+  const uint16_t* pal = d->pPalette;
+  int n = x1 - x0;
+  // อ่านแถวจาก PSRAM ครั้งเดียว แก้ใน RAM ภายใน แล้วเขียนกลับก้อนเดียว (ผ่านคิว PSRAM — ไม่แย่งจอ)
+  lcd::psramGate((size_t)n * 4);
+  memcpy(gifLine, row + x0, n * 2);
+  if (d->ucHasTransparency) {
+    uint8_t t = d->ucTransparent;
+    for (int i = 0; i < n; i++) if (s[i] != t) gifLine[i] = pal[s[i]];
+  } else
+    for (int i = 0; i < n; i++) gifLine[i] = pal[s[i]];
+  memcpy(row + x0, gifLine, n * 2);
 }
 
 // ---------------------------------------------------------------- ส่งบัฟเฟอร์ที่ถอดเสร็จขึ้นแสดง
