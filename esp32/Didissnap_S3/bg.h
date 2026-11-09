@@ -57,8 +57,10 @@ static void pcopy(void* dst, const void* src, size_t bytes, uint32_t gapUs = 30)
   uint8_t* d = (uint8_t*)dst;
   const uint8_t* q = (const uint8_t*)src;
   for (size_t o = 0; o < bytes; o += CH) {
-    memcpy(d + o, q + o, bytes - o < CH ? bytes - o : CH);
-    if (gapUs) esp_rom_delay_us(gapUs);
+    size_t n = bytes - o < CH ? bytes - o : CH;
+    lcd::psramGate(n * 2);
+    memcpy(d + o, q + o, n);
+    (void)gapUs;
   }
 }
 
@@ -223,8 +225,8 @@ static void task(void*) {
         if (ux0 == 0 && ux1 == W) pcopy(buf[b] + uy0 * W, gifCanvas + uy0 * W, (size_t)(uy1 - uy0) * W * 2, 60);
         else
           for (int y = uy0; y < uy1; y++) {
+            lcd::psramGate((ux1 - ux0) * 4);
             memcpy(buf[b] + y * W + ux0, gifCanvas + y * W + ux0, (ux1 - ux0) * 2);
-            if ((y & 7) == 7) esp_rom_delay_us(20);
           }
       }
       publish(b);
@@ -266,8 +268,8 @@ inline bool draw() {
   int rs = runShow;
   if (want.kind == BI_RUN_ANIM && have.kind == BI_RUN_ANIM && runBlock && rs >= 0) {   // รถวิ่ง (เฟรมเก็บไว้แล้ว)
     for (int y = GY0; y < GY1; y++) {
+      lcd::psramGate(W * 2);
       memcpy(GBUF + y * W, y < RUN_Y0 ? runTop() + y * W : runFrame(rs) + (y - RUN_Y0) * W, W * 2);
-      if ((y & 7) == 7) esp_rom_delay_us(10);
     }
     ok = true;
   } else if (shown >= 0 && want.kind != NONE) {   // คัดลอกเฉพาะแถวของแถบที่กำลังวาด

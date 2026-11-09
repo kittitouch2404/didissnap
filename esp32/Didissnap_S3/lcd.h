@@ -12,6 +12,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_cache.h"
 #include "esp_flash.h"
+#include "esp_timer.h"
 #include "freertos/semphr.h"
 #include "rom/ets_sys.h"
 #include "soc/gdma_channel.h"
@@ -112,6 +113,25 @@ static void findDma() {
 
 inline void paceCopy(uint16_t* dst, const uint16_t* src, size_t bytes);
 
+// ---------- คุมความเร็วการคัดลอกก้อนใหญ่ใน PSRAM (รวมทุกคอร์/ทุกงาน) ----------
+// จอต้องดึงภาพจาก PSRAM ตลอดเวลา ถ้า 2 คอร์ + งานรูป คัดลอกพร้อมกันเร็วเกิน จอดึงไม่ทัน → วูบมืด/ภาพเลื่อน/ซ้อน
+// ทุกการคัดลอกก้อนใหญ่ต้อง "จองช่วงเวลา" ก่อน → รวมกันไม่เกิน PSRAM_COPY_MBPS
+#ifndef PSRAM_COPY_MBPS
+#define PSRAM_COPY_MBPS 40
+#endif
+static portMUX_TYPE gateMux = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t gateNext = 0;
+// first = ไม่ต้องรอคิว (งานขึ้นจอ ต้องคัดลอกให้ทันจอไล่แสดง) แต่กันเวลาไว้ ให้คนอื่นรอแทน
+inline void psramGate(size_t bytes, bool first = false) {
+  uint32_t slot = (uint32_t)(bytes / PSRAM_COPY_MBPS) + 1;   // ไมโครวินาที
+  portENTER_CRITICAL(&gateMux);
+  uint32_t now = (uint32_t)esp_timer_get_time();
+  uint32_t start = (!first && (int32_t)(gateNext - now) > 0) ? gateNext : now;
+  gateNext = ((int32_t)(gateNext - now) > 0 ? gateNext : now) + slot;
+  portEXIT_CRITICAL(&gateMux);
+  while ((int32_t)(start - (uint32_t)esp_timer_get_time()) > 0) {}
+}
+
 // ---------- คัดลอกเฉพาะส่วนที่เปลี่ยน ----------
 // แบ่งจอเป็นแถบเล็กละ 4 แถว (68 แถบ) จำ "ลายนิ้วมือ" (hash) ของแต่ละแถบในบัฟเฟอร์หลังแต่ละชุดและบนจอ
 // แถบที่เหมือนเดิมไม่ต้องคัดลอก → ลดงาน PSRAM ซึ่งเป็นคอขวดหลัก (ภาพนิ่ง/ตัวหนังสือที่ไม่เปลี่ยน ไม่ต้องย้ายทุกเฟรม)
@@ -137,6 +157,7 @@ inline void putBand(int dBand, const uint16_t* src, bool flip) {
   uint32_t h = hashRows(src, BAND_BYTES / 4, flip ? 0x5bd1e995u : 0);
   if (bbHash[w][dBand] == h) return;
   uint16_t* d = bb[w] + (size_t)dBand * BAND_H * LCD_W;
+  psramGate(BAND_BYTES);
   if (!flip) memcpy(d, src, BAND_BYTES);
   else
     for (int r = 0; r < BAND_H; r++) {      // กลับจอ 180°: แถวกลับหัว + กลับซ้ายขวา
@@ -145,7 +166,6 @@ inline void putBand(int dBand, const uint16_t* src, bool flip) {
       for (int x = 0; x < LCD_W; x++) *o-- = s[x];
     }
   esp_cache_msync(d, BAND_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
-  esp_rom_delay_us(25);                     // เว้นจังหวะให้จออ่าน PSRAM
   bbHash[w][dBand] = h;
 }
 // คัดลอกบัฟเฟอร์หลัง p ขึ้นจอ เฉพาะแถบที่ต่างจากบนจอ
@@ -160,10 +180,11 @@ static void copyChanged(int p) {
   for (int b = 0; b < NB; b++) {
     if (bbHash[p][b] == fbHash[b]) continue;
     size_t o = (size_t)b * BAND_H * LCD_W;
+    psramGate(BAND_BYTES * 2, true);          // อ่าน+เขียน PSRAM (งานขึ้นจอมาก่อน)
     memcpy(fb + o, bb[p] + o, BAND_BYTES);
     esp_cache_msync(fb + o, BAND_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
     fbHash[b] = bbHash[p][b];
-    if (++n % 2 == 0) esp_rom_delay_us(60);
+    if (++n % 2 == 0) esp_rom_delay_us(60);   // จังหวะเดิมที่ทดสอบแล้วภาพนิ่ง
   }
   bandsCopied += n;
 }
@@ -262,9 +283,9 @@ inline void paceCopy(uint16_t* dst, const uint16_t* src, size_t bytes) {
   const uint8_t* s = (const uint8_t*)src;
   for (size_t o = 0; o < bytes; o += CH) {
     size_t n = bytes - o < CH ? bytes - o : CH;
+    psramGate(n * 2);
     memcpy(d + o, s + o, n);
     esp_cache_msync(d + o, n, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
-    esp_rom_delay_us(60);
   }
 }
 static uint16_t* dummy = nullptr;   // ถ้าจอเริ่มไม่ได้ วาดลงที่นี่แทน (ไม่ค้าง)
