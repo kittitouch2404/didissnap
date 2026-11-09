@@ -37,6 +37,7 @@
 #include "pages.h"
 #include "menu.h"
 #include "perf.h"
+#include "bootanim.h"
 #pragma GCC pop_options
 
 #define PIN_BTN1 41      // แพด RXD1
@@ -137,13 +138,24 @@ static void onLcdMode(int m) {
   restartAt = millis() + 1200;
 }
 
+// แอนิเมชันตอนเปิดเครื่อง (bootanim.h ~6 วินาที) — กดปุ่มไหนก็ได้เพื่อข้าม
+static void bootFlush(const uint16_t* buf) {
+  lcd::paceCopy(lcd::back(), buf, LCD_W * LCD_H * 2);
+  lcd::presentFull();
+}
+static bool bootSkip() {
+  return digitalRead(PIN_BTN1) == LOW || digitalRead(PIN_BTN2) == LOW || digitalRead(PIN_BTN2_ALT) == LOW;
+}
 static void bootLogo() {
   if (!lcd::ok()) return;
-  uint16_t* fb = lcd::back();
-  bg::decodeJpeg(BI_LOGO, sizeof(BI_LOGO), fb);
-  lcd::presentFull();
-  for (int i = 0; i <= 100; i += 4) { lcd::brightness(i * didicfg::cfg.bri / 100); delay(12); }
-  delay(1200);
+  pinMode(PIN_BTN1, INPUT_PULLUP);
+  pinMode(PIN_BTN2, INPUT_PULLUP);
+  pinMode(PIN_BTN2_ALT, INPUT_PULLUP);
+  delay(5);
+  bool held = bootSkip();                 // ปุ่มค้างอยู่ตั้งแต่เปิดเครื่อง (หรือขาลอย) → ไม่ใช้เป็นปุ่มข้าม
+  lcd::brightness(didicfg::cfg.bri);
+  bootanim::play(bootFlush, held ? nullptr : bootSkip);
+  lcd::flush();
 }
 
 // เลือกรูปพื้นหลังตามหน้าที่แสดง
