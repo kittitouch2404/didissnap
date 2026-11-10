@@ -19,6 +19,7 @@
 #include "hal/gdma_ll.h"
 #include "hal/lcd_ll.h"
 #include "esp32s3/rom/cache.h"
+#include "esp_memory_utils.h"
 
 #define LCD_W 480
 #define LCD_H 272
@@ -120,11 +121,47 @@ static esp_err_t IRAM_ATTR osStart(void* arg) {
   return origOs->start(arg);
 }
 
+// ---------- ซิงก์ bounce buffer ใหม่หลังหยุดจอ ----------
+// ไดรเวอร์เลือกว่าจะเติม bounce ชุดไหนจาก "นับ EOF % 2" และ (โหมด restart ทุก vsync) ไม่เคยรีเซ็ตตัวนับนี้
+// พอหยุดจอกลางเฟรมเพราะใช้แฟลช (เช่น บันทึกค่าหลังเปลี่ยนหน้า) ตัวนับอาจเหลือเลขคี่ → ต่อจากนั้นเติมผิดชุดตลอด
+// = ภาพขยับ + เส้นจากแถวด้านบน ค้างจนกว่าจะใช้แฟลชอีกรอบ → แก้: ตั้งตำแหน่ง/ตัวนับ/ข้อมูลใน bounce ใหม่ให้ตรงต้นเฟรมเอง
+static uint8_t* bbuf[2] = {nullptr, nullptr};
+static volatile int* bPos = nullptr;
+static volatile size_t* bEof = nullptr;
+static const size_t BB_BYTES = LCD_W * 8 * 2;
+static volatile uint32_t resyncs = 0;
+static void IRAM_ATTR resyncBounce() {
+  const uint32_t* s = (const uint32_t*)fb;
+  for (int k = 0; k < 2; k++) {
+    uint32_t* d = (uint32_t*)bbuf[k];
+    for (size_t i = 0; i < BB_BYTES / 4; i++) *d++ = *s++;
+  }
+  *bPos = (int)(2 * BB_BYTES / 2);   // เติมไว้แล้ว 2 ช่วงแรกของเฟรม (หน่วยพิกเซล)
+  *bEof = 0;                         // EOF ถัดไป = ชุด 0
+  resyncs++;
+}
+static void locateBounce(uint32_t cbAddr) {
+  const uint32_t* w = (const uint32_t*)panel;
+  for (int i = 2; i < 160; i++) {
+    if (!bbuf[0] && w[i] == FB_BYTES && w[i + 1] == BB_BYTES && esp_ptr_internal((void*)w[i - 2]) && esp_ptr_internal((void*)w[i - 1])) {
+      bbuf[0] = (uint8_t*)w[i - 2]; bbuf[1] = (uint8_t*)w[i - 1];
+    }
+    if (!bEof && i >= 4 && w[i] == cbAddr && w[i - 1] == 0 && w[i - 2] == FB_BYTES / BB_BYTES) {
+      bEof = (volatile size_t*)&w[i - 3]; bPos = (volatile int*)&w[i - 4];
+    }
+  }
+  if (!(bbuf[0] && bEof)) { bbuf[0] = nullptr; bEof = nullptr; }
+  Serial.printf("bounce resync %s\n", bEof ? "ready" : "NOT FOUND (ใช้แบบเดิม)");
+}
+
 static esp_err_t IRAM_ATTR osEnd(void* arg) {
   esp_err_t r = origOs->end(arg);      // เปิด cache คืนก่อน
   if (__atomic_sub_fetch(&flashDepth, 1, __ATOMIC_SEQ_CST) == 0) {
-    hwResume();
-    if (useBounce && panel) esp_lcd_rgb_panel_restart(panel);   // ให้ไดรเวอร์เติม bounce ใหม่ตั้งแต่ต้นเฟรมที่ vsync ถัดไป
+    if (useBounce && bEof && fb) { resyncBounce(); hwResume(); }   // DMA เริ่มที่ต้นเฟรม (ชุด 0) พร้อมข้อมูลที่ถูกต้อง
+    else {
+      hwResume();
+      if (useBounce && panel) esp_lcd_rgb_panel_restart(panel);   // ให้ไดรเวอร์เติม bounce ใหม่ตั้งแต่ต้นเฟรมที่ vsync ถัดไป
+    }
   }
   return r;
 }
@@ -333,6 +370,7 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   ledcWrite(PIN_BL, 0);
   delay(30);                 // ให้จอส่งภาพไปสักเฟรมก่อน ค่อยจำตำแหน่ง DMA
   findDma();
+  if (useBounce && !noFb) locateBounce((uint32_t)(void*)onVsync);
   hookFlash();
   curHz = hz;
   Serial.printf("LCD stream %d Hz (every %d), DMA ch %d head 0x%05x, flash hook %s, presenter %s, bounce %s\n", hz, minVsyncs, dmaCh,
