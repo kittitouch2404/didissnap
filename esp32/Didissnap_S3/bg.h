@@ -160,7 +160,23 @@ static bool loadFile(const char* path) {
     fileBuf = (uint8_t*)ps_malloc(fileCap);
     if (!fileBuf) { fileCap = 0; f.close(); snprintf(lastErr, sizeof(lastErr), "no psram"); return false; }
   }
-  fileLen = f.read(fileBuf, n);
+  // อ่านผ่านบัฟเฟอร์ใน RAM ภายใน: อ่านตรงลง PSRAM ไดรเวอร์แฟลชต้องแบ่งเป็นช่วงเล็ก ๆ (ไฟล์ 4 MB ≈ หมื่นครั้ง
+  //  ทุกครั้งต้องหยุดจอ → จอมืด/กระพริบตอนโหลด) — ผ่าน RAM ภายในเหลือไม่กี่ร้อยครั้ง
+  size_t chunk = 16384;
+  uint8_t* tmp = nullptr;
+#ifndef BG_HOST
+  while (chunk >= 2048 && !(tmp = (uint8_t*)heap_caps_malloc(chunk, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA))) chunk /= 2;
+#endif
+  if (tmp) {
+    fileLen = 0;
+    while (fileLen < n) {
+      size_t k = f.read(tmp, n - fileLen < chunk ? n - fileLen : chunk);
+      if (!k) break;
+      memcpy(fileBuf + fileLen, tmp, k);
+      fileLen += k;
+    }
+    heap_caps_free(tmp);
+  } else fileLen = f.read(fileBuf, n);
   f.close();
   return fileLen == n;
 }

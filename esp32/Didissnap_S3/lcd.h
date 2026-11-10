@@ -298,7 +298,9 @@ static void presenter(void*) {
     int miss = 0;
     do {
       xSemaphoreTake(vsyncSem, 0);
-      if (xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60)) != pdTRUE && flashDepth == 0 && (!useBounce || bEof) && ++miss >= 3) {
+      bool got = xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60)) == pdTRUE;
+      if (got || flashDepth) miss = 0;          // นับเฉพาะที่ไม่มี vsync ติดกัน
+      else if ((!useBounce || bEof) && ++miss >= 3) {
         // ไม่มี vsync มา 180 ms → จอค้าง (DMA หยุด) → ปลุกใหม่
         miss = 0;
         recovers++;
