@@ -92,7 +92,13 @@ inline void frame(int x, int y, int w, int h, uint16_t c, int lw = 1) {
 
 // สี่เหลี่ยมมุมมน: เติมสี และ/หรือ เส้นขอบ (ขอบมนแบบนุ่ม)
 static inline float cov(float d) { return d >= 0.5f ? 1.f : (d <= -0.5f ? 0.f : d + 0.5f); }
+#ifdef BG_HOST
+static int oobRR = 0;
+#endif
 inline void rrect(float x, float y, float w, float h, float r, int fillC, int strokeC = -1, float lw = 1) {
+#ifdef BG_HOST
+  { int ea0 = (int)ceilf(x + (strokeC >= 0 ? lw : 0) + 1.5f), eb0 = (int)floorf(x + w - (strokeC >= 0 ? lw : 0) - 1.5f); if (ea0 < 0 || eb0 > W) oobRR++; }
+#endif
   if (r < 0.5f && strokeC < 0 && fillC >= 0) { fill((int)lroundf(x), (int)lroundf(y), (int)lroundf(w), (int)lroundf(h), (uint16_t)fillC); return; }
   r = fminf(r, fminf(w, h) / 2);
   const float cxm = x + w / 2, cym = y + h / 2, hx = w / 2 - r, hy = h / 2 - r;
@@ -118,7 +124,8 @@ inline void rrect(float x, float y, float w, float h, float r, int fillC, int st
     float py = yy + 0.5f;
     bool corner = fabsf(py - cym) > hy - edge;           // แถวใกล้ขอบบน/ล่าง หรือมุม
     if (corner) { for (int xx = x0; xx < x1; xx++) shade(xx, yy, inside(xx + 0.5f, py)); continue; }
-    int ea = min(x1, (int)ceilf(x + edge)), eb = max(ea, (int)floorf(x + w - edge));
+    // ต้องอยู่ในช่วง x0..x1 (เดิมถ้ากล่องล้นขอบจอ จะเขียนเลยไปแถวข้าง ๆ / นอกบัฟเฟอร์ → เส้นเพี้ยน + เครื่องดับ)
+    int ea = max(x0, min(x1, (int)ceilf(x + edge))), eb = max(ea, min(x1, (int)floorf(x + w - edge)));
     for (int xx = x0; xx < ea; xx++) shade(xx, yy, inside(xx + 0.5f, py));
     if (fillC >= 0) { uint16_t* rp = GBUF + yy * W; for (int xx = ea; xx < eb; xx++) rp[xx] = (uint16_t)fillC; }
     for (int xx = eb; xx < x1; xx++) shade(xx, yy, inside(xx + 0.5f, py));

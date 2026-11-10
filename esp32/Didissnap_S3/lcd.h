@@ -49,6 +49,9 @@ static int curHz = 0;
 // เดิม: วาดลงบัฟเฟอร์หลัง → คัดลอก PSRAM→PSRAM ลง fb ทันทีที่จอเริ่มเฟรมใหม่ = ช่วงที่จอกำลังเติม bounce แถวบน ๆ
 //   → PSRAM แน่น เติม bounce ไม่ทัน → จอแสดงข้อมูลเก่าจาก 16 แถวก่อน = เส้นขีดแนวนอนสั้น ๆ
 // ใหม่: บัฟเฟอร์ 3 ชุด (จอแสดง / รอขึ้นจอ / กำลังวาด) สลับชุดที่จอแสดงตอนเริ่มเฟรม (ภาพไม่ฉีก) ไม่ต้องคัดลอกอีกเลย
+#ifndef LCD_NOFB
+#define LCD_NOFB 0   // ปิดไว้: ลองแล้วเส้นไม่หาย + เครื่องดับ 1 ครั้ง (pc เพี้ยน) → กลับไปใช้ fb ของไดรเวอร์
+#endif
 static bool noFb = false;
 static volatile int front = 0, ready = -1;
 static volatile uint32_t lastSwap = 0;
@@ -65,9 +68,6 @@ static bool IRAM_ATTR onBounce(esp_lcd_panel_handle_t, void* buf, int pos, int l
   const uint32_t* s = (const uint32_t*)((const uint8_t*)bb[front] + (size_t)pos * 2);
   uint32_t* d = (uint32_t*)buf;
   for (int i = len >> 2; i > 0; i--) *d++ = *s++;
-  // ดึงช่วงถัดไปเข้า cache ล่วงหน้า (แบบที่ไดรเวอร์ทำเอง) → รอบหน้าคัดลอกเร็วขึ้น
-  int nx = pos + len / 2;
-  if (nx < LCD_W * LCD_H) Cache_Start_DCache_Preload((uint32_t)((const uint8_t*)bb[front] + (size_t)nx * 2), len, 0);
   return hp == pdTRUE;
 }
 
@@ -283,9 +283,10 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   const int data[16] = {9, 10, 11, 12, 13, 16, 17, 18, 8, 3, 46, 4, 5, 6, 7, 15};
   for (int i = 0; i < 16; i++) c.data_gpio_nums[i] = data[i];
   c.flags.fb_in_psram = 1;
-  if (bounce) { c.bounce_buffer_size_px = LCD_W * 8; c.flags.no_fb = 1; c.num_fbs = 0; }   // no_fb ห้ามตั้ง num_fbs   // 2 × 8 แถวใน RAM ภายใน (ทดสอบแล้ว: 16 แถว RAM ไม่พอวาด 2 คอร์ + ภาพเลื่อน)
+  if (bounce) c.bounce_buffer_size_px = LCD_W * 8;
+  if (bounce && LCD_NOFB) { c.flags.no_fb = 1; c.num_fbs = 0; }   // no_fb ห้ามตั้ง num_fbs   // 2 × 8 แถวใน RAM ภายใน (ทดสอบแล้ว: 16 แถว RAM ไม่พอวาด 2 คอร์ + ภาพเลื่อน)
   useBounce = bounce;
-  noFb = bounce;
+  noFb = bounce && LCD_NOFB;
   // บัฟเฟอร์ของเราต้องพร้อมก่อนเริ่มจอ (โหมด bounce จอดึงภาพจากบัฟเฟอร์นี้ทันที)
   for (int i = 0; i < (noFb ? 3 : 2); i++) {
     bb[i] = (uint16_t*)heap_caps_aligned_alloc(64, FB_BYTES, MALLOC_CAP_SPIRAM);
@@ -308,7 +309,8 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   memset(&cb, 0, sizeof(cb));
   // โหมด bounce: จอดึงภาพจาก fb ล่วงหน้าเป็นช่วง ๆ — รอบสุดท้ายของเฟรมดึงเสร็จ = ปลอดภัยที่จะคัดลอกภาพใหม่ลง fb
   // (ถ้ารอ vsync ไดรเวอร์จะเติม bounce ช่วงบนของเฟรมถัดไปไปก่อนแล้ว → แถวบน ๆ เป็นภาพเก่า เห็นเป็นเส้นรอยต่อ)
-  if (bounce) cb.on_bounce_empty = onBounce;
+  if (noFb) cb.on_bounce_empty = onBounce;
+  else if (bounce) cb.on_frame_buf_complete = onVsync;
   else cb.on_vsync = onVsync;
   esp_lcd_rgb_panel_register_event_callbacks(panel, &cb, nullptr);
   esp_lcd_panel_reset(panel);
