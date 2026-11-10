@@ -21,10 +21,7 @@ static const Item ITEMS[] = {
     {"FLIP 180", "flip", 0, 1, 1},
     {"GEARS", "gearCount", 3, 6, 1},
     {"REFRESH", "lcdMode", 0, 3, 1},
-    {"P13 SLOT 1", "p13a", 0, 0, 1},
-    {"P13 SLOT 2", "p13b", 0, 0, 1},
-    {"P13 SLOT 3", "p13c", 0, 0, 1},
-    {"P13 SLOT 4", "p13d", 0, 0, 1},
+    {"PAGE 13 VALUES", nullptr, 0, 0, 0},
     {"PERF INFO", "perf", 0, 1, 1},
     {"ADVANCED", nullptr, 0, 0, 0},
     {"PEAK RESET", nullptr, 0, 0, 0},
@@ -43,10 +40,22 @@ static const Item ADV[] = {
     {"BACK", nullptr, 0, 0, 0},
 };
 static const int NA = sizeof(ADV) / sizeof(ADV[0]);
-static bool adv = false;      // อยู่ในเมนูย่อย ADVANCED
+// เมนูย่อย PAGE 13 VALUES: ค่า 4 ช่องแถวล่างของหน้า 13
+static const Item P13[] = {
+    {"SLOT 1", "p13a", 0, 0, 1},
+    {"SLOT 2", "p13b", 0, 0, 1},
+    {"SLOT 3", "p13c", 0, 0, 1},
+    {"SLOT 4", "p13d", 0, 0, 1},
+    {"BACK", nullptr, 0, 0, 0},
+};
+static const int NP = sizeof(P13) / sizeof(P13[0]);
+static int sub = 0;           // 0 = เมนูหลัก, 1 = ADVANCED, 2 = PAGE 13 VALUES
+static bool adv = false;      // (เก็บไว้ให้โค้ดเดิม) = อยู่ในเมนูย่อยใดก็ได้
 static int mainSel = 0;       // ตำแหน่งในเมนูหลักตอนเข้าเมนูย่อย
-static inline const Item* L() { return adv ? ADV : ITEMS; }
-static inline int LN() { return adv ? NA : N; }
+static const char* const SUB_TITLE[] = {"MENU", "MENU > ADVANCED", "MENU > PAGE 13 VALUES"};
+static inline const Item* L() { return sub == 1 ? ADV : (sub == 2 ? P13 : ITEMS); }
+static inline int LN() { return sub == 1 ? NA : (sub == 2 ? NP : N); }
+static inline void enterSub(int k, int cur) { mainSel = cur; sub = k; adv = k != 0; }
 static bool open = false, edit = false;
 static int sel = 0;
 static void (*onPeaks)() = nullptr;
@@ -129,7 +138,7 @@ inline void draw() {
   using pages::ORG;
   clear(rgb(0x0A0A0A));
   fill(0, 0, W, 28, rgb(0x1A1512));
-  text(adv ? "MENU > ADVANCED" : "MENU", 12, 20, 16, ORG, LEFT, 900);
+  text(SUB_TITLE[sub], 12, 20, 16, ORG, LEFT, 900);
   const Item* IT = L();
   const int N = LN();
   text("Didissnap", 468, 20, 12, rgb(0x999999), RIGHT, 600);
@@ -161,7 +170,7 @@ inline void drawToast() {
 // ปุ่ม: b = 0 (ปุ่ม 1) / 1 (ปุ่ม 2)
 inline void button(int b, bool lng) {
   if (!open) {
-    if (b == 0 && lng) { open = true; sel = 0; edit = false; adv = false; return; }
+    if (b == 0 && lng) { open = true; sel = 0; edit = false; enterSub(0, 0); return; }
     if (lng) { if (onHold2) onHold2(); return; }
     int p = didicfg::cfg.page + (b == 0 ? 1 : -1);
     didicfg::setPage(((p % pages::N) + pages::N) % pages::N);
@@ -180,7 +189,7 @@ inline void button(int b, bool lng) {
     return;
   }
   if (b == 0 && lng) {   // ปุ่ม 1 ค้าง: ในเมนูย่อย = กลับเมนูหลัก, เมนูหลัก = ออก
-    if (adv) { adv = false; sel = mainSel; } else open = false;
+    if (sub) { int m = mainSel; enterSub(0, 0); sel = m; } else open = false;
     return;
   }
   if (b == 0) { sel = (sel + 1) % N; return; }
@@ -189,8 +198,9 @@ inline void button(int b, bool lng) {
   if (it.key) edit = true;
   else if (!strcmp(it.label, "PEAK RESET")) { if (onPeaks) onPeaks(); toast("PEAK RESET"); }
   else if (!strcmp(it.label, "TRIP RESET")) { if (onTrip) onTrip(); toast("TRIP RESET"); }
-  else if (!strcmp(it.label, "ADVANCED")) { mainSel = sel; adv = true; sel = 0; }
-  else if (!strcmp(it.label, "BACK")) { adv = false; sel = mainSel; }
+  else if (!strcmp(it.label, "ADVANCED")) { enterSub(1, sel); sel = 0; }
+  else if (!strcmp(it.label, "PAGE 13 VALUES")) { enterSub(2, sel); sel = 0; }
+  else if (!strcmp(it.label, "BACK")) { int m = mainSel; enterSub(0, 0); sel = m; }
   else if (!strcmp(it.label, "EXIT")) open = false;
 }
 
