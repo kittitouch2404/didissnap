@@ -10,7 +10,7 @@ static bool gifPlaying = false;
 static volatile int gifTest = 0;
 static bool gifInternal = false;
 }
-namespace lcd { static volatile uint32_t copyMBps = 40; }
+namespace lcd { static volatile uint32_t copyMBps = 40; static volatile bool bandSkip = true; }
 namespace bg {
 static uint16_t* hostImg = nullptr;
 inline bool draw() { if (hostImg) { memcpy(GBUF + GY0 * 480, hostImg + GY0 * 480, (GY1 - GY0) * 480 * 2); return true; } gfx::clear(0); return false; }

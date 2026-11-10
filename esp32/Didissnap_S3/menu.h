@@ -30,6 +30,7 @@ static const Item ITEMS[] = {
     {"GIF TEST", "gifTest", 0, 4, 1},
     {"COPY SPEED", "copySpd", 10, 80, 10},
     {"LCD BOUNCE", "bounce", 0, 1, 1},
+    {"BAND SKIP", "bandSkip", 0, 1, 1},
     {"PEAK RESET", nullptr, 0, 0, 0},
     {"TRIP RESET", nullptr, 0, 0, 0},
     {"WIFI", nullptr, 0, 0, 0},
@@ -76,6 +77,7 @@ inline int value(const char* k) {
   if (!strcmp(k, "gifTest")) return bg::gifTest;
   if (!strcmp(k, "copySpd")) return (int)lcd::copyMBps;
   if (!strcmp(k, "bounce")) return bounceMode;
+  if (!strcmp(k, "bandSkip")) return lcd::bandSkip ? 1 : 0;
   return 0;
 }
 inline void fmt(const Item& it, char* b, size_t n) {
@@ -95,7 +97,7 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "gifTest")) { static const char* const GT[] = {"NORMAL", "DECODE ONLY", "NO DECODE", "DECODE NO WRITE", "CPU LOAD ONLY"}; snprintf(b, n, "%s", GT[v % 5]); }
   else if (!strcmp(it.key, "fontMem")) snprintf(b, n, v ? "FLASH" : "PSRAM");
   else if (!strcmp(it.key, "lcdMode")) snprintf(b, n, "%s", LCD_MODE_NAME[v & 3]);
-  else if (!strcmp(it.key, "briAuto") || !strcmp(it.key, "flip") || !strcmp(it.key, "perf") || !strcmp(it.key, "bounce")) snprintf(b, n, v ? "ON" : "OFF");
+  else if (!strcmp(it.key, "briAuto") || !strcmp(it.key, "flip") || !strcmp(it.key, "perf") || !strcmp(it.key, "bounce") || !strcmp(it.key, "bandSkip")) snprintf(b, n, v ? "ON" : "OFF");
   else snprintf(b, n, "%d", v);
 }
 inline void set(const char* k, int v) {
@@ -103,6 +105,7 @@ inline void set(const char* k, int v) {
   if (!strcmp(k, "cores")) { drawCores = v; if (onPerfOpt) onPerfOpt(); return; }
   if (!strcmp(k, "fontMem")) { fontMem = v; if (onPerfOpt) onPerfOpt(); return; }
   if (!strcmp(k, "gifTest")) { bg::gifTest = v; return; }
+  if (!strcmp(k, "bandSkip")) { lcd::bandSkip = v != 0; return; }
   if (!strcmp(k, "bounce")) { bounceMode = v; if (onBounce) onBounce(v); return; }
   if (!strcmp(k, "copySpd")) { lcd::copyMBps = v; if (onPerfOpt) onPerfOpt(); return; }
   if (!strcmp(k, "perf")) { perfInfo = v; if (onPerfOpt) onPerfOpt(); return; }

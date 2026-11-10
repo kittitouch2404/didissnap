@@ -179,6 +179,7 @@ static const uint32_t NOHASH = 0x80000000u;          // "ไม่รู้" (ha
 static uint32_t bbHash[3][NB], fbHash[NB];
 static bool bbFull[3] = {false, false, false};
 static volatile uint32_t bandsCopied = 0;            // นับแถบที่คัดลอกขึ้นจอจริง (ดูใน Serial)
+static volatile bool bandSkip = true;                // ทดสอบ: OFF = เขียนทุกแถบทุกเฟรม (ไม่ข้ามแถบที่ hash เหมือนเดิม)
 static void resetHashes() {
   for (int b = 0; b < NB; b++) { bbHash[0][b] = bbHash[1][b] = bbHash[2][b] = fbHash[b] = NOHASH; }
 }
@@ -193,7 +194,7 @@ inline int backIndex() { return wIdx; }
 inline void putBand(int dBand, const uint16_t* src, bool flip) {
   int w = wIdx;
   uint32_t h = hashRows(src, BAND_BYTES / 4, flip ? 0x5bd1e995u : 0);
-  if (bbHash[w][dBand] == h) return;
+  if (bandSkip && bbHash[w][dBand] == h) return;
   uint16_t* d = bb[w] + (size_t)dBand * BAND_H * LCD_W;
   psramGate(BAND_BYTES);
   if (!flip) memcpy(d, src, BAND_BYTES);
