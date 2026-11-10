@@ -34,7 +34,7 @@ static const size_t FB_BYTES = LCD_W * LCD_H * 2;
 static const uint32_t DOTS_PER_FRAME = (10 + 80 + LCD_W + 60) * (10 + 20 + LCD_H + 60);   // รวมช่วงว่าง
 static esp_lcd_panel_handle_t panel = nullptr;
 static uint16_t* fb = nullptr;               // บัฟเฟอร์ที่จออ่าน (PSRAM)
-static uint16_t* bb[2] = {nullptr, nullptr}; // บัฟเฟอร์หลัง 2 ชุด: วาดชุดหนึ่ง ระหว่างนั้นอีกชุดถูกคัดลอกขึ้นจอ
+static uint16_t* bb[3] = {nullptr, nullptr, nullptr}; // บัฟเฟอร์หลัง (โหมดปกติใช้ 2 ชุด, โหมด bounce ใช้ 3 ชุดแทน fb)
 static int wIdx = 0;
 static volatile int pending = -1;
 static volatile uint32_t handed = 0, copied = 0;
@@ -43,6 +43,29 @@ static volatile uint32_t frames = 0;         // จอส่งภาพไป�
 static volatile uint32_t flashPauses = 0;    // นับว่าหยุดจอเพราะใช้แฟลชกี่ครั้ง (ดูใน Serial)
 static volatile int minVsyncs = 1;           // ขึ้นภาพใหม่ได้ทุกกี่ vsync (2 = ล็อกครึ่งหนึ่งของรีเฟรช)
 static int curHz = 0;
+
+// ---------- โหมด bounce แบบไม่มี fb (จอดึงภาพจากบัฟเฟอร์ของเราตรง ๆ) ----------
+// เดิม: วาดลงบัฟเฟอร์หลัง → คัดลอก PSRAM→PSRAM ลง fb ทันทีที่จอเริ่มเฟรมใหม่ = ช่วงที่จอกำลังเติม bounce แถวบน ๆ
+//   → PSRAM แน่น เติม bounce ไม่ทัน → จอแสดงข้อมูลเก่าจาก 16 แถวก่อน = เส้นขีดแนวนอนสั้น ๆ
+// ใหม่: บัฟเฟอร์ 3 ชุด (จอแสดง / รอขึ้นจอ / กำลังวาด) สลับชุดที่จอแสดงตอนเริ่มเฟรม (ภาพไม่ฉีก) ไม่ต้องคัดลอกอีกเลย
+static bool noFb = false;
+static volatile int front = 0, ready = -1;
+static volatile uint32_t lastSwap = 0;
+static portMUX_TYPE swapMux = portMUX_INITIALIZER_UNLOCKED;
+static bool IRAM_ATTR onBounce(esp_lcd_panel_handle_t, void* buf, int pos, int len, void*) {
+  BaseType_t hp = pdFALSE;
+  if (pos == 0) {                      // เริ่มเฟรมใหม่ = จุดสลับภาพที่ปลอดภัย
+    frames++;
+    portENTER_CRITICAL_ISR(&swapMux);
+    if (ready >= 0 && (int)(frames - lastSwap) >= minVsyncs) { front = ready; ready = -1; lastSwap = frames; }
+    portEXIT_CRITICAL_ISR(&swapMux);
+    xSemaphoreGiveFromISR(vsyncSem, &hp);
+  }
+  const uint32_t* s = (const uint32_t*)((const uint8_t*)bb[front] + (size_t)pos * 2);
+  uint32_t* d = (uint32_t*)buf;
+  for (int i = len >> 2; i > 0; i--) *d++ = *s++;
+  return hp == pdTRUE;
+}
 
 static bool IRAM_ATTR onVsync(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t*, void*) {
   frames++;
@@ -149,11 +172,11 @@ inline void psramGate(size_t bytes, bool first = false) {
 static const int BAND_H = 4, NB = LCD_H / BAND_H;
 static const size_t BAND_BYTES = (size_t)BAND_H * LCD_W * 2;
 static const uint32_t NOHASH = 0x80000000u;          // "ไม่รู้" (hash จริงไม่มีบิตบนสุด)
-static uint32_t bbHash[2][NB], fbHash[NB];
-static bool bbFull[2] = {false, false};
+static uint32_t bbHash[3][NB], fbHash[NB];
+static bool bbFull[3] = {false, false, false};
 static volatile uint32_t bandsCopied = 0;            // นับแถบที่คัดลอกขึ้นจอจริง (ดูใน Serial)
 static void resetHashes() {
-  for (int b = 0; b < NB; b++) { bbHash[0][b] = bbHash[1][b] = fbHash[b] = NOHASH; }
+  for (int b = 0; b < NB; b++) { bbHash[0][b] = bbHash[1][b] = bbHash[2][b] = fbHash[b] = NOHASH; }
 }
 static inline uint32_t hashRows(const uint16_t* p, size_t words32, uint32_t seed) {
   const uint32_t* q = (const uint32_t*)p;
@@ -176,7 +199,7 @@ inline void putBand(int dBand, const uint16_t* src, bool flip) {
       uint16_t* o = d + (BAND_H - 1 - r) * LCD_W + LCD_W - 1;
       for (int x = 0; x < LCD_W; x++) *o-- = s[x];
     }
-  esp_cache_msync(d, BAND_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+  if (!noFb) esp_cache_msync(d, BAND_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
   bbHash[w][dBand] = h;
 }
 // คัดลอกบัฟเฟอร์หลัง p ขึ้นจอ เฉพาะแถบที่ต่างจากบนจอ
@@ -255,30 +278,35 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   const int data[16] = {9, 10, 11, 12, 13, 16, 17, 18, 8, 3, 46, 4, 5, 6, 7, 15};
   for (int i = 0; i < 16; i++) c.data_gpio_nums[i] = data[i];
   c.flags.fb_in_psram = 1;
-  if (bounce) c.bounce_buffer_size_px = LCD_W * 8;   // 2 × 8 แถวใน RAM ภายใน (ทดสอบแล้ว: 16 แถว RAM ไม่พอวาด 2 คอร์ + ภาพเลื่อน)
+  if (bounce) { c.bounce_buffer_size_px = LCD_W * 8; c.flags.no_fb = 1; }   // 2 × 8 แถวใน RAM ภายใน (ทดสอบแล้ว: 16 แถว RAM ไม่พอวาด 2 คอร์ + ภาพเลื่อน)
   useBounce = bounce;
-  if (esp_lcd_new_rgb_panel(&c, &panel) != ESP_OK) return false;
-  vsyncSem = xSemaphoreCreateBinary();
-  esp_lcd_rgb_panel_event_callbacks_t cb;
-  memset(&cb, 0, sizeof(cb));
-  // โหมด bounce: จอดึงภาพจาก fb ล่วงหน้าเป็นช่วง ๆ — รอบสุดท้ายของเฟรมดึงเสร็จ = ปลอดภัยที่จะคัดลอกภาพใหม่ลง fb
-  // (ถ้ารอ vsync ไดรเวอร์จะเติม bounce ช่วงบนของเฟรมถัดไปไปก่อนแล้ว → แถวบน ๆ เป็นภาพเก่า เห็นเป็นเส้นรอยต่อ)
-  if (bounce) cb.on_frame_buf_complete = onVsync;
-  else cb.on_vsync = onVsync;
-  esp_lcd_rgb_panel_register_event_callbacks(panel, &cb, nullptr);
-  esp_lcd_panel_reset(panel);
-  esp_lcd_panel_init(panel);
-  void* a = nullptr;
-  if (esp_lcd_rgb_panel_get_frame_buffer(panel, 1, &a) != ESP_OK || !a) return false;
-  for (int i = 0; i < 2; i++) {
+  noFb = bounce;
+  // บัฟเฟอร์ของเราต้องพร้อมก่อนเริ่มจอ (โหมด bounce จอดึงภาพจากบัฟเฟอร์นี้ทันที)
+  for (int i = 0; i < (noFb ? 3 : 2); i++) {
     bb[i] = (uint16_t*)heap_caps_aligned_alloc(64, FB_BYTES, MALLOC_CAP_SPIRAM);
     if (!bb[i]) return false;
     memset(bb[i], 0, FB_BYTES);
   }
-  fb = (uint16_t*)a;
-  memset(fb, 0, FB_BYTES);
+  front = 0; ready = -1; wIdx = 1;
   resetHashes();
-  esp_cache_msync(fb, FB_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+  vsyncSem = xSemaphoreCreateBinary();
+  if (esp_lcd_new_rgb_panel(&c, &panel) != ESP_OK) return false;
+  esp_lcd_rgb_panel_event_callbacks_t cb;
+  memset(&cb, 0, sizeof(cb));
+  // โหมด bounce: จอดึงภาพจาก fb ล่วงหน้าเป็นช่วง ๆ — รอบสุดท้ายของเฟรมดึงเสร็จ = ปลอดภัยที่จะคัดลอกภาพใหม่ลง fb
+  // (ถ้ารอ vsync ไดรเวอร์จะเติม bounce ช่วงบนของเฟรมถัดไปไปก่อนแล้ว → แถวบน ๆ เป็นภาพเก่า เห็นเป็นเส้นรอยต่อ)
+  if (bounce) cb.on_bounce_empty = onBounce;
+  else cb.on_vsync = onVsync;
+  esp_lcd_rgb_panel_register_event_callbacks(panel, &cb, nullptr);
+  esp_lcd_panel_reset(panel);
+  esp_lcd_panel_init(panel);
+  if (!noFb) {
+    void* a = nullptr;
+    if (esp_lcd_rgb_panel_get_frame_buffer(panel, 1, &a) != ESP_OK || !a) return false;
+    fb = (uint16_t*)a;
+    memset(fb, 0, FB_BYTES);
+    esp_cache_msync(fb, FB_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+  }
   ledcAttach(PIN_BL, 5000, 8);
   ledcWrite(PIN_BL, 0);
   delay(30);                 // ให้จอส่งภาพไปสักเฟรมก่อน ค่อยจำตำแหน่ง DMA
@@ -287,7 +315,7 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   curHz = hz;
   Serial.printf("LCD stream %d Hz (every %d), DMA ch %d head 0x%05x, flash hook %s, presenter %s, bounce %s\n", hz, minVsyncs, dmaCh,
                 (unsigned)dmaHead, origOs ? "on" : "OFF", presenter ? "on" : "off", bounce ? "on" : "off");
-  if (presenter) {
+  if (presenter && !noFb) {
     pendSem = xSemaphoreCreateBinary();
     doneSem = xSemaphoreCreateBinary();
     usePresenter = xTaskCreatePinnedToCore(lcd::presenter, "lcd", 4096, nullptr, 6, nullptr, 1) == pdPASS;
@@ -296,7 +324,7 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   return true;
 }
 
-inline bool ok() { return fb && bb[0] && bb[1]; }
+inline bool ok() { return noFb ? (bb[0] && bb[1] && bb[2]) : (fb && bb[0] && bb[1]); }
 
 // คัดลอกลง PSRAM ทีละช่วงเล็ก ๆ เว้นจังหวะให้จออ่าน PSRAM ได้ (คัดลอกรวดเดียว → บรรทัดเลื่อน ภาพซ้อน)
 inline void paceCopy(uint16_t* dst, const uint16_t* src, size_t bytes) {
@@ -320,6 +348,19 @@ inline uint16_t* back() {
 // (ถ้าเฟรมก่อนยังไม่ได้ขึ้นจอ รอก่อน — บัฟเฟอร์ที่จะวาดต่อต้องคัดลอกเสร็จแล้ว)
 inline void present() {
   if (!ok()) { delay(16); return; }
+  if (noFb) {
+    // รอให้เฟรมที่ส่งไปก่อนหน้าขึ้นจอก่อน (ไม่วาดเร็วกว่าจอ) แล้วส่งเฟรมนี้ ไปวาดชุดที่ว่าง
+    uint32_t t0 = millis();
+    while (ready >= 0 && millis() - t0 < 120) xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(30));
+    portENTER_CRITICAL(&swapMux);
+    ready = wIdx;
+    int nx = 3 - front - wIdx;
+    portEXIT_CRITICAL(&swapMux);
+    wIdx = nx;
+    handed++; copied++;
+    bandsCopied += NB;
+    return;
+  }
   if (!usePresenter) {                       // แบบเดิม: รอ vsync แล้วคัดลอกเอง
     xSemaphoreTake(vsyncSem, 0);
     xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60));
@@ -344,7 +385,9 @@ inline void presentFull() {
 }
 // รอจนเฟรมล่าสุดขึ้นจอจริง (ใช้ตอนเปิดเครื่อง/หน้าจอแจ้งปัญหา)
 inline void flush() {
-  if (!ok() || !usePresenter) return;
+  if (!ok()) return;
+  if (noFb) { uint32_t t0 = millis(); while (ready >= 0 && millis() - t0 < 200) xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(30)); return; }
+  if (!usePresenter) return;
   while (copied != handed) xSemaphoreTake(doneSem, pdMS_TO_TICKS(50));
 }
 
