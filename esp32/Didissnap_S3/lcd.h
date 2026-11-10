@@ -55,12 +55,15 @@ static bool IRAM_ATTR onVsync(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_ev
 static int dmaCh = -1;              // ช่อง GDMA ที่ต่อกับจอ
 static uint32_t dmaHead = 0;        // ที่อยู่ descriptor แรกของเฟรม
 static volatile int flashDepth = 0;
+static bool useBounce = false;              // ใช้ bounce buffer ใน RAM ภายใน (จอไม่ต้องรอ PSRAM ตรง ๆ)
+static volatile uint32_t recovers = 0;      // นับครั้งที่ปลุกจอที่ค้าง
 static esp_flash_os_functions_t myOs;
 static const esp_flash_os_functions_t* origOs = nullptr;
 
 static void IRAM_ATTR hwPause() {
   if (dmaCh < 0) return;
   lcd_ll_enable_interrupt(&LCD_CAM, LCD_LL_EVENT_VSYNC_END, false);   // ไม่ให้ไดรเวอร์สั่ง DMA ใหม่
+  if (useBounce) gdma_ll_tx_enable_interrupt(&GDMA, dmaCh, GDMA_LL_EVENT_TX_EOF, false);   // ไม่ให้ ISR เติม bounce (อ่าน PSRAM) ตอน cache ปิด
   esp_rom_delay_us(8);                                                 // เผื่อ ISR อีกคอร์กำลังทำงานอยู่
   lcd_ll_stop(&LCD_CAM);
   gdma_ll_tx_stop(&GDMA, dmaCh);
@@ -79,6 +82,10 @@ static void IRAM_ATTR hwResume() {
   lcd_ll_start(&LCD_CAM);
   lcd_ll_clear_interrupt_status(&LCD_CAM, LCD_LL_EVENT_VSYNC_END);
   lcd_ll_enable_interrupt(&LCD_CAM, LCD_LL_EVENT_VSYNC_END, true);
+  if (useBounce) {
+    gdma_ll_tx_clear_interrupt_status(&GDMA, dmaCh, GDMA_LL_EVENT_TX_EOF);
+    gdma_ll_tx_enable_interrupt(&GDMA, dmaCh, GDMA_LL_EVENT_TX_EOF, true);
+  }
 }
 
 static esp_err_t IRAM_ATTR osStart(void* arg) {
@@ -88,7 +95,10 @@ static esp_err_t IRAM_ATTR osStart(void* arg) {
 
 static esp_err_t IRAM_ATTR osEnd(void* arg) {
   esp_err_t r = origOs->end(arg);      // เปิด cache คืนก่อน
-  if (__atomic_sub_fetch(&flashDepth, 1, __ATOMIC_SEQ_CST) == 0) hwResume();
+  if (__atomic_sub_fetch(&flashDepth, 1, __ATOMIC_SEQ_CST) == 0) {
+    hwResume();
+    if (useBounce && panel) esp_lcd_rgb_panel_restart(panel);   // ให้ไดรเวอร์เติม bounce ใหม่ตั้งแต่ต้นเฟรมที่ vsync ถัดไป
+  }
   return r;
 }
 
@@ -197,9 +207,16 @@ static void presenter(void*) {
     xSemaphoreTake(pendSem, portMAX_DELAY);
     int p = pending;
     if (p < 0) continue;
+    int miss = 0;
     do {
       xSemaphoreTake(vsyncSem, 0);
-      xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60));
+      if (xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60)) != pdTRUE && flashDepth == 0 && ++miss >= 3) {
+        // ไม่มี vsync มา 180 ms → จอค้าง (DMA หยุด) → ปลุกใหม่
+        miss = 0;
+        recovers++;
+        hwResume();
+        if (useBounce) esp_lcd_rgb_panel_restart(panel);
+      }
     } while ((int)(frames - lastF) < minVsyncs);
     copyChanged(p);
     lastF = frames;
@@ -213,7 +230,7 @@ static bool usePresenter = false;
 
 // hz = อัตรารีเฟรช (ตั้งตอนเริ่มเท่านั้น — เปลี่ยนระหว่างทำงานแล้วเสี่ยงดับ), every = ขึ้นภาพทุกกี่ vsync
 // presenter = false → คัดลอกขึ้นจอเองในโปรแกรมหลักแบบเดิม (โหมดปลอดภัย)
-inline bool begin(int hz = 44, int every = 1, bool presenter = true) {
+inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce = false) {
   esp_lcd_rgb_panel_config_t c;
   memset(&c, 0, sizeof(c));
   c.clk_src = LCD_CLK_SRC_DEFAULT;
@@ -239,6 +256,8 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true) {
   const int data[16] = {9, 10, 11, 12, 13, 16, 17, 18, 8, 3, 46, 4, 5, 6, 7, 15};
   for (int i = 0; i < 16; i++) c.data_gpio_nums[i] = data[i];
   c.flags.fb_in_psram = 1;
+  if (bounce) c.bounce_buffer_size_px = LCD_W * 8;   // 2 × 8 แถวใน RAM ภายใน (272 หาร 8 ลงตัว)
+  useBounce = bounce;
   if (esp_lcd_new_rgb_panel(&c, &panel) != ESP_OK) return false;
   vsyncSem = xSemaphoreCreateBinary();
   esp_lcd_rgb_panel_event_callbacks_t cb;
@@ -264,8 +283,8 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true) {
   findDma();
   hookFlash();
   curHz = hz;
-  Serial.printf("LCD stream %d Hz (every %d), DMA ch %d head 0x%05x, flash hook %s, presenter %s\n", hz, minVsyncs, dmaCh,
-                (unsigned)dmaHead, origOs ? "on" : "OFF", presenter ? "on" : "off");
+  Serial.printf("LCD stream %d Hz (every %d), DMA ch %d head 0x%05x, flash hook %s, presenter %s, bounce %s\n", hz, minVsyncs, dmaCh,
+                (unsigned)dmaHead, origOs ? "on" : "OFF", presenter ? "on" : "off", bounce ? "on" : "off");
   if (presenter) {
     pendSem = xSemaphoreCreateBinary();
     doneSem = xSemaphoreCreateBinary();

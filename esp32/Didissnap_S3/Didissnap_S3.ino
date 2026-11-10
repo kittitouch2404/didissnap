@@ -88,9 +88,9 @@ static void drawStrip(int k, uint16_t* sb) {
   else pages::draw(jobPage);
   menu::drawToast();
   if (k == N_STRIPS - 1 && menu::perfInfo) {     // ตัวเลขวัดความเร็ว (ชั่วคราว) มุมล่างซ้าย
-    char pb[96];
-    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz  %dcore  fl %d  gif %s  cp %d", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd,
-             (workGo && menu::drawCores == 2) ? 2 : 1, perfFlash, bg::gifInternal ? "RAM" : "PSRAM", (int)lcd::copyMBps);
+    char pb[112];
+    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz  %dcore  fl %d  gif %s  cp %d  rc %u%s", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd,
+             (workGo && menu::drawCores == 2) ? 2 : 1, perfFlash, bg::gifInternal ? "RAM" : "PSRAM", (int)lcd::copyMBps, (unsigned)lcd::recovers, lcd::useBounce ? " B" : "");
     gfx::fillA(0, LCD_H - 14, gfx::textWidth(pb, 11, 600) + 8, 14, 0, 180);
     gfx::text(pb, 4, LCD_H - 3, 11, gfx::rgb(0x00E05A), gfx::LEFT, 600);
   }
@@ -133,6 +133,11 @@ static void onPerfOpt() {
   prefs.putInt("fontMem", menu::fontMem);
   prefs.putInt("perf", menu::perfInfo);
   prefs.putInt("copySpd", (int)lcd::copyMBps);
+}
+static void onBounce(int v) {
+  prefs.putInt("bounce", v);
+  menu::toast("RESTARTING...");
+  restartAt = millis() + 1200;
 }
 static void onLcdMode(int m) {
   prefs.putInt("lcdMode", m & 3);
@@ -272,7 +277,9 @@ void setup() {
   bool safeDraw = safeLcd || skip(9) || skip(10);   // ดับตอนวาด 2 รอบติด → วาดคอร์เดียว + 44 Hz
   menu::lcdMode = safeDraw ? 0 : (prefs.getInt("lcdMode", 0) & 3);
   if (safeLcd) Serial.println("SAFE MODE: LCD without presenter task");
-  if (!lcd::begin(LCD_HZ[menu::lcdMode], LCD_EVERY[menu::lcdMode], !safeLcd)) Serial.println("LCD init FAILED (เช็ค PSRAM = OPI PSRAM)");
+  menu::bounceMode = safeLcd ? 0 : (prefs.getInt("bounce", 0) & 1);
+  menu::onBounce = onBounce;
+  if (!lcd::begin(LCD_HZ[menu::lcdMode], LCD_EVERY[menu::lcdMode], !safeLcd, menu::bounceMode)) Serial.println("LCD init FAILED (เช็ค PSRAM = OPI PSRAM)");
   showCrash();
 
   step(4, "wifi");                                  // ต้องเปิด WiFi ก่อนเว็บเซิร์ฟเวอร์ (ไม่งั้น crash)
