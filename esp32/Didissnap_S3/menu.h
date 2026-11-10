@@ -28,6 +28,7 @@ static const Item ITEMS[] = {
     {"DRAW CORES", "cores", 1, 2, 1},
     {"PERF INFO", "perf", 0, 1, 1},
     {"GIF TEST", "gifTest", 0, 4, 1},
+    {"COPY SPEED", "copySpd", 10, 80, 10},
     {"PEAK RESET", nullptr, 0, 0, 0},
     {"TRIP RESET", nullptr, 0, 0, 0},
     {"WIFI", nullptr, 0, 0, 0},
@@ -70,6 +71,7 @@ inline int value(const char* k) {
   if (!strcmp(k, "fontMem")) return fontMem;
   if (!strcmp(k, "perf")) return perfInfo;
   if (!strcmp(k, "gifTest")) return bg::gifTest;
+  if (!strcmp(k, "copySpd")) return (int)lcd::copyMBps;
   return 0;
 }
 inline void fmt(const Item& it, char* b, size_t n) {
@@ -85,6 +87,7 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "tempAlert")) snprintf(b, n, "%d C", v);
   else if (!strcmp(it.key, "autoCycle")) { if (v) snprintf(b, n, "%d s", v); else snprintf(b, n, "OFF"); }
   else if (!strncmp(it.key, "p13", 3)) snprintf(b, n, "%s", didicfg::SLOT_NAMES[v % didicfg::N_SLOTS]);
+  else if (!strcmp(it.key, "copySpd")) snprintf(b, n, "%d MB/s", v);
   else if (!strcmp(it.key, "gifTest")) { static const char* const GT[] = {"NORMAL", "DECODE ONLY", "NO DECODE", "DECODE NO WRITE", "CPU LOAD ONLY"}; snprintf(b, n, "%s", GT[v % 5]); }
   else if (!strcmp(it.key, "fontMem")) snprintf(b, n, v ? "FLASH" : "PSRAM");
   else if (!strcmp(it.key, "lcdMode")) snprintf(b, n, "%s", LCD_MODE_NAME[v & 3]);
@@ -96,6 +99,7 @@ inline void set(const char* k, int v) {
   if (!strcmp(k, "cores")) { drawCores = v; if (onPerfOpt) onPerfOpt(); return; }
   if (!strcmp(k, "fontMem")) { fontMem = v; if (onPerfOpt) onPerfOpt(); return; }
   if (!strcmp(k, "gifTest")) { bg::gifTest = v; return; }
+  if (!strcmp(k, "copySpd")) { lcd::copyMBps = v; if (onPerfOpt) onPerfOpt(); return; }
   if (!strcmp(k, "perf")) { perfInfo = v; if (onPerfOpt) onPerfOpt(); return; }
   int old = didicfg::cfg.page;
   didicfg::setKV(String(k), (float)v);

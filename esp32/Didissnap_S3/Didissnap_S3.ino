@@ -89,8 +89,8 @@ static void drawStrip(int k, uint16_t* sb) {
   menu::drawToast();
   if (k == N_STRIPS - 1 && menu::perfInfo) {     // ตัวเลขวัดความเร็ว (ชั่วคราว) มุมล่างซ้าย
     char pb[96];
-    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz  %dcore  fl %d  gif %s", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd,
-             (workGo && menu::drawCores == 2) ? 2 : 1, perfFlash, bg::gifInternal ? "RAM" : "PSRAM");
+    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz  %dcore  fl %d  gif %s  cp %d", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd,
+             (workGo && menu::drawCores == 2) ? 2 : 1, perfFlash, bg::gifInternal ? "RAM" : "PSRAM", (int)lcd::copyMBps);
     gfx::fillA(0, LCD_H - 14, gfx::textWidth(pb, 11, 600) + 8, 14, 0, 180);
     gfx::text(pb, 4, LCD_H - 3, 11, gfx::rgb(0x00E05A), gfx::LEFT, 600);
   }
@@ -132,6 +132,7 @@ static void onPerfOpt() {
   prefs.putInt("cores", menu::drawCores);
   prefs.putInt("fontMem", menu::fontMem);
   prefs.putInt("perf", menu::perfInfo);
+  prefs.putInt("copySpd", (int)lcd::copyMBps);
 }
 static void onLcdMode(int m) {
   prefs.putInt("lcdMode", m & 3);
@@ -310,6 +311,7 @@ void setup() {
   menu::drawCores = safeDraw ? 1 : constrain(prefs.getInt("cores", 2), 1, 2);
   menu::fontMem = 0;   // ทดสอบแล้ว PSRAM/แฟลชเร็วเท่ากัน
   menu::perfInfo = prefs.getInt("perf", 0) & 1;   // ตัวเลข fps มุมล่างซ้าย (เมนู PERF INFO)
+  lcd::copyMBps = constrain(prefs.getInt("copySpd", PSRAM_COPY_MBPS), 10, 80);
   menu::onPerfOpt = onPerfOpt;
   applyPerfOpt();
   perf::begin();

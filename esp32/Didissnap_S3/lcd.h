@@ -119,11 +119,12 @@ inline void paceCopy(uint16_t* dst, const uint16_t* src, size_t bytes);
 #ifndef PSRAM_COPY_MBPS
 #define PSRAM_COPY_MBPS 40
 #endif
+static volatile uint32_t copyMBps = PSRAM_COPY_MBPS;   // ปรับได้จากเมนู COPY SPEED
 static portMUX_TYPE gateMux = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t gateNext = 0;
 // first = ไม่ต้องรอคิว (งานขึ้นจอ ต้องคัดลอกให้ทันจอไล่แสดง) แต่กันเวลาไว้ ให้คนอื่นรอแทน
 inline void psramGate(size_t bytes, bool first = false) {
-  uint32_t slot = (uint32_t)(bytes / PSRAM_COPY_MBPS) + 1;   // ไมโครวินาที
+  uint32_t slot = (uint32_t)(bytes / (copyMBps ? copyMBps : 1)) + 1;   // ไมโครวินาที
   portENTER_CRITICAL(&gateMux);
   uint32_t now = (uint32_t)esp_timer_get_time();
   uint32_t start = (!first && (int32_t)(gateNext - now) > 0) ? gateNext : now;
