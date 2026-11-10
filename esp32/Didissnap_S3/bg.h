@@ -112,6 +112,7 @@ inline bool decodeJpeg(const uint8_t* src, size_t len, uint16_t* dst) {
 
 // ---------------------------------------------------------------- GIF
 static int gifOx = 0, gifOy = 0, gifPrevDisp = 0, gifPx = 0, gifPy = 0, gifPw = 0, gifPh = 0;
+static int gifFrameNo = 0;         // นับเฟรมตั้งแต่เปิด GIF (โหมดทดสอบเริ่มหลัง 3 เฟรมแรก ให้มีภาพค้างไว้ดู)
 static bool gifInternal = false;   // ตัวถอด GIF อยู่ใน RAM ภายใน
 static volatile int gifTest = 0;   // ทดสอบ: 0 ปกติ · 1 ถอดแต่ไม่ขึ้นจอ · 2 ไม่ถอด · 3 ถอดแต่ไม่เขียน PSRAM · 4 ไม่ถอด แต่ให้คอร์ 0 ทำงานหนักแทน
 static bool gifPlaying = false;   // กำลังเล่น GIF (หน้าหลักจำกัด fps ลง ลดงาน PSRAM)
@@ -121,7 +122,7 @@ static void gifDraw(GIFDRAW* d) {
   int y = d->iY + d->y + gifOy;
   if (d->y == 0) { gifPrevDisp = d->ucDisposalMethod; gifPx = d->iX + gifOx; gifPy = d->iY + gifOy; gifPw = d->iWidth; gifPh = d->iHeight; }
   if ((unsigned)y >= (unsigned)H) return;
-  if (gifTest == 3) return;                       // ทดสอบ: ถอดอย่างเดียว ไม่แตะ PSRAM
+  if (gifTest == 3 && gifFrameNo >= 3) return;                       // ทดสอบ: ถอดอย่างเดียว ไม่แตะ PSRAM
   int x0 = d->iX + gifOx, x1 = x0 + d->iWidth;
   if (x0 < 0) x0 = 0;
   if (x1 > W) x1 = W;
@@ -194,7 +195,8 @@ static void task(void*) {
           gifOy = (H - gif->getCanvasHeight()) / 2;
           memset(gifCanvas, 0, NPX * 2);
           gifPrevDisp = 0;
-          gifFull = 2;                    // 2 เฟรมแรก: คัดลอกเต็มทั้งสองบัฟเฟอร์
+          gifFull = 2;
+          gifFrameNo = 0;                    // 2 เฟรมแรก: คัดลอกเต็มทั้งสองบัฟเฟอร์
           nextT = 0;
         } else snprintf(lastErr, sizeof(lastErr), "gif open");
       }
@@ -225,8 +227,8 @@ static void task(void*) {
         nextT = now + (uint32_t)constrain(6000.f / fmaxf(sp, 1.f), 40.f, 400.f);
       }
     }
-    if (gifOpen && now >= nextT && gifTest == 2) nextT = now + 50;
-    if (gifOpen && now >= nextT && gifTest == 4) {   // ทดสอบ: คอร์ 0 วนเลขเฉย ๆ 25 ms (ไม่ใช้ PSRAM)
+    if (gifOpen && now >= nextT && gifTest == 2 && gifFrameNo >= 3) nextT = now + 50;
+    if (gifOpen && now >= nextT && gifTest == 4 && gifFrameNo >= 3) {   // ทดสอบ: คอร์ 0 วนเลขเฉย ๆ 25 ms (ไม่ใช้ PSRAM)
       volatile uint32_t acc = 0;
       uint32_t t1 = micros();
       while (micros() - t1 < 25000) acc += acc * 3 + 1;
@@ -240,7 +242,8 @@ static void task(void*) {
       int delayMs = 100;
       int r = gif->playFrame(false, &delayMs);
       int b = backIdx();
-      if ((gifTest == 1 || gifTest == 3) && gifFull == 0) { if (r == 0) gif->reset(); nextT = now + constrain(delayMs, 20, 2000); vTaskDelay(1); continue; }
+      gifFrameNo++;
+      if ((gifTest == 1 || gifTest == 3) && gifFrameNo > 3) { if (r == 0) gif->reset(); nextT = now + constrain(delayMs, 20, 2000); vTaskDelay(1); continue; }
       // บัฟเฟอร์ b มีภาพของ 2 เฟรมก่อน → คัดลอกเฉพาะส่วนที่เปลี่ยนใน 2 เฟรมล่าสุด (ลดงาน PSRAM มาก)
       int cx0 = max(0, gifPx), cy0 = max(0, gifPy), cx1 = min(W, gifPx + gifPw), cy1 = min(H, gifPy + gifPh);
       int ux0 = min(cx0, rx0), uy0 = min(cy0, ry0), ux1 = max(cx1, rx1), uy1 = max(cy1, ry1);
