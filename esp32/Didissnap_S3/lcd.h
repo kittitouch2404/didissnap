@@ -18,6 +18,7 @@
 #include "soc/gdma_channel.h"
 #include "hal/gdma_ll.h"
 #include "hal/lcd_ll.h"
+#include "esp32s3/rom/cache.h"
 
 #define LCD_W 480
 #define LCD_H 272
@@ -64,6 +65,9 @@ static bool IRAM_ATTR onBounce(esp_lcd_panel_handle_t, void* buf, int pos, int l
   const uint32_t* s = (const uint32_t*)((const uint8_t*)bb[front] + (size_t)pos * 2);
   uint32_t* d = (uint32_t*)buf;
   for (int i = len >> 2; i > 0; i--) *d++ = *s++;
+  // ดึงช่วงถัดไปเข้า cache ล่วงหน้า (แบบที่ไดรเวอร์ทำเอง) → รอบหน้าคัดลอกเร็วขึ้น
+  int nx = pos + len / 2;
+  if (nx < LCD_W * LCD_H) Cache_Start_DCache_Preload((uint32_t)((const uint8_t*)bb[front] + (size_t)nx * 2), len, 0);
   return hp == pdTRUE;
 }
 
@@ -278,7 +282,7 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   const int data[16] = {9, 10, 11, 12, 13, 16, 17, 18, 8, 3, 46, 4, 5, 6, 7, 15};
   for (int i = 0; i < 16; i++) c.data_gpio_nums[i] = data[i];
   c.flags.fb_in_psram = 1;
-  if (bounce) { c.bounce_buffer_size_px = LCD_W * 8; c.flags.no_fb = 1; }   // 2 × 8 แถวใน RAM ภายใน (ทดสอบแล้ว: 16 แถว RAM ไม่พอวาด 2 คอร์ + ภาพเลื่อน)
+  if (bounce) { c.bounce_buffer_size_px = LCD_W * 8; c.flags.no_fb = 1; c.num_fbs = 0; }   // no_fb ห้ามตั้ง num_fbs   // 2 × 8 แถวใน RAM ภายใน (ทดสอบแล้ว: 16 แถว RAM ไม่พอวาด 2 คอร์ + ภาพเลื่อน)
   useBounce = bounce;
   noFb = bounce;
   // บัฟเฟอร์ของเราต้องพร้อมก่อนเริ่มจอ (โหมด bounce จอดึงภาพจากบัฟเฟอร์นี้ทันที)
@@ -290,7 +294,15 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   front = 0; ready = -1; wIdx = 1;
   resetHashes();
   vsyncSem = xSemaphoreCreateBinary();
-  if (esp_lcd_new_rgb_panel(&c, &panel) != ESP_OK) return false;
+  if (esp_lcd_new_rgb_panel(&c, &panel) != ESP_OK) {
+    if (!bounce) return false;
+    // เริ่มโหมด bounce ไม่ได้ → ถอยไปโหมดเดิม (ไม่ให้จอดำ)
+    Serial.println("LCD bounce/no_fb init failed -> fallback normal mode");
+    c.bounce_buffer_size_px = 0; c.flags.no_fb = 0; c.num_fbs = 1;
+    bounce = false; useBounce = false; noFb = false;
+    heap_caps_free(bb[2]); bb[2] = nullptr;
+    if (esp_lcd_new_rgb_panel(&c, &panel) != ESP_OK) return false;
+  }
   esp_lcd_rgb_panel_event_callbacks_t cb;
   memset(&cb, 0, sizeof(cb));
   // โหมด bounce: จอดึงภาพจาก fb ล่วงหน้าเป็นช่วง ๆ — รอบสุดท้ายของเฟรมดึงเสร็จ = ปลอดภัยที่จะคัดลอกภาพใหม่ลง fb
