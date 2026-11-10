@@ -256,7 +256,7 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   const int data[16] = {9, 10, 11, 12, 13, 16, 17, 18, 8, 3, 46, 4, 5, 6, 7, 15};
   for (int i = 0; i < 16; i++) c.data_gpio_nums[i] = data[i];
   c.flags.fb_in_psram = 1;
-  if (bounce) c.bounce_buffer_size_px = LCD_W * 8;   // 2 × 8 แถวใน RAM ภายใน (272 หาร 8 ลงตัว)
+  if (bounce) c.bounce_buffer_size_px = LCD_W * 16;  // 2 × 16 แถวใน RAM ภายใน (272 หาร 16 ลงตัว) — ยิ่งยาวยิ่งทนรอ PSRAM ได้นาน
   useBounce = bounce;
   if (esp_lcd_new_rgb_panel(&c, &panel) != ESP_OK) return false;
   vsyncSem = xSemaphoreCreateBinary();
