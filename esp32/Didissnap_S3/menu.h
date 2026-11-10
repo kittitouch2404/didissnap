@@ -45,7 +45,7 @@ static void (*onHold2)() = nullptr;
 static int lcdMode = 0;
 static const char* const LCD_MODE_NAME[] = {"44 Hz", "30 Hz (30 fps)", "60 Hz lock 30 fps", "60 Hz"};
 static void (*onLcdMode)(int) = nullptr;
-static int bounceMode = 0;                 // 1 = จอใช้ bounce buffer (มีผลหลังรีสตาร์ท)
+static int bounceMode = 1;                 // 1 = จอใช้ bounce buffer (ค่าเริ่มต้น — ทดสอบแล้วหายวูบ) มีผลหลังรีสตาร์ท
 static void (*onBounce)(int) = nullptr;
 // ทดสอบความเร็ว: วาดกี่คอร์ / อ่านตัวอักษรจาก PSRAM หรือแฟลช
 static int drawCores = 1, fontMem = 0, perfInfo = 0;   // perfInfo = ตัวเลข fps มุมล่างซ้าย

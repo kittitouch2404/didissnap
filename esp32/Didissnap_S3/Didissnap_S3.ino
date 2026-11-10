@@ -277,7 +277,7 @@ void setup() {
   bool safeDraw = safeLcd || skip(9) || skip(10);   // ดับตอนวาด 2 รอบติด → วาดคอร์เดียว + 44 Hz
   menu::lcdMode = safeDraw ? 0 : (prefs.getInt("lcdMode", 0) & 3);
   if (safeLcd) Serial.println("SAFE MODE: LCD without presenter task");
-  menu::bounceMode = safeLcd ? 0 : (prefs.getInt("bounce", 0) & 1);
+  menu::bounceMode = safeLcd ? 0 : (prefs.getInt("bounce", 1) & 1);
   menu::onBounce = onBounce;
   if (!lcd::begin(LCD_HZ[menu::lcdMode], LCD_EVERY[menu::lcdMode], !safeLcd, menu::bounceMode)) Serial.println("LCD init FAILED (เช็ค PSRAM = OPI PSRAM)");
   showCrash();
