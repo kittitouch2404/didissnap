@@ -117,7 +117,7 @@ inline void paceCopy(uint16_t* dst, const uint16_t* src, size_t bytes);
 // จอต้องดึงภาพจาก PSRAM ตลอดเวลา ถ้า 2 คอร์ + งานรูป คัดลอกพร้อมกันเร็วเกิน จอดึงไม่ทัน → วูบมืด/ภาพเลื่อน/ซ้อน
 // ทุกการคัดลอกก้อนใหญ่ต้อง "จองช่วงเวลา" ก่อน → รวมกันไม่เกิน PSRAM_COPY_MBPS
 #ifndef PSRAM_COPY_MBPS
-#define PSRAM_COPY_MBPS 40
+#define PSRAM_COPY_MBPS 20   // ทดสอบบนบอร์ดจริง: 20 ไม่วูบที่ 44 Hz (40 วูบหน้า GIF, 10 ก็วูบ)
 #endif
 static volatile uint32_t copyMBps = PSRAM_COPY_MBPS;   // ปรับได้จากเมนู COPY SPEED
 static portMUX_TYPE gateMux = portMUX_INITIALIZER_UNLOCKED;
