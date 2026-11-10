@@ -216,14 +216,21 @@ static void copyChanged(int p) {
     return;
   }
   int n = 0;
+  // คุมความเร็วคัดลอกเอง (ตอนเปลี่ยนหน้า ทุกแถบเปลี่ยน → คัดลอกรวดเดียวทั้งจอ PSRAM แน่น
+  //  ไดรเวอร์เติม bounce ไม่ทัน → ขอบซ้ายมีเส้นจากแถวด้านบน) — ทั้งจอที่ 40 MB/s ≈ 13 ms ยังเร็วกว่าจอไล่แสดง
+  uint32_t slot = (uint32_t)(BAND_BYTES * 2 / (copyMBps ? copyMBps : 1)) + 1;
+  uint32_t due = (uint32_t)esp_timer_get_time();
   for (int b = 0; b < NB; b++) {
     if (bbHash[p][b] == fbHash[b]) continue;
     size_t o = (size_t)b * BAND_H * LCD_W;
     psramGate(BAND_BYTES * 2, true);          // อ่าน+เขียน PSRAM (งานขึ้นจอมาก่อน)
+    if (useBounce) while ((int32_t)(due - (uint32_t)esp_timer_get_time()) > 0) {}
     memcpy(fb + o, bb[p] + o, BAND_BYTES);
     esp_cache_msync(fb + o, BAND_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
     fbHash[b] = bbHash[p][b];
-    if (++n % 2 == 0) esp_rom_delay_us(60);   // จังหวะเดิมที่ทดสอบแล้วภาพนิ่ง
+    due += slot;
+    if (!useBounce && ++n % 2 == 0) esp_rom_delay_us(60);   // จังหวะเดิมที่ทดสอบแล้วภาพนิ่ง (โหมดไม่ใช้ bounce)
+    else if (useBounce) ++n;
   }
   bandsCopied += n;
 }
