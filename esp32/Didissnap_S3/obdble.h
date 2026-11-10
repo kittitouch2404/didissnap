@@ -4,13 +4,25 @@
 //  ค่าที่ได้ใส่ลง RAW (data.h) แล้วจอหน่วงให้นุ่มเหมือนเดิม
 //  - จำตัวที่ต่อสำเร็จล่าสุดไว้ (Preferences "obdMac") ครั้งต่อไปต่อตัวนั้นก่อน
 //  - รอบเครื่อง + ความเร็ว ถามทุกรอบ ค่าอื่นสลับกันถามทีละตัว (K-line ของ Jazz GD ช้า ~5-10 คำถาม/วินาที)
-//  ต้องลงไลบรารี "NimBLE-Arduino" (by h2zero, เวอร์ชัน 2.x) จาก Library Manager
+//  ต้องลงไลบรารี "NimBLE-Arduino" (by h2zero, เวอร์ชัน 2.x หรือ 3.x) จาก Library Manager
 //   (เล็กกว่า BLE ที่มากับบอร์ดมาก — แบบเดิมโปรแกรมใหญ่เกินพื้นที่)
 #pragma once
 #include <Arduino.h>
 #include <Preferences.h>
 #include <NimBLEDevice.h>
 #include "data.h"
+
+#if defined(NIMBLE_CPP_VERSION_MAJOR) && NIMBLE_CPP_VERSION_MAJOR >= 3
+// NimBLE-Arduino 3.x ใช้ std::atomic_flag แต่คอมไพเลอร์ ESP32-S3 ไม่มีฟังก์ชันนี้ให้ → ใส่ให้เอง
+static portMUX_TYPE obdAtomicMux = portMUX_INITIALIZER_UNLOCKED;
+extern "C" bool __atomic_test_and_set(volatile void* p, int) {
+  portENTER_CRITICAL_SAFE(&obdAtomicMux);
+  bool old = *(volatile bool*)p;
+  *(volatile bool*)p = true;
+  portEXIT_CRITICAL_SAFE(&obdAtomicMux);
+  return old;
+}
+#endif
 
 namespace obdble {
 
@@ -153,7 +165,13 @@ static bool findChars() {
 static bool connectTo(const NimBLEAddress& addr, const String& name) {
   strlcpy(devName, name.length() ? name.c_str() : addr.toString().c_str(), sizeof(devName));
   state = CONNECTING;
-  if (!client) { client = NimBLEDevice::createClient(); client->setClientCallbacks(&cb, false); client->setConnectTimeout(8000); }
+  if (!client) { client = NimBLEDevice::createClient(); 
+#if defined(NIMBLE_CPP_VERSION_MAJOR) && NIMBLE_CPP_VERSION_MAJOR >= 3
+    client->setCallbacks(cb);                 // NimBLE-Arduino 3.x
+#else
+    client->setClientCallbacks(&cb, false);   // NimBLE-Arduino 2.x
+#endif
+    client->setConnectTimeout(8000); }
   if (!client->connect(addr)) { strlcpy(lastMsg, "connect failed", sizeof(lastMsg)); return false; }
   linkUp = true;
   if (!findChars()) { strlcpy(lastMsg, "no ELM service", sizeof(lastMsg)); client->disconnect(); linkUp = false; return false; }
