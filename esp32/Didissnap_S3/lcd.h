@@ -261,7 +261,10 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   vsyncSem = xSemaphoreCreateBinary();
   esp_lcd_rgb_panel_event_callbacks_t cb;
   memset(&cb, 0, sizeof(cb));
-  cb.on_vsync = onVsync;
+  // โหมด bounce: จอดึงภาพจาก fb ล่วงหน้าเป็นช่วง ๆ — รอบสุดท้ายของเฟรมดึงเสร็จ = ปลอดภัยที่จะคัดลอกภาพใหม่ลง fb
+  // (ถ้ารอ vsync ไดรเวอร์จะเติม bounce ช่วงบนของเฟรมถัดไปไปก่อนแล้ว → แถวบน ๆ เป็นภาพเก่า เห็นเป็นเส้นรอยต่อ)
+  if (bounce) cb.on_frame_buf_complete = onVsync;
+  else cb.on_vsync = onVsync;
   esp_lcd_rgb_panel_register_event_callbacks(panel, &cb, nullptr);
   esp_lcd_panel_reset(panel);
   esp_lcd_panel_init(panel);
