@@ -88,6 +88,13 @@ static volatile uint32_t recovers = 0;      // นับครั้งที่
 static esp_flash_os_functions_t myOs;
 static const esp_flash_os_functions_t* origOs = nullptr;
 
+static uint8_t* bbuf[2] = {nullptr, nullptr};
+static volatile int* bPos = nullptr;          // ตำแหน่งเติม bounce ในไดรเวอร์ (หาเองตอนเริ่ม)
+static volatile size_t* bEof = nullptr;       // ตัวนับ EOF ในไดรเวอร์ (ใช้ % 2 เลือกชุด bounce)
+static const size_t BB_BYTES = LCD_W * 8 * 2;
+static volatile uint32_t resyncs = 0;
+static volatile bool needSync = false;
+
 static void IRAM_ATTR hwPause() {
   if (dmaCh < 0) return;
   lcd_ll_enable_interrupt(&LCD_CAM, LCD_LL_EVENT_VSYNC_END, false);   // ไม่ให้ไดรเวอร์สั่ง DMA ใหม่
@@ -98,8 +105,32 @@ static void IRAM_ATTR hwPause() {
   flashPauses++;
 }
 
+// โหมด bounce: ไม่เริ่ม DMA เอง (เริ่มกลางเฟรม = ภาพขยับ/เติมผิดชุด) — แค่เปิดจอ แล้วให้ vsync ถัดไป
+// ตั้งตัวนับ/ตำแหน่งใหม่ (onVsyncB) จากนั้นไดรเวอร์เติม bounce + เริ่ม DMA ที่ต้นเฟรมเอง
+static void IRAM_ATTR hwResumeBounce() {
+  lcd_ll_stop(&LCD_CAM);
+  lcd_ll_fifo_reset(&LCD_CAM);
+  needSync = true;
+  lcd_ll_clear_interrupt_status(&LCD_CAM, LCD_LL_EVENT_VSYNC_END);
+  lcd_ll_enable_interrupt(&LCD_CAM, LCD_LL_EVENT_VSYNC_END, true);
+  lcd_ll_start(&LCD_CAM);
+  resyncs++;
+}
+static bool IRAM_ATTR onVsyncB(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t*, void*) {
+  if (!bEof) return false;
+  *bEof = 0;                                   // ทุก vsync: DMA จะเริ่มที่ชุด 0 → EOF ถัดไปต้องเป็นชุด 0 เสมอ
+  if (needSync) {
+    *bPos = 1 << 30;                           // บังคับไดรเวอร์เริ่มเติมใหม่จากต้นเฟรม
+    needSync = false;
+    gdma_ll_tx_clear_interrupt_status(&GDMA, dmaCh, GDMA_LL_EVENT_TX_EOF);
+    gdma_ll_tx_enable_interrupt(&GDMA, dmaCh, GDMA_LL_EVENT_TX_EOF, true);
+  }
+  return false;
+}
+
 static void IRAM_ATTR hwResume() {
   if (dmaCh < 0) return;
+  if (useBounce && bEof) { hwResumeBounce(); return; }
   // เหมือนที่ไดรเวอร์ทำตอนเริ่มส่งเฟรม: ล้าง FIFO แล้วเริ่มจากบรรทัดแรก
   gdma_ll_tx_reset_channel(&GDMA, dmaCh);
   lcd_ll_stop(&LCD_CAM);
@@ -125,21 +156,6 @@ static esp_err_t IRAM_ATTR osStart(void* arg) {
 // ไดรเวอร์เลือกว่าจะเติม bounce ชุดไหนจาก "นับ EOF % 2" และ (โหมด restart ทุก vsync) ไม่เคยรีเซ็ตตัวนับนี้
 // พอหยุดจอกลางเฟรมเพราะใช้แฟลช (เช่น บันทึกค่าหลังเปลี่ยนหน้า) ตัวนับอาจเหลือเลขคี่ → ต่อจากนั้นเติมผิดชุดตลอด
 // = ภาพขยับ + เส้นจากแถวด้านบน ค้างจนกว่าจะใช้แฟลชอีกรอบ → แก้: ตั้งตำแหน่ง/ตัวนับ/ข้อมูลใน bounce ใหม่ให้ตรงต้นเฟรมเอง
-static uint8_t* bbuf[2] = {nullptr, nullptr};
-static volatile int* bPos = nullptr;
-static volatile size_t* bEof = nullptr;
-static const size_t BB_BYTES = LCD_W * 8 * 2;
-static volatile uint32_t resyncs = 0;
-static void IRAM_ATTR resyncBounce() {
-  const uint32_t* s = (const uint32_t*)fb;
-  for (int k = 0; k < 2; k++) {
-    uint32_t* d = (uint32_t*)bbuf[k];
-    for (size_t i = 0; i < BB_BYTES / 4; i++) *d++ = *s++;
-  }
-  *bPos = (int)(2 * BB_BYTES / 2);   // เติมไว้แล้ว 2 ช่วงแรกของเฟรม (หน่วยพิกเซล)
-  *bEof = 0;                         // EOF ถัดไป = ชุด 0
-  resyncs++;
-}
 static void locateBounce(uint32_t cbAddr) {
   const uint32_t* w = (const uint32_t*)panel;
   for (int i = 2; i < 160; i++) {
@@ -157,7 +173,7 @@ static void locateBounce(uint32_t cbAddr) {
 static esp_err_t IRAM_ATTR osEnd(void* arg) {
   esp_err_t r = origOs->end(arg);      // เปิด cache คืนก่อน
   if (__atomic_sub_fetch(&flashDepth, 1, __ATOMIC_SEQ_CST) == 0) {
-    if (useBounce && bEof && fb) { resyncBounce(); hwResume(); }   // DMA เริ่มที่ต้นเฟรม (ชุด 0) พร้อมข้อมูลที่ถูกต้อง
+    if (useBounce && bEof) hwResume();   // เปิดจอ แล้วให้ vsync ถัดไปเริ่มเฟรมใหม่ให้ถูกจังหวะ
     else {
       hwResume();
       if (useBounce && panel) esp_lcd_rgb_panel_restart(panel);   // ให้ไดรเวอร์เติม bounce ใหม่ตั้งแต่ต้นเฟรมที่ vsync ถัดไป
@@ -282,11 +298,11 @@ static void presenter(void*) {
     int miss = 0;
     do {
       xSemaphoreTake(vsyncSem, 0);
-      if (xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60)) != pdTRUE && flashDepth == 0 && !useBounce && ++miss >= 3) {
+      if (xSemaphoreTake(vsyncSem, pdMS_TO_TICKS(60)) != pdTRUE && flashDepth == 0 && (!useBounce || bEof) && ++miss >= 3) {
         // ไม่มี vsync มา 180 ms → จอค้าง (DMA หยุด) → ปลุกใหม่
         miss = 0;
         recovers++;
-        hwResume();   // (โหมด bounce ไม่ทำ: เริ่ม DMA เองแล้วไดรเวอร์นับตำแหน่ง bounce ผิด → ภาพเลื่อนลง)
+        hwResume();   // (โหมด bounce: เปิดจอแล้วให้ vsync เริ่มเฟรมใหม่เอง)
       }
     } while ((int)(frames - lastF) < minVsyncs);
     copyChanged(p);
@@ -354,7 +370,7 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   // โหมด bounce: จอดึงภาพจาก fb ล่วงหน้าเป็นช่วง ๆ — รอบสุดท้ายของเฟรมดึงเสร็จ = ปลอดภัยที่จะคัดลอกภาพใหม่ลง fb
   // (ถ้ารอ vsync ไดรเวอร์จะเติม bounce ช่วงบนของเฟรมถัดไปไปก่อนแล้ว → แถวบน ๆ เป็นภาพเก่า เห็นเป็นเส้นรอยต่อ)
   if (noFb) cb.on_bounce_empty = onBounce;
-  else if (bounce) cb.on_frame_buf_complete = onVsync;
+  else if (bounce) { cb.on_frame_buf_complete = onVsync; cb.on_vsync = onVsyncB; }
   else cb.on_vsync = onVsync;
   esp_lcd_rgb_panel_register_event_callbacks(panel, &cb, nullptr);
   esp_lcd_panel_reset(panel);
