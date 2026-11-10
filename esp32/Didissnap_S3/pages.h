@@ -4,6 +4,7 @@
 #include "data.h"
 #include "bg.h"
 #include "pages2.h"
+#include "rpmface.h"
 
 namespace pages {
 using namespace gfx;
@@ -457,8 +458,48 @@ inline void slotBox(int i, int x, int y, int k) {
 inline int slotNeed(int i, int k) {
   return max(pxWidth(didicfg::SLOT_NAMES[i], PX_LAB), pxWidth(slotWidest(i), k) + 3 + pxWidth(slotVal(i).unit, 1));
 }
+// ---- หน้า 13: ตัวละครเปลี่ยนหน้าตามรอบ (จาก RpmFacePage) ----
+#define RF_REDLINE 7500        // รอบ redline ของหน้านี้
+#define RF_REDLINE_FACE 13     // หน้าตอนถึง/เกิน redline
+#define RF_HYST 80             // กันหน้ากะพริบตรงรอยต่อ (รอบ)
+struct RfRange { uint16_t from; uint8_t face; };
+static const RfRange RF_RANGES[] = {
+  {0, 19},     // 0-599     : หลับตาอมยิ้ม
+  {600, 18},   // 600-1199  : หาว
+  {1200, 5},   // 1200-1999 : นิ่ง
+  {2000, 1},   // 2000-3499 : ยิ้ม
+  {3500, 2},   // 3500-4299 : หัวเราะตาปิด
+  {4300, 14},  // 4300-4999 : ตื่นเต้นอ้าปาก
+  {5000, 8},   // 5000-5799 : ยิ้มกว้างเหงื่อตก
+  {5800, 7},   // 5800-6499 : หัวเราะเหงื่อตก
+  {6500, 11},  // 6500-7199 : เกร็งเหงื่อตก
+  {7200, 4},   // 7200-7499 : ตกใจเหงื่อตก
+};
+static const int RF_N = sizeof(RF_RANGES) / sizeof(RF_RANGES[0]);
+static int rfRange = 0;                 // ช่วงปัจจุบัน (-2 = redline)
+static volatile int rfFace = 19;        // ใบหน้าที่แสดง (1-19) — ตั้งก่อนวาดแต่ละเฟรม (ทุกแถบใช้ค่าเดียวกัน)
+// เรียกครั้งเดียวต่อเฟรม ก่อนวาด
+inline void rfTick(int rpm) {
+  int r;
+  if (rfRange == -2 ? rpm >= RF_REDLINE - RF_HYST : rpm >= RF_REDLINE) r = -2;
+  else {
+    r = 0;
+    for (int i = 0; i < RF_N; i++) if (rpm >= RF_RANGES[i].from) r = i;
+    // ขาลง: ต้องต่ำกว่าขอบช่วงปัจจุบันเกิน RF_HYST ถึงจะเปลี่ยน (ขาขึ้นเปลี่ยนทันที)
+    if (rfRange >= 0 && r < rfRange && rpm >= RF_RANGES[rfRange].from - RF_HYST) r = rfRange;
+  }
+  rfRange = r;
+  rfFace = r == -2 ? RF_REDLINE_FACE : RF_RANGES[r].face;
+}
+inline void rfDrawFace() {
+  const uint16_t* f = RF_FACES[(rfFace - 1) % RF_FACE_COUNT];
+  for (int y = max(GY0, RF_FACE_Y); y < min(GY1, RF_FACE_Y + RF_FACE_H); y++)
+    memcpy(GBUF + y * W + RF_FACE_X, f + (y - RF_FACE_Y) * RF_FACE_W, RF_FACE_W * 2);
+}
+
 inline void p9() {                   // หน้า 13
   bg::draw();
+  rfDrawFace();
   pt("RPM", 10, 10, PX_LAB);
   int rr = 10 + pxWidth("RPM", PX_LAB) + 12 + pxWidth("8888", PX_RPM);
   pt(f0(D.rpm), rr, 10, PX_RPM, over() ? PXR : WH, RIGHT);

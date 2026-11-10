@@ -114,6 +114,7 @@ static void renderFrame(uint16_t* fb, int page, bool menuOpen, bool flip) {
   jobMenu = menuOpen;
   jobFlip = flip;
   gfx::frameMs = millis();
+  pages::rfTick((int)lroundf(D.rpm));
   __atomic_store_n(&nextStrip, 0, __ATOMIC_SEQ_CST);
   bool two = workGo && menu::drawCores == 2;
   if (two) xSemaphoreGive(workGo);
@@ -169,7 +170,8 @@ static void bootLogo() {
 static void chooseBackground(int page) {
   using namespace didipics;
   bg::runSpeed = D.spd;
-  if (page >= pages::PG_PIC && page <= pages::PG_PHOTO) {
+  if (page == pages::PG_PIC) bg::select(bg::BI_FACE);   // หน้า 13 = ตัวละครเปลี่ยนหน้าตามรอบ
+  else if (page >= pages::PG_PIC && page <= pages::PG_PHOTO) {
     String p = slotPath(page - pages::PG_PIC);
     if (p.length()) bg::select(bg::FILE_PIC, p, version);
     else bg::select(page == pages::PG_PIC ? bg::BI_JPG9 : page == pages::PG_RUN ? bg::BI_RUN_ANIM : bg::BI_JPG11);

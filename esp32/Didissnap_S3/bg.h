@@ -4,7 +4,7 @@
 #ifdef BG_HOST   // ใช้ตอนทดสอบวาดจอบนคอมเท่านั้น
 #include "gfx.h"
 namespace bg {
-enum Kind { NONE = 0, BI_JPG9, BI_RUN_ANIM, BI_JPG11, FILE_PIC };
+enum Kind { NONE = 0, BI_JPG9, BI_RUN_ANIM, BI_JPG11, FILE_PIC, BI_FACE };
 static float runSpeed = 0;
 static bool gifPlaying = false;
 static volatile int gifTest = 0;
@@ -25,11 +25,12 @@ inline bool draw() { if (hostImg) { memcpy(GBUF + GY0 * 480, hostImg + GY0 * 480
 #include "rom/ets_sys.h"
 #include "gfx.h"
 #include "bimg.h"
+#include "rpmface.h"
 
 namespace bg {
 
 static const int W = 480, H = 272, NPX = W * H;
-enum Kind { NONE = 0, BI_JPG9, BI_RUN_ANIM, BI_JPG11, FILE_PIC };
+enum Kind { NONE = 0, BI_JPG9, BI_RUN_ANIM, BI_JPG11, FILE_PIC, BI_FACE };
 
 struct Want {
   int kind = NONE;
@@ -200,6 +201,7 @@ static void task(void*) {
       lastErr[0] = 0;
       int b = backIdx();
       if (have.kind == BI_JPG9) { if (decodeJpeg(BI_PIC9, sizeof(BI_PIC9), buf[b])) publish(b); }
+      else if (have.kind == BI_FACE) { if (decodeJpeg(RF_JPG, sizeof(RF_JPG), buf[b])) publish(b); }
       else if (have.kind == BI_JPG11) { if (decodeJpeg(BI_PIC11, sizeof(BI_PIC11), buf[b])) publish(b); }
       else if (have.kind == BI_RUN_ANIM) { runIdx = 0; nextT = 0; }
       else if (have.kind == FILE_PIC && loadFile(have.path)) {
