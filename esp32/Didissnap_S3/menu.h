@@ -22,6 +22,7 @@ static const Item ITEMS[] = {
     {"GEARS", "gearCount", 3, 6, 1},
     {"REFRESH", "lcdMode", 0, 3, 1},
     {"PAGE 13 VALUES", nullptr, 0, 0, 0},
+    {"OBD BLE", "obdBle", 0, 1, 1},
     {"PERF INFO", "perf", 0, 1, 1},
     {"ADVANCED", nullptr, 0, 0, 0},
     {"PEAK RESET", nullptr, 0, 0, 0},
@@ -37,6 +38,7 @@ static const Item ADV[] = {
     {"LCD BOUNCE", "bounce", 0, 1, 1},
     {"BAND SKIP", "bandSkip", 0, 1, 1},
     {"GIF TEST", "gifTest", 0, 4, 1},
+    {"OBD FORGET", nullptr, 0, 0, 0},
     {"BACK", nullptr, 0, 0, 0},
 };
 static const int NA = sizeof(ADV) / sizeof(ADV[0]);
@@ -69,7 +71,11 @@ static int bounceMode = 1;                 // 1 = จอใช้ bounce buffer 
 static void (*onBounce)(int) = nullptr;
 // ทดสอบความเร็ว: วาดกี่คอร์ / อ่านตัวอักษรจาก PSRAM หรือแฟลช
 static int drawCores = 1, fontMem = 0, perfInfo = 0;   // perfInfo = ตัวเลข fps มุมล่างซ้าย
-static void (*onPerfOpt)() = nullptr;   // ปุ่ม 2 ค้างตอนอยู่หน้าปกติ (หน้า Record = ARM/STOP)
+static void (*onPerfOpt)() = nullptr;
+static int obdMode = 1;                        // 1 = ต่อตัวอ่าน OBD แบบ BLE (มีผลหลังรีสตาร์ท)
+static void (*onObd)(int) = nullptr;
+static void (*onObdForget)() = nullptr;
+static const char* (*obdStatus)() = nullptr;   // ปุ่ม 2 ค้างตอนอยู่หน้าปกติ (หน้า Record = ARM/STOP)
 
 static char toastMsg[32] = "";
 static uint32_t toastUntil = 0;
@@ -97,6 +103,7 @@ inline int value(const char* k) {
   if (!strcmp(k, "copySpd")) return (int)lcd::copyMBps;
   if (!strcmp(k, "bounce")) return bounceMode;
   if (!strcmp(k, "bandSkip")) return lcd::bandSkip ? 1 : 0;
+  if (!strcmp(k, "obdBle")) return obdMode;
   return 0;
 }
 inline void fmt(const Item& it, char* b, size_t n) {
@@ -113,6 +120,7 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "tempAlert")) snprintf(b, n, "%d C", v);
   else if (!strcmp(it.key, "autoCycle")) { if (v) snprintf(b, n, "%d s", v); else snprintf(b, n, "OFF"); }
   else if (!strncmp(it.key, "p13", 3)) snprintf(b, n, "%s", didicfg::SLOT_NAMES[v % didicfg::N_SLOTS]);
+  else if (!strcmp(it.key, "obdBle")) snprintf(b, n, "%s  %s", v ? "ON" : "OFF", obdStatus ? obdStatus() : "");
   else if (!strcmp(it.key, "copySpd")) snprintf(b, n, "%d MB/s", v);
   else if (!strcmp(it.key, "gifTest")) { static const char* const GT[] = {"NORMAL", "DECODE ONLY", "NO DECODE", "DECODE NO WRITE", "CPU LOAD ONLY"}; snprintf(b, n, "%s", GT[v % 5]); }
   else if (!strcmp(it.key, "fontMem")) snprintf(b, n, v ? "FLASH" : "PSRAM");
@@ -126,6 +134,7 @@ inline void set(const char* k, int v) {
   if (!strcmp(k, "fontMem")) { fontMem = v; if (onPerfOpt) onPerfOpt(); return; }
   if (!strcmp(k, "gifTest")) { bg::gifTest = v; return; }
   if (!strcmp(k, "bandSkip")) { lcd::bandSkip = v != 0; return; }
+  if (!strcmp(k, "obdBle")) { obdMode = v & 1; if (onObd) onObd(obdMode); return; }
   if (!strcmp(k, "bounce")) { bounceMode = v; if (onBounce) onBounce(v); return; }
   if (!strcmp(k, "copySpd")) { lcd::copyMBps = v; if (onPerfOpt) onPerfOpt(); return; }
   if (!strcmp(k, "perf")) { perfInfo = v; if (onPerfOpt) onPerfOpt(); return; }
@@ -198,6 +207,7 @@ inline void button(int b, bool lng) {
   if (it.key) edit = true;
   else if (!strcmp(it.label, "PEAK RESET")) { if (onPeaks) onPeaks(); toast("PEAK RESET"); }
   else if (!strcmp(it.label, "TRIP RESET")) { if (onTrip) onTrip(); toast("TRIP RESET"); }
+  else if (!strcmp(it.label, "OBD FORGET")) { if (onObdForget) onObdForget(); }
   else if (!strcmp(it.label, "ADVANCED")) { enterSub(1, sel); sel = 0; }
   else if (!strcmp(it.label, "PAGE 13 VALUES")) { enterSub(2, sel); sel = 0; }
   else if (!strcmp(it.label, "BACK")) { int m = mainSel; enterSub(0, 0); sel = m; }

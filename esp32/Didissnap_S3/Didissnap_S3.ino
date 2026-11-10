@@ -25,6 +25,7 @@
 #define DIDI_MAX_FILE (4 * 1024 * 1024)   // รูป/GIF ไฟล์ละไม่เกิน 4 MB (โหลดลง PSRAM ตอนแสดง)
 #define DIDI_TX_POWER WIFI_POWER_8_5dBm   // กำลังส่ง WiFi ต่ำลง กินไฟน้อย (มือถืออยู่ในรถใกล้ ๆ)
 #include "DidissnapLink.h"
+#include "obdble.h"
 #include "DidissnapConfig.h"
 #include "DidissnapButtons.h"
 #include "DidissnapPics.h"
@@ -48,6 +49,7 @@
 Preferences prefs;
 static bool demo = true;
 static bool wifiOn = true;
+static bool obdOn = false;   // ต่อตัวอ่าน OBD แบบ BLE (เมนู OBD BLE)
 static int lastBri = -1;
 
 void resetPeaks() { data::resetPeaks(); }
@@ -140,6 +142,16 @@ static void onBounce(int v) {
   menu::toast("RESTARTING...");
   restartAt = millis() + 1200;
 }
+static void onObd(int v) {
+  prefs.putInt("obdBle", v & 1);
+  menu::toast("RESTARTING...");
+  restartAt = millis() + 1200;
+}
+static void onObdForget() {
+  obdble::forget();
+  menu::toast("OBD FORGOTTEN");
+}
+static const char* obdStatus() { return obdOn ? obdble::status() : "off"; }
 static void onLcdMode(int m) {
   prefs.putInt("lcdMode", m & 3);
   menu::toast("RESTARTING...");
@@ -326,6 +338,19 @@ void setup() {
   perf::begin();
   didibtn::onEvent = onButton;
   didibtn::begin(PIN_BTN1, PIN_BTN2, -1, PIN_BTN2_ALT);
+  // ตัวอ่าน OBD แบบ BLE (เริ่มหลังจองแรมจอ/วาดเสร็จ เพราะ Bluetooth ใช้ RAM ภายในเยอะ)
+  menu::obdMode = prefs.getInt("obdBle", 1) & 1;
+  menu::onObd = onObd;
+  menu::onObdForget = onObdForget;
+  menu::obdStatus = obdStatus;
+  step(11, "obd ble");
+  if (skip(11)) Serial.println("SAFE MODE: skip OBD BLE");
+  else if (menu::obdMode) {
+    obdOn = true;
+    obdble::begin(&prefs);
+    didilink::onDtcRead = obdble::readDtc;
+    didilink::onDtcClear = obdble::clearDtc;
+  }
   if (skip(10)) didicfg::cfg.page = 0;   // ดับตอนวาดหน้าที่เลือกไว้ → เริ่มหน้า 1
   step(10, "first frames");
   Serial.printf("Didissnap_S3 ready  heap %u (internal %u)  psram %u  draw cores %d\n", ESP.getFreeHeap(), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), ESP.getFreePsram(), (workGo && menu::drawCores == 2) ? 2 : 1);
@@ -347,7 +372,12 @@ void loop() {
   didibtn::loop();
   didicfg::tick();   // บันทึกค่าตั้งลงแฟลชทีหลัง
 
-  D.link = demo ? 0 : 2;
+  if (obdOn) {                       // มีตัวอ่าน OBD: ใช้ค่าจริง (ยังไม่ได้ค่า = รอบ/ความเร็ว 0)
+    demo = false;
+    bool lv = obdble::live();
+    if (!lv) { RAW.rpm = 0; RAW.spd = 0; }
+    D.link = lv ? 2 : 1;
+  } else D.link = demo ? 0 : 2;
   data::update(dt, demo);
   perf::sample(RAW.spd);
   if (wifiOn) didilink::send(D.rpm, D.spd, D.ect, D.iat, D.volt, D.load, D.tps, D.map, D.maf, D.fuel);
