@@ -25,18 +25,28 @@ static const Item ITEMS[] = {
     {"P13 SLOT 2", "p13b", 0, 0, 1},
     {"P13 SLOT 3", "p13c", 0, 0, 1},
     {"P13 SLOT 4", "p13d", 0, 0, 1},
-    {"DRAW CORES", "cores", 1, 2, 1},
     {"PERF INFO", "perf", 0, 1, 1},
-    {"GIF TEST", "gifTest", 0, 4, 1},
-    {"COPY SPEED", "copySpd", 10, 80, 10},
-    {"LCD BOUNCE", "bounce", 0, 1, 1},
-    {"BAND SKIP", "bandSkip", 0, 1, 1},
+    {"ADVANCED", nullptr, 0, 0, 0},
     {"PEAK RESET", nullptr, 0, 0, 0},
     {"TRIP RESET", nullptr, 0, 0, 0},
     {"WIFI", nullptr, 0, 0, 0},
     {"EXIT", nullptr, 0, 0, 0},
 };
 static const int N = sizeof(ITEMS) / sizeof(ITEMS[0]);
+// เมนูย่อย ADVANCED: ค่าสำหรับทดสอบ/ปรับจูนจอ (ไม่ต้องยุ่งตอนใช้งานปกติ)
+static const Item ADV[] = {
+    {"DRAW CORES", "cores", 1, 2, 1},
+    {"COPY SPEED", "copySpd", 10, 80, 10},
+    {"LCD BOUNCE", "bounce", 0, 1, 1},
+    {"BAND SKIP", "bandSkip", 0, 1, 1},
+    {"GIF TEST", "gifTest", 0, 4, 1},
+    {"BACK", nullptr, 0, 0, 0},
+};
+static const int NA = sizeof(ADV) / sizeof(ADV[0]);
+static bool adv = false;      // อยู่ในเมนูย่อย ADVANCED
+static int mainSel = 0;       // ตำแหน่งในเมนูหลักตอนเข้าเมนูย่อย
+static inline const Item* L() { return adv ? ADV : ITEMS; }
+static inline int LN() { return adv ? NA : N; }
 static bool open = false, edit = false;
 static int sel = 0;
 static void (*onPeaks)() = nullptr;
@@ -83,6 +93,7 @@ inline int value(const char* k) {
 inline void fmt(const Item& it, char* b, size_t n) {
   if (!it.key) {
     if (!strcmp(it.label, "WIFI")) snprintf(b, n, "Didissnap  192.168.4.1");
+    else if (!strcmp(it.label, "BACK")) snprintf(b, n, "<");
     else snprintf(b, n, ">");
     return;
   }
@@ -118,7 +129,9 @@ inline void draw() {
   using pages::ORG;
   clear(rgb(0x0A0A0A));
   fill(0, 0, W, 28, rgb(0x1A1512));
-  text("MENU", 12, 20, 16, ORG, LEFT, 900);
+  text(adv ? "MENU > ADVANCED" : "MENU", 12, 20, 16, ORG, LEFT, 900);
+  const Item* IT = L();
+  const int N = LN();
   text("Didissnap", 468, 20, 12, rgb(0x999999), RIGHT, 600);
   const int rows = 9;
   int top = max(0, min(sel - 4, N - rows));
@@ -129,13 +142,13 @@ inline void draw() {
     int y = 32 + r * 23;
     bool s = j == sel;
     if (s) rrect(6, y, 468, 21, 4, edit ? rgb(0x5A2E00) : rgb(0x2A2320), edit ? ORG : rgb(0x8A4A10), 1.5f);
-    text(ITEMS[j].label, 16, y + 16, 14, s ? rgb(0xFFB37A) : rgb(0xDDDDDD), LEFT, 700);
+    text(IT[j].label, 16, y + 16, 14, s ? rgb(0xFFB37A) : rgb(0xDDDDDD), LEFT, 700);
     char v[40];
-    fmt(ITEMS[j], v, sizeof(v));
+    fmt(IT[j], v, sizeof(v));
     text(v, 464, y + 16, 13, s && edit ? (bl ? 0xFFFF : ORG) : rgb(0xAAAAAA), RIGHT, 600);
   }
   fill(0, H - 22, W, 22, rgb(0x1A1512));
-  text(edit ? "BTN1 = +    BTN2 = -    HOLD BTN2 = OK" : "BTN1 = DOWN   BTN2 = UP   HOLD BTN2 = SELECT   HOLD BTN1 = EXIT",
+  text(edit ? "BTN1 = +    BTN2 = -    HOLD BTN2 = OK" : (adv ? "BTN1 = DOWN   BTN2 = UP   HOLD BTN2 = SELECT   HOLD BTN1 = BACK" : "BTN1 = DOWN   BTN2 = UP   HOLD BTN2 = SELECT   HOLD BTN1 = EXIT"),
        W / 2, H - 7, 11, rgb(0xBBBBBB), CENTER, 600);
 }
 
@@ -148,13 +161,14 @@ inline void drawToast() {
 // ปุ่ม: b = 0 (ปุ่ม 1) / 1 (ปุ่ม 2)
 inline void button(int b, bool lng) {
   if (!open) {
-    if (b == 0 && lng) { open = true; sel = 0; edit = false; return; }
+    if (b == 0 && lng) { open = true; sel = 0; edit = false; adv = false; return; }
     if (lng) { if (onHold2) onHold2(); return; }
     int p = didicfg::cfg.page + (b == 0 ? 1 : -1);
     didicfg::setPage(((p % pages::N) + pages::N) % pages::N);
     return;
   }
-  const Item& it = ITEMS[sel];
+  const Item& it = L()[sel];
+  const int N = LN();
   if (edit) {
     if (b == 1 && lng) { edit = false; return; }
     if (lng) return;
@@ -165,13 +179,18 @@ inline void button(int b, bool lng) {
     set(it.key, v);
     return;
   }
-  if (b == 0 && lng) { open = false; return; }
+  if (b == 0 && lng) {   // ปุ่ม 1 ค้าง: ในเมนูย่อย = กลับเมนูหลัก, เมนูหลัก = ออก
+    if (adv) { adv = false; sel = mainSel; } else open = false;
+    return;
+  }
   if (b == 0) { sel = (sel + 1) % N; return; }
   if (!lng) { sel = (sel + N - 1) % N; return; }
   // ปุ่ม 2 ค้าง = เลือก
   if (it.key) edit = true;
   else if (!strcmp(it.label, "PEAK RESET")) { if (onPeaks) onPeaks(); toast("PEAK RESET"); }
   else if (!strcmp(it.label, "TRIP RESET")) { if (onTrip) onTrip(); toast("TRIP RESET"); }
+  else if (!strcmp(it.label, "ADVANCED")) { mainSel = sel; adv = true; sel = 0; }
+  else if (!strcmp(it.label, "BACK")) { adv = false; sel = mainSel; }
   else if (!strcmp(it.label, "EXIT")) open = false;
 }
 
