@@ -115,7 +115,17 @@ static bool pid(uint8_t p) {
   int n = parse(r, p, b, 4);
   if (n <= 0) return false;
   switch (p) {
-    case 0x0C: if (n >= 2) RAW.rpm = ((b[0] << 8) | b[1]) / 4.f; break;
+    case 0x0C:
+      if (n >= 2) {
+        float v = ((b[0] << 8) | b[1]) / 4.f;
+        uint32_t now = millis();
+        float dt = (now - RAW.rpmT) / 1000.f;
+        // อัตราเปลี่ยนรอบ (ให้จอเดาค่าระหว่างรอคำตอบถัดไป)
+        RAW.rpmRate = (RAW.rpmT && dt > 0.02f && dt < 1.f) ? constrain((v - RAW.rpm) / dt, -9000.f, 9000.f) : 0;
+        RAW.rpm = v;
+        RAW.rpmT = now;
+      }
+      break;
     case 0x0D: RAW.spd = b[0]; break;
     case 0x05: RAW.ect = b[0] - 40.f; break;
     case 0x0F: RAW.iat = b[0] - 40.f; break;
@@ -172,7 +182,9 @@ static bool findChars() {
 static bool connectTo(const NimBLEAddress& addr, const String& name) {
   strlcpy(devName, name.length() ? name.c_str() : addr.toString().c_str(), sizeof(devName));
   state = CONNECTING;
-  if (!client) { client = NimBLEDevice::createClient(); 
+  if (!client) {
+    client = NimBLEDevice::createClient();
+    client->setConnectionParams(6, 12, 0, 300);   // ช่วงคุย 7.5–15 ms (ค่าเริ่ม 30–50 ms → ทุกคำถามช้าลง) 
 #if defined(NIMBLE_CPP_VERSION_MAJOR) && NIMBLE_CPP_VERSION_MAJOR >= 3
     client->setCallbacks(cb);                 // NimBLE-Arduino 3.x
 #else
@@ -181,6 +193,7 @@ static bool connectTo(const NimBLEAddress& addr, const String& name) {
     client->setConnectTimeout(8000); }
   if (!client->connect(addr)) { strlcpy(lastMsg, "connect failed", sizeof(lastMsg)); return false; }
   linkUp = true;
+  client->updateConnParams(6, 12, 0, 300);        // บางตัวอ่านไม่รับตอนต่อ → ขออีกครั้งหลังต่อ
   if (!findChars()) { strlcpy(lastMsg, "no ELM service", sizeof(lastMsg)); client->disconnect(); linkUp = false; return false; }
   if (!rxC->subscribe(rxC->canNotify(), onNotify)) { strlcpy(lastMsg, "subscribe failed", sizeof(lastMsg)); client->disconnect(); linkUp = false; return false; }
   return true;
@@ -287,13 +300,12 @@ static void task(void*) {
       state = RUNNING;
     }
     if (dtcReq) { doDtc(); continue; }
-    // รอบเครื่องถามครึ่งหนึ่งของทั้งหมด: รอบ → ความเร็ว → รอบ → ค่าอื่น (วนทีละตัว) → ...
+    // ลำดับ 6 คำถาม: รอบ ความเร็ว รอบ รอบ ค่าอื่น(วนทีละตัว) รอบ → รอบเครื่องได้ 4 ใน 6
     static int step = 0;
-    if ((step & 1) == 0) pid(0x0C);
-    else if ((step & 3) == 1) pid(0x0D);
-    else if (slow == (int)sizeof(SLOW)) { readVolt(); slow = 0; }
-    else pid(SLOW[slow++]);
-    step++;
+    int k = step++ % 6;
+    if (k == 1) pid(0x0D);
+    else if (k == 4) { if (slow == (int)sizeof(SLOW)) { readVolt(); slow = 0; } else pid(SLOW[slow++]); }
+    else pid(0x0C);
     if (!linkUp) state = SCANNING;
   }
 }

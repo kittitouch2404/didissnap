@@ -17,6 +17,8 @@ static CarData D;
 // ค่าดิบล่าสุดจาก OBD (ตัวอ่าน OBD ใส่ค่าที่นี่ แล้ว data::update() หน่วงให้นุ่ม)
 struct RawData {
   float rpm = 850, spd = 0, ect = 45, iat = 36, volt = 14.1f, load = 18, tps = 0, map = 32, maf = 2, fuel = 67, stft = 0;
+  float rpmRate = 0;      // รอบ/วินาที ที่เปลี่ยน (จากตัวอ่าน OBD) ใช้เดาค่าระหว่างรอคำตอบ
+  uint32_t rpmT = 0;      // millis() ตอนได้ค่ารอบล่าสุด (0 = ไม่มี/โหมดจำลอง)
 };
 static RawData RAW;
 
@@ -96,7 +98,13 @@ inline void gearEstimate() {
 
 inline void update(float dt, bool demo) {
   if (demo) sim(dt);
-  sRpm.step(RAW.rpm, dt, 16); sSpd.step(RAW.spd, dt, 9); sEct.step(RAW.ect, dt, 4); sIat.step(RAW.iat, dt, 4);
+  // ค่ารอบจาก OBD มาห่าง ๆ (K-line) → เดาต่อจากอัตราเปลี่ยนล่าสุดไม่เกิน 0.25 วิ ให้เข็ม/ตัวเลขไม่ค้างเป็นขั้น
+  float rpmT = RAW.rpm;
+  if (!demo && RAW.rpmT) {
+    float age = (millis() - RAW.rpmT) / 1000.f;
+    if (age < 0.25f) rpmT = fmaxf(0, RAW.rpm + RAW.rpmRate * age);
+  }
+  sRpm.step(rpmT, dt, 16); sSpd.step(RAW.spd, dt, 9); sEct.step(RAW.ect, dt, 4); sIat.step(RAW.iat, dt, 4);
   sVolt.step(RAW.volt, dt, 5); sLoad.step(RAW.load, dt, 10); sTps.step(RAW.tps, dt, 14); sMap.step(RAW.map, dt, 10);
   sMaf.step(RAW.maf, dt, 10); sFuel.step(RAW.fuel, dt, 3);
   D.rpm = fmaxf(0, sRpm.x); D.spd = fmaxf(0, sSpd.x); D.ect = sEct.x; D.iat = sIat.x; D.volt = sVolt.x;
