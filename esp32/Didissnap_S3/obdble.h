@@ -102,10 +102,15 @@ static int parse(const String& r, uint8_t pid, uint8_t* out, int maxN) {
   return n;
 }
 
+static bool oneShot = true;          // ตัวอ่านบางตัวไม่รองรับเลขต่อท้าย → ปิดเองถ้าตอบ '?'
+static uint32_t rateT = 0, rateN = 0;
+static volatile int rate = 0;        // คำตอบต่อวินาที (ดูในเมนู)
 static bool pid(uint8_t p) {
   char c[8];
-  snprintf(c, sizeof(c), "01%02X", p);
+  // ต่อท้าย "1" = บอก ELM ว่ารอคำตอบแค่ 1 ชุด ตอบกลับทันที (ไม่ต้องรอจนหมดเวลาเผื่อ ECU อื่น)
+  snprintf(c, sizeof(c), oneShot ? "01%02X1" : "01%02X", p);
   String r = cmd(c, 1200);
+  if (oneShot && r.indexOf('?') >= 0 && r.indexOf("41") < 0) { oneShot = false; return false; }
   uint8_t b[4];
   int n = parse(r, p, b, 4);
   if (n <= 0) return false;
@@ -124,6 +129,8 @@ static bool pid(uint8_t p) {
   }
   lastData = millis();
   answers++;
+  rateN++;
+  if (millis() - rateT >= 1000) { rate = rateN; rateN = 0; rateT = millis(); }
   return true;
 }
 static bool readVolt() {             // ATRV = แรงดันที่ขาตัวอ่าน (ใช้ได้แม้ ECU ไม่รองรับ PID 42)
@@ -220,7 +227,7 @@ static bool initElm() {
   cmd("ATL0");
   cmd("ATS0");
   cmd("ATH0");
-  cmd("ATAT1");          // ปรับเวลารอคำตอบอัตโนมัติ (เร็วขึ้น)
+  cmd("ATAT2");          // ปรับเวลารอคำตอบอัตโนมัติแบบเร็วสุด
   cmd("ATSP0");          // หาโปรโตคอลเอง (Jazz GD = ISO 9141-2 K-line)
   // คำถามแรกให้เวลาหาโปรโตคอล (K-line ใช้หลายวินาที)
   for (int i = 0; i < 3; i++) {
@@ -280,10 +287,13 @@ static void task(void*) {
       state = RUNNING;
     }
     if (dtcReq) { doDtc(); continue; }
-    pid(0x0C);
-    pid(0x0D);
-    if (slow == (int)sizeof(SLOW)) { readVolt(); slow = 0; }
+    // รอบเครื่องถามครึ่งหนึ่งของทั้งหมด: รอบ → ความเร็ว → รอบ → ค่าอื่น (วนทีละตัว) → ...
+    static int step = 0;
+    if ((step & 1) == 0) pid(0x0C);
+    else if ((step & 3) == 1) pid(0x0D);
+    else if (slow == (int)sizeof(SLOW)) { readVolt(); slow = 0; }
     else pid(SLOW[slow++]);
+    step++;
     if (!linkUp) state = SCANNING;
   }
 }
@@ -299,7 +309,12 @@ inline const char* status() {
     case SCANNING: return lastMsg[0] ? lastMsg : "searching";
     case CONNECTING: return "connecting";
     case INIT: return "ECU init";
-    case RUNNING: return live() ? devName : "no data";
+    case RUNNING: {
+      if (!live()) return "no data";
+      static char b[40];
+      snprintf(b, sizeof(b), "%s %d/s", devName, rate);
+      return b;
+    }
     default: return "off";
   }
 }
