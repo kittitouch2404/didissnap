@@ -102,7 +102,7 @@ static int parse(const String& r, uint8_t pid, uint8_t* out, int maxN) {
   return n;
 }
 
-static bool oneShot = true;          // ตัวอ่านบางตัวไม่รองรับเลขต่อท้าย → ปิดเองถ้าตอบ '?'
+static bool oneShot = false;         // (ปิด: ตัวอ่านที่ใช้ตอบไม่ได้เมื่อมีเลขต่อท้าย — ใช้แบบเดิมที่ต่อติดแล้ว)          // ตัวอ่านบางตัวไม่รองรับเลขต่อท้าย → ปิดเองถ้าตอบ '?'
 static uint32_t rateT = 0, rateN = 0;
 static volatile int rate = 0;        // คำตอบต่อวินาที (ดูในเมนู)
 static bool pid(uint8_t p) {
@@ -190,7 +190,7 @@ static bool connectTo(const NimBLEAddress& addr, const String& name) {
   state = CONNECTING;
   if (!client) {
     client = NimBLEDevice::createClient();
-    client->setConnectionParams(6, 12, 0, 300);   // ช่วงคุย 7.5–15 ms (ค่าเริ่ม 30–50 ms → ทุกคำถามช้าลง) 
+    // (ไม่ตั้งช่วงคุย BLE เอง: ลองแล้วต่อไม่ติด — ใช้ค่าที่ตัวอ่านเลือก) 
 #if defined(NIMBLE_CPP_VERSION_MAJOR) && NIMBLE_CPP_VERSION_MAJOR >= 3
     client->setCallbacks(cb);                 // NimBLE-Arduino 3.x
 #else
@@ -200,7 +200,6 @@ static bool connectTo(const NimBLEAddress& addr, const String& name) {
   Serial.printf("[obd] connect %s (%s)\n", addr.toString().c_str(), devName);
   if (!client->connect(addr)) { strlcpy(lastMsg, "connect failed", sizeof(lastMsg)); Serial.println("[obd] connect failed"); return false; }
   linkUp = true;
-  client->updateConnParams(6, 12, 0, 300);        // บางตัวอ่านไม่รับตอนต่อ → ขออีกครั้งหลังต่อ
   Serial.printf("[obd] chars %s\n", findChars() ? "ok" : "NOT FOUND");
   if (!rxC || !txC) { strlcpy(lastMsg, "no ELM service", sizeof(lastMsg)); client->disconnect(); linkUp = false; return false; }
   if (!rxC->subscribe(rxC->canNotify(), onNotify)) { strlcpy(lastMsg, "subscribe failed", sizeof(lastMsg)); client->disconnect(); linkUp = false; return false; }
@@ -250,7 +249,7 @@ static bool initElm() {
   cmd("ATL0");
   cmd("ATS0");
   cmd("ATH0");
-  cmd("ATAT2");          // ปรับเวลารอคำตอบอัตโนมัติแบบเร็วสุด
+  cmd("ATAT1");          // ปรับเวลารอคำตอบอัตโนมัติ (แบบเดิมที่ใช้ได้)
   cmd("ATSP0");          // หาโปรโตคอลเอง (Jazz GD = ISO 9141-2 K-line)
   // คำถามแรกให้เวลาหาโปรโตคอล (K-line ใช้หลายวินาที)
   for (int i = 0; i < 3; i++) {
