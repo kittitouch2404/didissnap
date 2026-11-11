@@ -113,7 +113,13 @@ static bool pid(uint8_t p) {
   if (oneShot && r.indexOf('?') >= 0 && r.indexOf("41") < 0) { oneShot = false; return false; }
   uint8_t b[4];
   int n = parse(r, p, b, 4);
-  if (n <= 0) return false;
+  static int fails = 0;
+  if (n <= 0) {
+    // ตัวอ่านบางตัว (โดยเฉพาะ K-line) ตอบ NO DATA เมื่อมีเลขต่อท้าย → ไม่สำเร็จติดกัน 4 ครั้ง = กลับไปถามแบบปกติ
+    if (oneShot && ++fails >= 4) { oneShot = false; fails = 0; Serial.println("[obd] 1-response mode off"); }
+    return false;
+  }
+  fails = 0;
   switch (p) {
     case 0x0C:
       if (n >= 2) {
@@ -191,10 +197,12 @@ static bool connectTo(const NimBLEAddress& addr, const String& name) {
     client->setClientCallbacks(&cb, false);   // NimBLE-Arduino 2.x
 #endif
     client->setConnectTimeout(8000); }
-  if (!client->connect(addr)) { strlcpy(lastMsg, "connect failed", sizeof(lastMsg)); return false; }
+  Serial.printf("[obd] connect %s (%s)\n", addr.toString().c_str(), devName);
+  if (!client->connect(addr)) { strlcpy(lastMsg, "connect failed", sizeof(lastMsg)); Serial.println("[obd] connect failed"); return false; }
   linkUp = true;
   client->updateConnParams(6, 12, 0, 300);        // บางตัวอ่านไม่รับตอนต่อ → ขออีกครั้งหลังต่อ
-  if (!findChars()) { strlcpy(lastMsg, "no ELM service", sizeof(lastMsg)); client->disconnect(); linkUp = false; return false; }
+  Serial.printf("[obd] chars %s\n", findChars() ? "ok" : "NOT FOUND");
+  if (!rxC || !txC) { strlcpy(lastMsg, "no ELM service", sizeof(lastMsg)); client->disconnect(); linkUp = false; return false; }
   if (!rxC->subscribe(rxC->canNotify(), onNotify)) { strlcpy(lastMsg, "subscribe failed", sizeof(lastMsg)); client->disconnect(); linkUp = false; return false; }
   return true;
 }
@@ -219,6 +227,8 @@ static bool scanAndConnect() {
     const NimBLEAdvertisedDevice* d = res.getDevice(i);
     if (d && looksLikeObd(d) && d->getRSSI() > bestRssi) { best = d; bestRssi = d->getRSSI(); }
   }
+  Serial.printf("[obd] scan: %d devices\n", res.getCount());
+  for (int i = 0; i < res.getCount(); i++) { const NimBLEAdvertisedDevice* d = res.getDevice(i); if (d) Serial.printf("[obd]   %s  %s  %d dBm\n", d->getAddress().toString().c_str(), d->getName().c_str(), d->getRSSI()); }
   if (!best) { s->clearResults(); strlcpy(lastMsg, "no OBD found", sizeof(lastMsg)); return false; }
   NimBLEAddress addr = best->getAddress();
   String name = best->getName().c_str();
@@ -245,6 +255,7 @@ static bool initElm() {
   // คำถามแรกให้เวลาหาโปรโตคอล (K-line ใช้หลายวินาที)
   for (int i = 0; i < 3; i++) {
     String r = cmd("0100", 8000);
+    Serial.printf("[obd] 0100 -> %s\n", r.c_str());
     if (r.indexOf("4100") >= 0) return true;
     if (!linkUp) return false;
   }
