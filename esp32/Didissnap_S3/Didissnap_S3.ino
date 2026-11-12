@@ -26,6 +26,7 @@
 #define DIDI_TX_POWER WIFI_POWER_8_5dBm   // กำลังส่ง WiFi ต่ำลง กินไฟน้อย (มือถืออยู่ในรถใกล้ ๆ)
 #include "DidissnapLink.h"
 #include "obdble.h"
+#include "didinow_s3.h"
 #include "DidissnapConfig.h"
 #include "DidissnapButtons.h"
 #include "DidissnapPics.h"
@@ -299,6 +300,7 @@ void setup() {
   step(4, "wifi");                                  // ต้องเปิด WiFi ก่อนเว็บเซิร์ฟเวอร์ (ไม่งั้น crash)
   if (skip(4)) { Serial.println("SAFE MODE: skip WiFi"); wifiOn = false; }
   else if (!didilink::begin()) { Serial.println("WiFi FAILED"); wifiOn = false; }
+  if (wifiOn) didinow::begin();                     // ส่งค่ารถให้จอ CYD ทาง ESP-NOW
   step(5, "config + web");
   didicfg::onPeaksReset = resetPeaks;
   didicfg::onTripReset = resetTrip;
@@ -379,6 +381,16 @@ void loop() {
     D.link = lv ? 2 : 1;
   } else D.link = demo ? 0 : 2;
   data::update(dt, demo);
+  if (wifiOn) {                      // ESP-NOW: ส่งค่าให้จอ CYD + ตอบคำขอ DTC
+    didinow::loop((uint8_t)D.link);
+    uint16_t id;
+    uint8_t cmd = didinow::takeCmd(&id);
+    if (cmd) {
+      bool run = obdOn && obdble::state == obdble::RUNNING;
+      if (cmd == DN_CMD_DTC_READ) didinow::reply(cmd, id, run, run ? obdble::readDtc() : String("[]"));
+      else if (cmd == DN_CMD_DTC_CLEAR) didinow::reply(cmd, id, run && obdble::clearDtc(), String("[]"));
+    }
+  }
   perf::sample(RAW.spd);
   if (wifiOn) didilink::send(D.rpm, D.spd, D.ect, D.iat, D.volt, D.load, D.tps, D.map, D.maf, D.fuel);
 
