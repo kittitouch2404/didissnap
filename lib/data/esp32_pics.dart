@@ -21,7 +21,7 @@ class BoardPics {
   BoardPics(this.total, this.used, this.maxPics, this.auto, this.slots, this.pics);
   final int total, used, maxPics;
   final bool auto;
-  final List<String> slots; // หน้า 9, 10, 11 ('' = รูปเดิม)
+  final List<String> slots; // หน้า 13, 14, 15 บนบอร์ด ('' = รูปเดิม; หน้า 13 = ตัวละคร ไม่ใช้)
   final List<BoardPic> pics;
   int get free => math.max(0, total - used);
 

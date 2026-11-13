@@ -1,0 +1,8 @@
+# OBD2 CYD Dashboard: แฟลช 4MB เกือบทั้งหมดเป็นพื้นที่โปรแกรม (~3.9 MB) ไม่มี OTA ไม่มี SPIFFS (โค้ดไม่ได้ใช้ทั้งคู่)
+# nvs / otadata อยู่ตำแหน่งเดียวกับ partition มาตรฐาน -> ค่าในเมนูและคาลิเบรตทัชไม่หาย
+# Arduino IDE: Tools -> Partition Scheme -> Custom
+# Name,   Type, SubType,  Offset,   Size
+nvs,      data, nvs,      0x9000,   0x5000,
+otadata,  data, ota,      0xe000,   0x2000,
+app0,     app,  ota_0,    0x10000,  0x3E0000,
+coredump, data, coredump, 0x3F0000, 0x10000,

@@ -1269,6 +1269,13 @@ class _Esp32TabState extends State<Esp32Tab> {
             value: _i('flip', 0) != 0,
             onChanged: (v) => _set('flip', v ? 1 : 0),
           ),
+          if (_cfg?.containsKey('p13spd') ?? false)
+            SwitchListTile(
+              dense: true,
+              title: const Text('หน้า 13 โชว์ความเร็ว (มุมขวาบน)'),
+              value: _i('p13spd', 1) != 0,
+              onChanged: (v) => _set('p13spd', v ? 1 : 0),
+            ),
           if (_slots.isNotEmpty) ...[
             _slotRow('หน้า 13 แถวล่าง ช่อง 1', 'p13a', 0),
             _slotRow('หน้า 13 แถวล่าง ช่อง 2', 'p13b', 1),

@@ -90,10 +90,9 @@ static void drawStrip(int k, uint16_t* sb) {
   if (jobMenu) menu::draw();
   else pages::draw(jobPage);
   menu::drawToast();
-  if (k == N_STRIPS - 1 && menu::perfInfo) {     // ตัวเลขวัดความเร็ว (ชั่วคราว) มุมล่างซ้าย
-    char pb[112];
-    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  max %d ms  lcd %d Hz  %dcore  fl %d  gif %s  cp %d  rc %u%s", perfFps, (int)(perfDraw / 1000), perfMax, perfLcd,
-             (workGo && menu::drawCores == 2) ? 2 : 1, perfFlash, bg::gifInternal ? "RAM" : "PSRAM", (int)lcd::copyMBps, (unsigned)(lcd::useBounce ? lcd::resyncs : lcd::recovers), lcd::useBounce ? (lcd::bEof ? " B" : " B?") : "");
+  if (k == N_STRIPS - 1 && menu::perfInfo) {     // ตัวเลข fps มุมล่างซ้าย (เมนู PERF INFO) — รายละเอียดเต็มดูใน Serial
+    char pb[48];
+    snprintf(pb, sizeof(pb), "%d fps  draw %d ms  %dcore", perfFps, (int)(perfDraw / 1000), (workGo && menu::drawCores == 2) ? 2 : 1);
     gfx::fillA(0, LCD_H - 14, gfx::textWidth(pb, 11, 600) + 8, 14, 0, 180);
     gfx::text(pb, 4, LCD_H - 3, 11, gfx::rgb(0x00E05A), gfx::LEFT, 600);
   }

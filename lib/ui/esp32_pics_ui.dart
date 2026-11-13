@@ -14,7 +14,9 @@ import 'paint_utils.dart';
 
 const int kBoardW = 480, kBoardH = 272;
 const int kMaxUpload = 4 * 1024 * 1024; // บอร์ด S3 รับได้ 4 MB (บอร์ดรุ่นเก่าจะตอบ "ใหญ่เกิน" เอง)
-const _slotNames = ['หน้า 9 · Picture', 'หน้า 10 · Car run', 'หน้า 11 · Photo'];
+// ช่องรูปในบอร์ด: 0 = หน้า 13 (ตอนนี้เป็นหน้าตัวละครที่ฝังในบอร์ด ไม่ใช้รูปที่อัป), 1 = หน้า 14, 2 = หน้า 15
+const _slotNames = ['หน้า 13 · Character', 'หน้า 14 · Car run', 'หน้า 15 · Photo'];
+const _slotShown = [1, 2]; // ช่องที่เลือกรูปได้
 
 String fmtBytes(int b) =>
     b >= 1048576 ? '${(b / 1048576).toStringAsFixed(1)} MB' : '${(b / 1024).round()} KB';
@@ -279,11 +281,11 @@ class _Esp32PicsSectionState extends State<Esp32PicsSection> {
       builder: (c) => SimpleDialog(
         title: const Text('ส่งรูปแล้ว ✓ ใช้รูปนี้ที่ไหน?'),
         children: [
-          for (var i = 0; i < 3; i++)
+          for (final i in _slotShown)
             SimpleDialogOption(onPressed: () => Navigator.pop(c, i), child: Text(_slotNames[i])),
           SimpleDialogOption(
               onPressed: () => Navigator.pop(c, -1),
-              child: const Text('หน้า 12 · รูปตามรอบ อย่างเดียว')),
+              child: const Text('หน้า 16 · รูปตามรอบ อย่างเดียว')),
         ],
       ),
     );
@@ -382,7 +384,7 @@ class _Esp32PicsSectionState extends State<Esp32PicsSection> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Text(_err!, style: const TextStyle(color: kRed))),
       if (p != null) ...[
-        for (var i = 0; i < 3; i++)
+        for (final i in _slotShown)
           ListTile(
             dense: true,
             leading: p.slots[i].isEmpty ? const SizedBox(width: 84, child: Icon(Icons.photo_outlined)) : _thumb(p.slots[i]),
@@ -396,7 +398,7 @@ class _Esp32PicsSectionState extends State<Esp32PicsSection> {
               onChanged: _busy ? null : (v) => _run(() => _api.setSlot(i, v ?? '')),
             ),
           ),
-        hdr('หน้า 12 · รูปตามรอบ'),
+        hdr('หน้า 16 · รูปตามรอบ'),
         SwitchListTile(
           dense: true,
           title: const Text('แบ่งช่วงรอบอัตโนมัติ (เท่า ๆ กันถึง Redline)'),
