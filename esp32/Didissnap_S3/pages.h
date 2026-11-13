@@ -505,12 +505,14 @@ inline void p9() {                   // หน้า 13
   pt(f0(D.rpm), rr, 10, PX_RPM, over() ? PXR : WH, RIGHT);
   int y = 10 + max(8 * PX_RPM, lh()) + 8;
   rpmHp(8, y, PX_BAR_W, PX_BAR_H);
-  // ความเร็ว: มุมขวาบน
-  int sx = 8 + PX_BAR_W + 22;
-  pt("SPEED", sx, 10, PX_LAB);
-  int sr = sx + pxWidth("888", PX_SPD);
-  pt(f0(D.spd), sr, 10 + lh() + 6, PX_SPD, WH, RIGHT);
-  pt("km/h", sr + 8, 10 + lh() + 6 + 8 * PX_SPD - lh(), PX_LAB);
+  // ความเร็ว: มุมขวาบน (ปิดได้ในเมนู PAGES > P13 SPEED)
+  if (didicfg::cfg.p13spd) {
+    int sx = 8 + PX_BAR_W + 22;
+    pt("SPEED", sx, 10, PX_LAB);
+    int sr = sx + pxWidth("888", PX_SPD);
+    pt(f0(D.spd), sr, 10 + lh() + 6, PX_SPD, WH, RIGHT);
+    pt("km/h", sr + 8, 10 + lh() + 6 + 8 * PX_SPD - lh(), PX_LAB);
+  }
   // แถวล่าง 4 ช่อง (เลือกค่าได้จากเมนู/แอป/เว็บ)
   const auto& c = didicfg::cfg;
   const int sl[4] = {c.p13a, c.p13b, c.p13c, c.p13d};

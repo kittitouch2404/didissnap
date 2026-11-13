@@ -32,7 +32,8 @@ struct Config {
   int autoCycle = 0;      // สลับหน้าเองทุก N วินาที (0 = ปิด)
   int gearCount = 6;      // จำนวนเกียร์
   float gears[6] = {118, 68, 47, 36, 29, 24};   // rpm ต่อ 1 km/h ของแต่ละเกียร์
-  int p13a = 0, p13b = 1, p13c = 2, p13d = 3;   // หน้ารูป (13): ค่าที่โชว์ในแถวล่าง 4 ช่อง (ลำดับใน SLOT_NAMES)
+  int p13a = 0, p13b = 1, p13c = 2, p13d = 3;
+  int p13spd = 1;                                 // หน้า 13: โชว์ความเร็วมุมขวาบน (1 = เปิด)   // หน้ารูป (13): ค่าที่โชว์ในแถวล่าง 4 ช่อง (ลำดับใน SLOT_NAMES)
 };
 // ค่าที่เลือกโชว์ในช่องล่างของหน้า 13 ได้
 static const char* const SLOT_NAMES[] = {"COOLANT", "IAT", "BATT", "BOOST", "LOAD", "TPS", "MAF", "FUEL", "SPEED", "TRIP", "STFT"};
@@ -70,6 +71,7 @@ inline void load() {
     if (v >= 5.0f && v <= 400.0f) cfg.gears[g] = v;
   }
   cfg.p13a = constrain(prefs->getInt("p13a", cfg.p13a), 0, N_SLOTS - 1);
+  cfg.p13spd = prefs->getInt("p13spd", cfg.p13spd) ? 1 : 0;
   cfg.p13b = constrain(prefs->getInt("p13b", cfg.p13b), 0, N_SLOTS - 1);
   cfg.p13c = constrain(prefs->getInt("p13c", cfg.p13c), 0, N_SLOTS - 1);
   cfg.p13d = constrain(prefs->getInt("p13d", cfg.p13d), 0, N_SLOTS - 1);
@@ -90,6 +92,7 @@ inline void save() {
     prefs->putFloat(k, cfg.gears[g]);
   }
   prefs->putInt("p13a", cfg.p13a);
+  prefs->putInt("p13spd", cfg.p13spd);
   prefs->putInt("p13b", cfg.p13b);
   prefs->putInt("p13c", cfg.p13c);
   prefs->putInt("p13d", cfg.p13d);
@@ -121,6 +124,8 @@ inline String toJson() {
     s += "\":";
     s += String(cfg.gears[g], 1);
   }
+  s += ",\"p13spd\":";
+  s += cfg.p13spd;
   s += ",\"p13a\":";
   s += cfg.p13a;
   s += ",\"p13b\":";
@@ -158,6 +163,7 @@ inline bool setKV(const String& k, float v) {
   else if (k == "page") cfg.page = constrain(iv, 0, pageCount - 1);
   else if (k == "autoCycle") cfg.autoCycle = constrain(iv, 0, 120);
   else if (k == "gearCount") cfg.gearCount = constrain(iv, 3, 6);
+  else if (k == "p13spd") cfg.p13spd = iv ? 1 : 0;
   else if (k == "p13a") cfg.p13a = constrain(iv, 0, N_SLOTS - 1);
   else if (k == "p13b") cfg.p13b = constrain(iv, 0, N_SLOTS - 1);
   else if (k == "p13c") cfg.p13c = constrain(iv, 0, N_SLOTS - 1);
@@ -169,7 +175,7 @@ inline bool setKV(const String& k, float v) {
 }
 
 static const char* const KEYS[] = {"maxRpm", "tempAlert", "bri", "briAuto", "flip", "page",
-                                   "autoCycle", "gearCount", "g0", "g1", "g2", "g3", "g4", "g5", "p13a", "p13b", "p13c", "p13d"};
+                                   "autoCycle", "gearCount", "g0", "g1", "g2", "g3", "g4", "g5", "p13a", "p13b", "p13c", "p13d", "p13spd"};
 static const int N_KEYS = sizeof(KEYS) / sizeof(KEYS[0]);
 
 // หาเลขหลัง "key": ในข้อความ JSON แบบง่าย (ไม่ต้องใช้ไลบรารี JSON)
@@ -277,6 +283,7 @@ button.o{background:none;border:1px solid #888;color:#ddd}
 <div class="row"><span>ความสว่าง <b id="briV"></b></span><input type="range" id="bri" min="10" max="100" step="10"></div>
 <div class="row"><span>ปรับความสว่างตามแสงอัตโนมัติ</span><input type="checkbox" class="sw" id="briAuto"></div>
 <div class="row"><span>กลับจอ 180°</span><input type="checkbox" class="sw" id="flip"></div>
+<div class="row p13r" style="display:none"><span>หน้า 13 โชว์ความเร็ว</span><input type="checkbox" class="sw" id="p13spd"></div>
 <div class="row p13r" style="display:none"><span>หน้า 13 แถวล่าง ช่อง 1</span><select id="p13a"></select></div>
 <div class="row p13r" style="display:none"><span>หน้า 13 แถวล่าง ช่อง 2</span><select id="p13b"></select></div>
 <div class="row p13r" style="display:none"><span>หน้า 13 แถวล่าง ช่อง 3</span><select id="p13c"></select></div>
@@ -305,14 +312,14 @@ const $=i=>document.getElementById(i);let C={};
 function msg(t){const m=$('msg');m.textContent=t;m.style.opacity=1;clearTimeout(msg.t);msg.t=setTimeout(()=>m.style.opacity=0,1800)}
 function fill(j){C=j.cfg;if(j.slots){['p13a','p13b','p13c','p13d'].forEach(k=>{const e=$(k);e.innerHTML=j.slots.map((n,i)=>`<option value="${i}">${n}</option>`).join('');e.value=C[k];});document.querySelectorAll('.p13r').forEach(r=>r.style.display='');}const p=$('page');p.innerHTML=j.pages.map((n,i)=>`<option value="${i}">${i+1}. ${n}</option>`).join('');p.value=C.page;
 ['maxRpm','tempAlert','autoCycle','gearCount','bri'].forEach(k=>$(k).value=C[k]);$('briV').textContent=C.bri+'%';
-$('briAuto').checked=!!C.briAuto;$('flip').checked=!!C.flip;
+$('briAuto').checked=!!C.briAuto;$('flip').checked=!!C.flip;$('p13spd').checked=C.p13spd!==0;
 let g='';for(let i=0;i<C.gearCount;i++)g+=`<div class="row"><span>เกียร์ ${i+1}</span><input type="number" step="0.1" id="g${i}" value="${C['g'+i]}"></div>`;$('gears').innerHTML=g;
 for(let i=0;i<C.gearCount;i++)$('g'+i).onchange=e=>set('g'+i,e.target.value)}
 async function load(){fill(await (await fetch('/api/cfg')).json())}
 async function set(k,v){const r=await fetch('/api/set?'+k+'='+encodeURIComponent(v));fill(await r.json());msg('บันทึกแล้ว')}
 ['maxRpm','tempAlert','autoCycle','gearCount','page','p13a','p13b','p13c','p13d'].forEach(k=>$(k).onchange=e=>set(k,e.target.value));
 $('bri').oninput=e=>$('briV').textContent=e.target.value+'%';$('bri').onchange=e=>set('bri',e.target.value);
-$('briAuto').onchange=e=>set('briAuto',e.target.checked?1:0);$('flip').onchange=e=>set('flip',e.target.checked?1:0);
+$('briAuto').onchange=e=>set('briAuto',e.target.checked?1:0);$('flip').onchange=e=>set('flip',e.target.checked?1:0);$('p13spd').onchange=e=>set('p13spd',e.target.checked?1:0);
 async function dtc(){$('codes').textContent='กำลังอ่าน...';const j=await (await fetch('/api/dtc')).json();$('codes').innerHTML=j.dtc.length?j.dtc.map(c=>`<div>⚠ ${c}</div>`).join(''):'<div style="color:#00E05A">ไม่พบรหัส DTC ✓</div>'}
 async function dtcClear(){if(!confirm('ลบรหัส DTC และดับไฟ Check Engine?'))return;const j=await (await fetch('/api/dtc_clear')).json();msg(j.cleared?'ลบแล้ว':'ECU ไม่ยืนยัน');if(j.cleared)$('codes').innerHTML=''}
 async function act(a,t){await fetch('/api/'+a);msg(t)}

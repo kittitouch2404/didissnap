@@ -24,6 +24,7 @@ static const Item L_DISP[] = {
 static const Item L_PAGES[] = {
     {"PAGE", "page", 0, pages::N - 1, 1, "Page shown now (also after restart)"},
     {"AUTO CYCLE", "autoCycle", 0, 120, 5, "Change page by itself every N seconds"},
+    {"P13 SPEED", "p13spd", 0, 1, 1, "Page 13: show speed at the top right"},
     {"P13 SLOT 1", "p13a", 0, 0, 1, "Page 13 bottom row - value 1"},
     {"P13 SLOT 2", "p13b", 0, 0, 1, "Page 13 bottom row - value 2"},
     {"P13 SLOT 3", "p13c", 0, 0, 1, "Page 13 bottom row - value 3"},
@@ -104,6 +105,7 @@ inline int value(const char* k) {
   if (!strcmp(k, "flip")) return c.flip;
   if (!strcmp(k, "gearCount")) return c.gearCount;
   if (!strcmp(k, "p13a")) return c.p13a;
+  if (!strcmp(k, "p13spd")) return c.p13spd;
   if (!strcmp(k, "p13b")) return c.p13b;
   if (!strcmp(k, "p13c")) return c.p13c;
   if (!strcmp(k, "p13d")) return c.p13d;
@@ -126,13 +128,14 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "maxRpm")) snprintf(b, n, "%d rpm", v);
   else if (!strcmp(it.key, "tempAlert")) snprintf(b, n, "%d C", v);
   else if (!strcmp(it.key, "autoCycle")) { if (v) snprintf(b, n, "%d s", v); else snprintf(b, n, "OFF"); }
+  else if (!strcmp(it.key, "p13spd")) snprintf(b, n, v ? "ON" : "OFF");
   else if (!strncmp(it.key, "p13", 3)) snprintf(b, n, "%s", didicfg::SLOT_NAMES[v % didicfg::N_SLOTS]);
   else if (!strcmp(it.key, "obdBle")) snprintf(b, n, "%s", v ? "ON" : "OFF");
   else if (!strcmp(it.key, "copySpd")) snprintf(b, n, "%d MB/s", v);
   else if (!strcmp(it.key, "gifTest")) { static const char* const GT[] = {"NORMAL", "DECODE ONLY", "NO DECODE", "DECODE NO WRITE", "CPU LOAD ONLY"}; snprintf(b, n, "%s", GT[v % 5]); }
   else if (!strcmp(it.key, "fontMem")) snprintf(b, n, v ? "FLASH" : "PSRAM");
   else if (!strcmp(it.key, "lcdMode")) snprintf(b, n, "%s", LCD_MODE_NAME[v & 3]);
-  else if (!strcmp(it.key, "briAuto") || !strcmp(it.key, "flip") || !strcmp(it.key, "perf") || !strcmp(it.key, "bounce") || !strcmp(it.key, "bandSkip")) snprintf(b, n, v ? "ON" : "OFF");
+  else if (!strcmp(it.key, "briAuto") || !strcmp(it.key, "flip") || !strcmp(it.key, "perf") || !strcmp(it.key, "bounce") || !strcmp(it.key, "bandSkip") || !strcmp(it.key, "p13spd")) snprintf(b, n, v ? "ON" : "OFF");
   else snprintf(b, n, "%d", v);
 }
 inline void set(const char* k, int v) {
@@ -312,7 +315,7 @@ inline void button(int b, bool lng) {
     if (lng) return;
     int v = value(it.key) + (b == 0 ? it.st : -it.st);
     if (!strcmp(it.key, "page")) v = (v + pages::N) % pages::N;
-    else if (!strncmp(it.key, "p13", 3)) v = (v + didicfg::N_SLOTS) % didicfg::N_SLOTS;   // วนรอบ
+    else if (!strncmp(it.key, "p13", 3) && strcmp(it.key, "p13spd")) v = (v + didicfg::N_SLOTS) % didicfg::N_SLOTS;   // วนรอบ
     else v = constrain(v, it.mn, it.mx);
     set(it.key, v);
     return;
