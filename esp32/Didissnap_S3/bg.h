@@ -24,7 +24,13 @@ inline bool draw() { if (hostImg) { memcpy(GBUF + GY0 * 480, hostImg + GY0 * 480
 #include "freertos/semphr.h"
 #include "rom/ets_sys.h"
 #include "gfx.h"
+// รูปในตัวเดิม (รถวิ่ง/ภาพนิ่ง หน้า 14-15) ปิดไว้: หน้า 14-16 ไม่มีรูปที่อัป = พื้นดำ + ข้อความ (ประหยัดแฟลช ~650 KB)
+#ifndef DIDI_BUILTIN_PICS
+#define DIDI_BUILTIN_PICS 0
+#endif
+#if DIDI_BUILTIN_PICS
 #include "bimg.h"
+#endif
 #include "rpmface.h"
 
 namespace bg {
@@ -200,10 +206,12 @@ static void task(void*) {
       publish(-1);
       lastErr[0] = 0;
       int b = backIdx();
-      if (have.kind == BI_JPG9) { if (decodeJpeg(BI_PIC9, sizeof(BI_PIC9), buf[b])) publish(b); }
-      else if (have.kind == BI_FACE) { if (decodeJpeg(RF_JPG, sizeof(RF_JPG), buf[b])) publish(b); }
+      if (have.kind == BI_FACE) { if (decodeJpeg(RF_JPG, sizeof(RF_JPG), buf[b])) publish(b); }
+#if DIDI_BUILTIN_PICS
+      else if (have.kind == BI_JPG9) { if (decodeJpeg(BI_PIC9, sizeof(BI_PIC9), buf[b])) publish(b); }
       else if (have.kind == BI_JPG11) { if (decodeJpeg(BI_PIC11, sizeof(BI_PIC11), buf[b])) publish(b); }
       else if (have.kind == BI_RUN_ANIM) { runIdx = 0; nextT = 0; }
+#endif
       else if (have.kind == FILE_PIC && loadFile(have.path)) {
         bool isGif = fileLen > 3 && fileBuf[0] == 'G' && fileBuf[1] == 'I' && fileBuf[2] == 'F';
         if (!isGif) { if (decodeJpeg(fileBuf, fileLen, buf[b])) publish(b); }
@@ -220,6 +228,7 @@ static void task(void*) {
       }
     }
     uint32_t now = millis();
+#if DIDI_BUILTIN_PICS
     if (have.kind == BI_RUN_ANIM) {
       if (!runBlock) runBlock = (uint16_t*)heap_caps_malloc(((size_t)BI_RUN_N * RUN_ROWS + RUN_Y0) * W * 2, MALLOC_CAP_SPIRAM);
       if (runBlock && runReady < BI_RUN_N) {             // ยังถอดไม่ครบ → ถอดเพิ่มทีละเฟรม
@@ -245,6 +254,7 @@ static void task(void*) {
         nextT = now + (uint32_t)constrain(6000.f / fmaxf(sp, 1.f), 40.f, 400.f);
       }
     }
+#endif
     if (gifOpen && now >= nextT && gifTest == 2 && gifFrameNo >= 3) nextT = now + 50;
     if (gifOpen && now >= nextT && gifTest == 4 && gifFrameNo >= 3) {   // ทดสอบ: คอร์ 0 วนเลขเฉย ๆ 25 ms (ไม่ใช้ PSRAM)
       volatile uint32_t acc = 0;

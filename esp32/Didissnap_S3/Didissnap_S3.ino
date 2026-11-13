@@ -186,7 +186,7 @@ static void chooseBackground(int page) {
   else if (page >= pages::PG_PIC && page <= pages::PG_PHOTO) {
     String p = slotPath(page - pages::PG_PIC);
     if (p.length()) bg::select(bg::FILE_PIC, p, version);
-    else bg::select(page == pages::PG_PIC ? bg::BI_JPG9 : page == pages::PG_RUN ? bg::BI_RUN_ANIM : bg::BI_JPG11);
+    else bg::select(bg::NONE);                       // ไม่มีรูปที่อัป = พื้นดำ + ข้อความ (pages::noPics)
   } else if (page == pages::PG_RPM) {
     String n = forRpm(D.rpm, didicfg::cfg.maxRpm);
     if (n.length()) bg::select(bg::FILE_PIC, path(n), version);

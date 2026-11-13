@@ -117,10 +117,12 @@ inline void topBar() {               // หน้า 14-16
   obd(474, 14, RIGHT);
   rpmHp(8, by, PX_BAR_W, PX_BAR_H);
 }
+// หน้า 14-16 ตอนยังไม่มีรูป: พื้นดำ + ข้อความ 3 แถว (ตัวพิกเซลแบบหน้า 13)
 inline void noPics() {
   clear(BK);
-  text("NO PICTURES", W / 2, 140, 26, rgb(0x666666), CENTER, 900);
-  text("SEND FROM APP: MENU > ESP32", W / 2, 166, 13, rgb(0x666666), CENTER, 600);
+  pxText("DIDISSNAP.", W / 2, 106, 4, rgb(0xFFD23C), CENTER, 3);
+  pxText("Change Photo", W / 2, 160, 2, WH, CENTER, 2);
+  pxText("WIFI Didissnap 192.168.4.1", W / 2, 196, 1, rgb(0xAAAAAA), CENTER, 1);
 }
 
 // ---------------------------------------------------------------- 1 Bar graph
@@ -531,8 +533,8 @@ inline void p9() {                   // หน้า 13
   dots();
   shiftFlash();
 }
-inline void pTop() {          // 10, 11
-  bg::draw();
+inline void pTop() {          // 14, 15
+  if (!bg::draw()) noPics();
   topBar();
   dots();
   shiftFlash();
