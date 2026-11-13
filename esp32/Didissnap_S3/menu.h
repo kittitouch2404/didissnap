@@ -1,6 +1,7 @@
 // menu.h — เมนูบนจอ ใช้ปุ่ม 2 ปุ่ม (เหมือนในพรีวิว)
 //  หน้าปกติ: ปุ่ม1 สั้น = หน้าถัดไป · ปุ่ม2 สั้น = หน้าก่อน · ปุ่ม1 ค้าง = เปิดเมนู · ปุ่ม2 ค้าง = ARM/STOP (หน้า Record)
-//  ในเมนู : ปุ่ม1 = ลง · ปุ่ม2 = ขึ้น · ปุ่ม2 ค้าง = เลือก/แก้ค่า · ปุ่ม1 ค้าง = ออก
+//  หน้าแรกเมนู (ช่องไอคอน 6 หมวด): ปุ่ม1 = ช่องถัดไป · ปุ่ม2 = ช่องก่อน · ปุ่ม2 ค้าง = เข้าหมวด · ปุ่ม1 ค้าง = ออก
+//  ในหมวด : ปุ่ม1 = ลง · ปุ่ม2 = ขึ้น · ปุ่ม2 ค้าง = เลือก/แก้ค่า · ปุ่ม1 ค้าง = กลับหน้าช่องไอคอน
 //  แก้ค่า : ปุ่ม1 = เพิ่ม · ปุ่ม2 = ลด · ปุ่ม2 ค้าง = ตกลง
 #pragma once
 #include "gfx.h"
@@ -10,54 +11,60 @@
 namespace menu {
 using namespace gfx;
 
-struct Item { const char* label; const char* key; int mn, mx, st; };
-static const Item ITEMS[] = {
-    {"PAGE", "page", 0, pages::N - 1, 1},
-    {"BRIGHTNESS", "bri", 10, 100, 10},
-    {"AUTO BRIGHT", "briAuto", 0, 1, 1},
-    {"REDLINE", "maxRpm", 2000, 12000, 250},
-    {"TEMP ALERT", "tempAlert", 70, 130, 1},
-    {"AUTO CYCLE", "autoCycle", 0, 120, 5},
-    {"FLIP 180", "flip", 0, 1, 1},
-    {"GEARS", "gearCount", 3, 6, 1},
-    {"REFRESH", "lcdMode", 0, 3, 1},
-    {"PAGE 13 VALUES", nullptr, 0, 0, 0},
-    {"OBD BLE", "obdBle", 0, 1, 1},
-    {"PERF INFO", "perf", 0, 1, 1},
-    {"ADVANCED", nullptr, 0, 0, 0},
-    {"PEAK RESET", nullptr, 0, 0, 0},
-    {"TRIP RESET", nullptr, 0, 0, 0},
-    {"WIFI", nullptr, 0, 0, 0},
-    {"EXIT", nullptr, 0, 0, 0},
+struct Item { const char* label; const char* key; int mn, mx, st; const char* desc; };
+// ---- หมวดต่าง ๆ (หน้าแรกของเมนูเป็นช่องไอคอน 2x3) ----
+static const Item L_DISP[] = {
+    {"BRIGHTNESS", "bri", 10, 100, 10, "Screen brightness"},
+    {"AUTO BRIGHT", "briAuto", 0, 1, 1, "Brightness follows the light sensor"},
+    {"FLIP 180", "flip", 0, 1, 1, "Turn the picture upside down"},
+    {"REFRESH", "lcdMode", 0, 3, 1, "Screen refresh rate (board restarts)"},
+    {"PERF INFO", "perf", 0, 1, 1, "Show fps / timing text at the bottom"},
+    {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
 };
-static const int N = sizeof(ITEMS) / sizeof(ITEMS[0]);
-// เมนูย่อย ADVANCED: ค่าสำหรับทดสอบ/ปรับจูนจอ (ไม่ต้องยุ่งตอนใช้งานปกติ)
-static const Item ADV[] = {
-    {"DRAW CORES", "cores", 1, 2, 1},
-    {"COPY SPEED", "copySpd", 10, 80, 10},
-    {"LCD BOUNCE", "bounce", 0, 1, 1},
-    {"BAND SKIP", "bandSkip", 0, 1, 1},
-    {"GIF TEST", "gifTest", 0, 4, 1},
-    {"OBD FORGET", nullptr, 0, 0, 0},
-    {"BACK", nullptr, 0, 0, 0},
+static const Item L_PAGES[] = {
+    {"PAGE", "page", 0, pages::N - 1, 1, "Page shown now (also after restart)"},
+    {"AUTO CYCLE", "autoCycle", 0, 120, 5, "Change page by itself every N seconds"},
+    {"P13 SLOT 1", "p13a", 0, 0, 1, "Page 13 bottom row - value 1"},
+    {"P13 SLOT 2", "p13b", 0, 0, 1, "Page 13 bottom row - value 2"},
+    {"P13 SLOT 3", "p13c", 0, 0, 1, "Page 13 bottom row - value 3"},
+    {"P13 SLOT 4", "p13d", 0, 0, 1, "Page 13 bottom row - value 4"},
+    {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
 };
-static const int NA = sizeof(ADV) / sizeof(ADV[0]);
-// เมนูย่อย PAGE 13 VALUES: ค่า 4 ช่องแถวล่างของหน้า 13
-static const Item P13[] = {
-    {"SLOT 1", "p13a", 0, 0, 1},
-    {"SLOT 2", "p13b", 0, 0, 1},
-    {"SLOT 3", "p13c", 0, 0, 1},
-    {"SLOT 4", "p13d", 0, 0, 1},
-    {"BACK", nullptr, 0, 0, 0},
+static const Item L_OBD[] = {
+    {"OBD BLE", "obdBle", 0, 1, 1, "Bluetooth LE OBD adapter on/off (board restarts)"},
+    {"READ DTC", nullptr, 0, 0, 0, "Read stored fault codes from the car"},
+    {"CLEAR DTC", nullptr, 0, 0, 0, "Erase fault codes (engine OFF, key ON)"},
+    {"FORGET ADAPTER", nullptr, 0, 0, 0, "Forget the saved adapter and search again"},
+    {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
 };
-static const int NP = sizeof(P13) / sizeof(P13[0]);
-static int sub = 0;           // 0 = เมนูหลัก, 1 = ADVANCED, 2 = PAGE 13 VALUES
-static bool adv = false;      // (เก็บไว้ให้โค้ดเดิม) = อยู่ในเมนูย่อยใดก็ได้
-static int mainSel = 0;       // ตำแหน่งในเมนูหลักตอนเข้าเมนูย่อย
-static const char* const SUB_TITLE[] = {"MENU", "MENU > ADVANCED", "MENU > PAGE 13 VALUES"};
-static inline const Item* L() { return sub == 1 ? ADV : (sub == 2 ? P13 : ITEMS); }
-static inline int LN() { return sub == 1 ? NA : (sub == 2 ? NP : N); }
-static inline void enterSub(int k, int cur) { mainSel = cur; sub = k; adv = k != 0; }
+static const Item L_CAR[] = {
+    {"REDLINE", "maxRpm", 2000, 12000, 250, "Shift light / red zone starts here"},
+    {"TEMP ALERT", "tempAlert", 70, 130, 1, "Coolant warning temperature"},
+    {"GEARS", "gearCount", 3, 6, 1, "Number of gears for the gear display"},
+    {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
+};
+static const Item L_RESET[] = {
+    {"PEAK RESET", nullptr, 0, 0, 0, "Clear max RPM / speed / temperatures"},
+    {"TRIP RESET", nullptr, 0, 0, 0, "Set the trip distance back to 0"},
+    {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
+};
+static const Item L_ADV[] = {
+    {"DRAW CORES", "cores", 1, 2, 1, "Draw the screen with 1 or 2 CPU cores"},
+    {"COPY SPEED", "copySpd", 10, 80, 10, "PSRAM copy speed limit (screen stability)"},
+    {"LCD BOUNCE", "bounce", 0, 1, 1, "LCD bounce buffers (board restarts)"},
+    {"BAND SKIP", "bandSkip", 0, 1, 1, "Skip unchanged screen bands (test)"},
+    {"GIF TEST", "gifTest", 0, 4, 1, "GIF decoder test modes"},
+    {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
+};
+enum { IC_SUN, IC_PAGES, IC_BT, IC_CAR, IC_RESET, IC_GEAR };
+struct Cat { const char* name; const Item* it; int n; int icon; };
+#define MCAT(nm, arr, ic) {nm, arr, (int)(sizeof(arr) / sizeof(arr[0])), ic}
+static const Cat CATS[] = {MCAT("DISPLAY", L_DISP, IC_SUN), MCAT("PAGES", L_PAGES, IC_PAGES), MCAT("OBD", L_OBD, IC_BT),
+                           MCAT("CAR", L_CAR, IC_CAR), MCAT("RESET", L_RESET, IC_RESET), MCAT("ADVANCED", L_ADV, IC_GEAR)};
+static const int NC = sizeof(CATS) / sizeof(CATS[0]);
+static const int N = NC;
+static int cat = -1;          // -1 = หน้าช่องไอคอน, 0.. = อยู่ในหมวด
+static int gsel = 0;          // ช่องที่เลือกในหน้าช่องไอคอน
 static bool open = false, edit = false;
 static int sel = 0;
 static void (*onPeaks)() = nullptr;
@@ -72,6 +79,11 @@ static void (*onBounce)(int) = nullptr;
 // ทดสอบความเร็ว: วาดกี่คอร์ / อ่านตัวอักษรจาก PSRAM หรือแฟลช
 static int drawCores = 1, fontMem = 0, perfInfo = 0;   // perfInfo = ตัวเลข fps มุมล่างซ้าย
 static void (*onPerfOpt)() = nullptr;
+// DTC บนจอ (ไม่บล็อกการวาด): เริ่ม 1 = อ่าน / 2 = ลบ · สถานะ 0 ว่าง, 1 กำลังทำ, 2 สำเร็จ, 3 ไม่สำเร็จ (buf = ข้อความผล)
+static bool (*dtcStart)(int) = nullptr;
+static int (*dtcPoll)(char*, size_t) = nullptr;
+static bool obdLive = false;                    // ได้ค่าจากรถอยู่ (ตั้งจาก main ทุกเฟรม)
+static uint32_t clearArm = 0;                   // กด CLEAR DTC ครั้งแรก = เตรียม, ครั้งที่สองใน 3 วิ = ลบจริง
 static int obdMode = 1;                        // 1 = ต่อตัวอ่าน OBD แบบ BLE (มีผลหลังรีสตาร์ท)
 static void (*onObd)(int) = nullptr;
 static void (*onObdForget)() = nullptr;
@@ -107,12 +119,7 @@ inline int value(const char* k) {
   return 0;
 }
 inline void fmt(const Item& it, char* b, size_t n) {
-  if (!it.key) {
-    if (!strcmp(it.label, "WIFI")) snprintf(b, n, "Didissnap  192.168.4.1");
-    else if (!strcmp(it.label, "BACK")) snprintf(b, n, "<");
-    else snprintf(b, n, ">");
-    return;
-  }
+  if (!it.key) { snprintf(b, n, !strcmp(it.label, "BACK") ? "<" : ">"); return; }
   int v = value(it.key);
   if (!strcmp(it.key, "page")) snprintf(b, n, "%d %s", v + 1, pages::NAMES[v]);
   else if (!strcmp(it.key, "bri")) snprintf(b, n, "%d%%", v);
@@ -120,7 +127,7 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "tempAlert")) snprintf(b, n, "%d C", v);
   else if (!strcmp(it.key, "autoCycle")) { if (v) snprintf(b, n, "%d s", v); else snprintf(b, n, "OFF"); }
   else if (!strncmp(it.key, "p13", 3)) snprintf(b, n, "%s", didicfg::SLOT_NAMES[v % didicfg::N_SLOTS]);
-  else if (!strcmp(it.key, "obdBle")) snprintf(b, n, "%s  %s", v ? "ON" : "OFF", obdStatus ? obdStatus() : "");
+  else if (!strcmp(it.key, "obdBle")) snprintf(b, n, "%s", v ? "ON" : "OFF");
   else if (!strcmp(it.key, "copySpd")) snprintf(b, n, "%d MB/s", v);
   else if (!strcmp(it.key, "gifTest")) { static const char* const GT[] = {"NORMAL", "DECODE ONLY", "NO DECODE", "DECODE NO WRITE", "CPU LOAD ONLY"}; snprintf(b, n, "%s", GT[v % 5]); }
   else if (!strcmp(it.key, "fontMem")) snprintf(b, n, v ? "FLASH" : "PSRAM");
@@ -143,31 +150,138 @@ inline void set(const char* k, int v) {
   didicfg::changed(old);
 }
 
-inline void draw() {
-  using pages::ORG;
-  clear(rgb(0x0A0A0A));
+// ---- ไอคอนเส้นหนา (วาดด้วยกราฟิก ไม่ใช้รูป) ----
+inline void drawIcon(int k, float cx, float cy, uint16_t c, uint16_t bg) {
+  switch (k) {
+    case IC_SUN:
+      circle(cx, cy, 10, bg, c, 3);
+      for (int a = 0; a < 8; a++) { float t = a * (float)M_PI / 4; line(cx + 15 * cosf(t), cy + 15 * sinf(t), cx + 20 * cosf(t), cy + 20 * sinf(t), c, 3); }
+      break;
+    case IC_PAGES:
+      rrect(cx - 8, cy - 22, 26, 22, 3, bg, c, 3);
+      rrect(cx - 16, cy - 14, 26, 22, 3, bg, c, 3);
+      break;
+    case IC_BT: {
+      const float x[] = {-8, 8, 0, 0, 8, -8}, y[] = {-8, 8, 16, -16, -8, 8};
+      for (int i = 0; i < 5; i++) line(cx + x[i], cy + y[i], cx + x[i + 1], cy + y[i + 1], c, 3);
+      break;
+    }
+    case IC_CAR:
+      rrect(cx - 20, cy - 4, 40, 12, 4, bg, c, 3);
+      line(cx - 12, cy - 4, cx - 6, cy - 13, c, 3); line(cx - 6, cy - 13, cx + 8, cy - 13, c, 3); line(cx + 8, cy - 13, cx + 14, cy - 4, c, 3);
+      circle(cx - 11, cy + 10, 5, c); circle(cx + 11, cy + 10, 5, c);
+      break;
+    case IC_RESET: {
+      arc(cx, cy, 15, 0.7f, 5.8f, c, 3);
+      const float px[] = {cx + 16, cx + 16, cx + 6}, py[] = {cy - 15, cy - 2, cy - 6};
+      poly(px, py, 3, c);
+      break;
+    }
+    case IC_GEAR:
+      for (int a = 0; a < 8; a++) { float t = a * (float)M_PI / 4; line(cx + 10 * cosf(t), cy + 10 * sinf(t), cx + 18 * cosf(t), cy + 18 * sinf(t), c, 6); }
+      circle(cx, cy, 12, bg, c, 4);
+      break;
+  }
+}
+// สรุปค่าของหมวด (บรรทัดเล็กใต้ชื่อในช่อง)
+inline void catSummary(int k, char* b, size_t n) {
+  const auto& c = didicfg::cfg;
+  switch (k) {
+    case 0: snprintf(b, n, "%d%%  %s", c.bri, lcdMode == 1 ? "30 Hz" : (lcdMode >= 2 ? "60 Hz" : "44 Hz")); break;
+    case 1: snprintf(b, n, "page %d", c.page + 1); break;
+    case 2: snprintf(b, n, "%s", obdMode ? (obdStatus ? obdStatus() : "on") : "off"); break;
+    case 3: snprintf(b, n, "redline %d", c.maxRpm); break;
+    case 4: snprintf(b, n, "peak / trip"); break;
+    default: snprintf(b, n, "tuning"); break;
+  }
+}
+inline bool isSlider(const char* k) {
+  return k && (!strcmp(k, "bri") || !strcmp(k, "maxRpm") || !strcmp(k, "tempAlert") || !strcmp(k, "autoCycle") || !strcmp(k, "copySpd"));
+}
+inline void header(const char* t) {
   fill(0, 0, W, 28, rgb(0x1A1512));
-  text(SUB_TITLE[sub], 12, 20, 16, ORG, LEFT, 900);
-  const Item* IT = L();
-  const int N = LN();
-  text("Didissnap", 468, 20, 12, rgb(0x999999), RIGHT, 600);
-  const int rows = 9;
-  int top = max(0, min(sel - 4, N - rows));
+  text(t, 12, 20, 16, pages::ORG, LEFT, 900);
+  text("WiFi Didissnap  192.168.4.1", 468, 19, 11, rgb(0x999999), RIGHT, 600);
+}
+inline void footer(const char* t) {
+  fill(0, H - 22, W, 22, rgb(0x1A1512));
+  text(t, W / 2, H - 7, 11, rgb(0xBBBBBB), CENTER, 600);
+}
+
+inline void drawGrid() {
+  using pages::ORG;
+  header("MENU");
+  for (int i = 0; i < NC; i++) {
+    int x = 8 + (i % 3) * 156, y = 36 + (i / 3) * 106;
+    bool s = i == gsel;
+    uint16_t bg = s ? rgb(0x2A1E12) : rgb(0x18181A);
+    rrect(x, y, 150, 98, 10, bg, s ? ORG : rgb(0x37373C), s ? 2.5f : 1);
+    drawIcon(CATS[i].icon, x + 75, y + 34, s ? ORG : rgb(0xC8C8C8), bg);
+    text(CATS[i].name, x + 75, y + 74, 16, s ? rgb(0xFFB37A) : rgb(0xF0F0F0), CENTER, 800);
+    char v[32];
+    catSummary(i, v, sizeof(v));
+    text(v, x + 75, y + 90, 11, rgb(0x969696), CENTER, 600);
+  }
+  footer("BTN1 = NEXT   BTN2 = PREV   HOLD BTN2 = OPEN   HOLD BTN1 = EXIT");
+}
+
+// กล่องสถานะด้านบนของหมวด OBD (+ ผล DTC)
+inline void obdBox() {
+  static char dtc[64] = "";
+  int st = dtcPoll ? dtcPoll(dtc, sizeof(dtc)) : 0;
+  const char* d = obdStatus ? obdStatus() : "";
+  uint16_t c, fc;
+  const char* big;
+  if (!obdMode) { c = rgb(0x555555); fc = rgb(0x161616); big = "OBD OFF"; }
+  else if (obdLive) { c = rgb(0x3CC86E); fc = rgb(0x10201A); big = "CONNECTED"; }
+  else { c = rgb(0xFFC83C); fc = rgb(0x221C0C); big = "SEARCHING"; }
+  rrect(8, 34, 464, 76, 10, fc, c, 2);
+  drawIcon(IC_BT, 42, 72, c, fc);
+  if (st == 1) { text("WORKING...", 80, 64, 20, rgb(0xFFC83C), LEFT, 900); text("talking to the car", 80, 92, 13, rgb(0xB4C8B4), LEFT, 600); }
+  else if (st >= 2) {
+    text(st == 2 ? "DTC" : "DTC FAILED", 80, 64, 20, st == 2 ? rgb(0xFFC83C) : rgb(0xFF5050), LEFT, 900);
+    text(dtc, 80, 92, 13, rgb(0xF0F0F0), LEFT, 700);
+  } else { text(big, 80, 64, 20, c, LEFT, 900); text(d, 80, 92, 13, rgb(0xB4C8B4), LEFT, 600); }
+}
+
+inline void drawList() {
+  using pages::ORG;
+  const Cat& C = CATS[cat];
+  char t[32];
+  snprintf(t, sizeof(t), "MENU > %s", C.name);
+  header(t);
+  bool ob = C.it == L_OBD;
+  if (ob) obdBox();
+  const int y0 = ob ? 116 : 33, rh = ob ? 33 : 36, rows = ob ? 4 : 6;
+  int top = max(0, min(sel - (rows - 1) / 2, C.n - rows));
   bool bl = (nowMs() / 250) % 2 == 0;
   for (int r = 0; r < rows; r++) {
     int j = top + r;
-    if (j >= N) break;
-    int y = 32 + r * 23;
+    if (j >= C.n) break;
+    const Item& it = C.it[j];
+    int y = y0 + r * rh;
     bool s = j == sel;
-    if (s) rrect(6, y, 468, 21, 4, edit ? rgb(0x5A2E00) : rgb(0x2A2320), edit ? ORG : rgb(0x8A4A10), 1.5f);
-    text(IT[j].label, 16, y + 16, 14, s ? rgb(0xFFB37A) : rgb(0xDDDDDD), LEFT, 700);
+    if (s) rrect(6, y, 468, rh - 3, 5, edit ? rgb(0x5A2E00) : rgb(0x2A2320), edit ? ORG : rgb(0x8A4A10), 2);
+    int cy = y + (rh - 3) / 2 + 6;
+    text(it.label, 18, cy, 16, s ? rgb(0xFFB37A) : rgb(0xF0F0F0), LEFT, 800);
     char v[40];
-    fmt(IT[j], v, sizeof(v));
-    text(v, 464, y + 16, 13, s && edit ? (bl ? 0xFFFF : ORG) : rgb(0xAAAAAA), RIGHT, 600);
+    fmt(it, v, sizeof(v));
+    uint16_t vc = s && edit ? (bl ? 0xFFFF : ORG) : rgb(0xAAAAAA);
+    if (isSlider(it.key)) {
+      float f = (float)(value(it.key) - it.mn) / (it.mx - it.mn);
+      int sx = 250, sw = 140, sy = y + (rh - 3) / 2 - 4;
+      rrect(sx, sy, sw, 9, 4.5f, rgb(0x2D2D2D));
+      rrect(sx, sy, fmaxf(9, sw * fminf(1, fmaxf(0, f))), 9, 4.5f, ORG);
+      text(v, 464, cy, 14, vc, RIGHT, 700);
+    } else text(v, 464, cy, 14, vc, RIGHT, 600);
   }
-  fill(0, H - 22, W, 22, rgb(0x1A1512));
-  text(edit ? "BTN1 = +    BTN2 = -    HOLD BTN2 = OK" : (adv ? "BTN1 = DOWN   BTN2 = UP   HOLD BTN2 = SELECT   HOLD BTN1 = BACK" : "BTN1 = DOWN   BTN2 = UP   HOLD BTN2 = SELECT   HOLD BTN1 = EXIT"),
-       W / 2, H - 7, 11, rgb(0xBBBBBB), CENTER, 600);
+  footer(edit ? "BTN1 = +     BTN2 = -     HOLD BTN2 = OK" : C.it[sel].desc);
+}
+
+inline void draw() {
+  clear(rgb(0x0A0A0A));
+  if (cat < 0) drawGrid();
+  else drawList();
 }
 
 inline void drawToast() {
@@ -179,14 +293,20 @@ inline void drawToast() {
 // ปุ่ม: b = 0 (ปุ่ม 1) / 1 (ปุ่ม 2)
 inline void button(int b, bool lng) {
   if (!open) {
-    if (b == 0 && lng) { open = true; sel = 0; edit = false; enterSub(0, 0); return; }
+    if (b == 0 && lng) { open = true; cat = -1; gsel = 0; sel = 0; edit = false; return; }
     if (lng) { if (onHold2) onHold2(); return; }
     int p = didicfg::cfg.page + (b == 0 ? 1 : -1);
     didicfg::setPage(((p % pages::N) + pages::N) % pages::N);
     return;
   }
-  const Item& it = L()[sel];
-  const int N = LN();
+  if (cat < 0) {                              // หน้าช่องไอคอน
+    if (b == 0 && lng) { open = false; return; }
+    if (lng) { cat = gsel; sel = 0; edit = false; return; }
+    gsel = (gsel + (b == 0 ? 1 : NC - 1)) % NC;
+    return;
+  }
+  const Cat& C = CATS[cat];
+  const Item& it = C.it[sel];
   if (edit) {
     if (b == 1 && lng) { edit = false; return; }
     if (lng) return;
@@ -197,21 +317,19 @@ inline void button(int b, bool lng) {
     set(it.key, v);
     return;
   }
-  if (b == 0 && lng) {   // ปุ่ม 1 ค้าง: ในเมนูย่อย = กลับเมนูหลัก, เมนูหลัก = ออก
-    if (sub) { int m = mainSel; enterSub(0, 0); sel = m; } else open = false;
-    return;
-  }
-  if (b == 0) { sel = (sel + 1) % N; return; }
-  if (!lng) { sel = (sel + N - 1) % N; return; }
+  if (b == 0 && lng) { cat = -1; return; }   // ปุ่ม 1 ค้าง = กลับหน้าช่องไอคอน
+  if (!lng) { sel = (sel + (b == 0 ? 1 : C.n - 1)) % C.n; return; }
   // ปุ่ม 2 ค้าง = เลือก
   if (it.key) edit = true;
+  else if (!strcmp(it.label, "BACK")) cat = -1;
   else if (!strcmp(it.label, "PEAK RESET")) { if (onPeaks) onPeaks(); toast("PEAK RESET"); }
   else if (!strcmp(it.label, "TRIP RESET")) { if (onTrip) onTrip(); toast("TRIP RESET"); }
-  else if (!strcmp(it.label, "OBD FORGET")) { if (onObdForget) onObdForget(); }
-  else if (!strcmp(it.label, "ADVANCED")) { enterSub(1, sel); sel = 0; }
-  else if (!strcmp(it.label, "PAGE 13 VALUES")) { enterSub(2, sel); sel = 0; }
-  else if (!strcmp(it.label, "BACK")) { int m = mainSel; enterSub(0, 0); sel = m; }
-  else if (!strcmp(it.label, "EXIT")) open = false;
+  else if (!strcmp(it.label, "FORGET ADAPTER")) { if (onObdForget) onObdForget(); }
+  else if (!strcmp(it.label, "READ DTC")) { if (!dtcStart || !dtcStart(1)) toast("OBD NOT CONNECTED"); }
+  else if (!strcmp(it.label, "CLEAR DTC")) {
+    if (!clearArm || millis() - clearArm > 3000) { clearArm = millis(); toast("HOLD AGAIN TO CLEAR"); }
+    else { clearArm = 0; if (!dtcStart || !dtcStart(2)) toast("OBD NOT CONNECTED"); }
+  }
 }
 
 }  // namespace menu

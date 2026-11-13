@@ -12,7 +12,7 @@ using namespace gfx;
 static const int N = 16;
 static const char* const NAMES[N] = {"Bar graph", "Yellow box", "Race bar", "Half gauge", "Round gauge", "Strip",
                                      "Race dash", "Gear big", "Red stripe", "ECU", "Record", "OBD2 table",
-                                     "Picture", "Car run", "Photo", "Pic by rpm"};
+                                     "Character", "Car run", "Photo", "Pic by rpm"};
 // หน้ารูป (ใช้ slot 0-2 ของรูปที่ส่งจากแอป) และหน้ารูปตามรอบ
 static const int PG_PIC = 12, PG_RUN = 13, PG_PHOTO = 14, PG_RPM = 15, PG_RECORD = 10;
 

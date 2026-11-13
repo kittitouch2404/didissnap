@@ -346,6 +346,29 @@ inline void forget() {
   if (client && linkUp) client->disconnect();
 }
 
+// DTC จากเมนูบนจอ (ไม่บล็อก): เริ่มแล้วถามสถานะทุกเฟรม
+static volatile int uiDtc = 0, uiCmd = 0;   // uiDtc: 0 ว่าง, 1 กำลังทำ, 2 สำเร็จ, 3 ไม่สำเร็จ
+static uint32_t uiDoneAt = 0;
+inline bool startDtc(int c) {
+  if (state != RUNNING || dtcReq || uiDtc == 1) return false;
+  dtcDone = false; dtcOk = false; uiCmd = c; uiDtc = 1; dtcReq = c;
+  return true;
+}
+inline int pollDtc(char* buf, size_t n) {
+  if (uiDtc == 1 && dtcDone) { uiDtc = dtcOk ? 2 : 3; uiDoneAt = millis(); }
+  if (uiDtc == 1 && state != RUNNING) { uiDtc = 3; uiDoneAt = millis(); }
+  if (uiDtc >= 2 && millis() - uiDoneAt > 15000) uiDtc = 0;     // โชว์ผล 15 วินาที
+  if (uiDtc == 2) {
+    if (uiCmd == 2) snprintf(buf, n, "Codes cleared");
+    else {
+      String s = dtcJson;
+      s.replace("[", ""); s.replace("]", ""); s.replace("\"", ""); s.replace(",", "  ");
+      snprintf(buf, n, "%s", s.length() ? s.c_str() : "No codes - all good");
+    }
+  } else if (uiDtc == 3) snprintf(buf, n, uiCmd == 2 ? "Clear failed (engine must be OFF)" : "Read failed");
+  return uiDtc;
+}
+
 // แอปขอ DTC: เรียกจาก loop (บล็อกรอสูงสุด ~5 วินาที)
 inline String readDtc() {
   if (state != RUNNING) return "[]";

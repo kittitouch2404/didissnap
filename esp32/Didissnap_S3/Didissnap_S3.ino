@@ -345,6 +345,8 @@ void setup() {
   menu::onObd = onObd;
   menu::onObdForget = onObdForget;
   menu::obdStatus = obdStatus;
+  menu::dtcStart = [](int c) { return obdOn && obdble::startDtc(c); };
+  menu::dtcPoll = [](char* b, size_t n) { return obdOn ? obdble::pollDtc(b, n) : 0; };
   step(11, "obd ble");
   if (skip(11)) Serial.println("SAFE MODE: skip OBD BLE");
   else if (menu::obdMode) {
@@ -379,6 +381,7 @@ void loop() {
     bool lv = obdble::live();
     if (!lv) { RAW.rpm = 0; RAW.spd = 0; }
     D.link = lv ? 2 : 1;
+    menu::obdLive = lv;
   } else D.link = demo ? 0 : 2;
   data::update(dt, demo);
   if (wifiOn) {                      // ESP-NOW: ส่งค่าให้จอ CYD + ตอบคำขอ DTC
