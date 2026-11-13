@@ -83,6 +83,7 @@ static uint16_t* volatile jobFb = nullptr;
 static volatile bool jobFlip = false, jobMenu = false;
 static volatile int jobPage = 0;
 static SemaphoreHandle_t workGo = nullptr, workDone = nullptr;
+static bool wantCore2 = false, core2Tried = false;
 
 static void drawStrip(int k, uint16_t* sb) {
   int y0 = k * STRIP_H;
@@ -295,13 +296,11 @@ void setup() {
   menu::onBounce = onBounce;
   if (!lcd::begin(LCD_HZ[menu::lcdMode], LCD_EVERY[menu::lcdMode], !safeLcd, menu::bounceMode)) Serial.println("LCD init FAILED (เช็ค PSRAM = OPI PSRAM)");
   showCrash();
-  // บัฟเฟอร์วาด 2 ชุด (ชุดละ 65 KB ใน RAM ภายใน) จองตอนนี้ ก่อน WiFi / ESP-NOW / Bluetooth ใช้ RAM ไป
-  //  (เดิมจองทีหลัง → RAM ภายในเหลือก้อนใหญ่ไม่พอ → ตกเป็นวาดคอร์เดียว ทั้งที่ตั้ง 2 คอร์)
+  // บัฟเฟอร์วาดชุดแรก (65 KB ใน RAM ภายใน) จองตอนนี้ ชุดที่สอง (วาด 2 คอร์) จองทีหลังเมื่อ Bluetooth เริ่มเสร็จ (tryCore2)
+  //  RAM ภายในไม่พอให้ทั้ง 2 ชุด + WiFi + Bluetooth เสมอไป → ให้ Bluetooth (ต่อ OBD) มาก่อน ถ้าเหลือพอค่อยวาด 2 คอร์
   stripBuf = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (!stripBuf) { Serial.println("strip buffer: no internal RAM -> PSRAM"); stripBuf = (uint16_t*)ps_malloc(LCD_W * STRIP_H * 2); }
-  if (!safeDraw && DIDI_2CORE) stripBuf2 = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  Serial.printf("strip buffers: %s / %s  (internal free %u, largest %u)\n", stripBuf ? "ok" : "-", stripBuf2 ? "ok" : "NONE",
-                (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+  wantCore2 = !safeDraw && DIDI_2CORE;
 
   step(4, "wifi");                                  // ต้องเปิด WiFi ก่อนเว็บเซิร์ฟเวอร์ (ไม่งั้น crash)
   if (skip(4)) { Serial.println("SAFE MODE: skip WiFi"); wifiOn = false; }
@@ -328,13 +327,8 @@ void setup() {
   menu::onHold2 = onHold2;
   step(9, "2-core draw + refresh");
   if (safeDraw) Serial.println("SAFE MODE: draw on 1 core, 44 Hz");
-  else if (stripBuf2) {                                  // วาด 2 คอร์
-    workGo = xSemaphoreCreateBinary();
-    workDone = xSemaphoreCreateBinary();
-    xTaskCreatePinnedToCore(drawWorker, "draw2", 8192, nullptr, 3, nullptr, 0);
-  } else Serial.println("2nd strip buffer: no internal RAM -> draw on 1 core");
   menu::onLcdMode = onLcdMode;
-  menu::coresReal = workGo ? 2 : 1;
+  menu::coresReal = 1;
   menu::drawCores = safeDraw ? 1 : constrain(prefs.getInt("cores", 2), 1, 2);
   menu::fontMem = 0;   // ทดสอบแล้ว PSRAM/แฟลชเร็วเท่ากัน
   menu::perfInfo = prefs.getInt("perf", 0) & 1;   // ตัวเลข fps มุมล่างซ้าย (เมนู PERF INFO)
@@ -367,7 +361,26 @@ void setup() {
 static uint32_t lastUs = 0, fpsT = 0, drawAcc = 0, perfT = 0, lcdF0 = 0, frameT0 = 0;
 static int frames = 0, perfFrames = 0, maxAcc = 0;
 
+// วาด 2 คอร์: จองบัฟเฟอร์ชุดที่สองหลัง Bluetooth เริ่มเสร็จ ถ้า RAM ภายในยังเหลือพอ (เผื่อ BLE/WiFi ใช้ต่อ ≥ 24 KB)
+static void tryCore2() {
+  if (!wantCore2 || core2Tried || workGo) return;
+  if (obdOn && !obdble::bleReady && millis() < 20000) return;
+  core2Tried = true;
+  const size_t need = LCD_W * STRIP_H * 2, keep = 24 * 1024;
+  size_t freeB = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+  if (freeB >= need + keep) stripBuf2 = (uint16_t*)heap_caps_malloc(need, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (stripBuf2) {
+    workGo = xSemaphoreCreateBinary();
+    workDone = xSemaphoreCreateBinary();
+    xTaskCreatePinnedToCore(drawWorker, "draw2", 8192, nullptr, 3, nullptr, 0);
+    menu::coresReal = 2;
+  }
+  Serial.printf("2-core draw: %s  (internal free before %u, after %u)\n", stripBuf2 ? "ON" : "OFF - not enough internal RAM",
+                (unsigned)freeB, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+}
+
 void loop() {
+  tryCore2();
   if (restartAt && millis() > restartAt) ESP.restart();
   uint32_t us = micros();
   float dt = lastUs ? fminf(.1f, (us - lastUs) / 1e6f) : .016f;

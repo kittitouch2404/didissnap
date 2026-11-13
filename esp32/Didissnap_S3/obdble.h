@@ -38,6 +38,7 @@ static NimBLEClient* client = nullptr;
 static NimBLERemoteCharacteristic* rxC = nullptr;
 static NimBLERemoteCharacteristic* txC = nullptr;
 static volatile bool linkUp = false;
+static volatile bool bleReady = false;   // Bluetooth เริ่มเสร็จแล้ว (จอง RAM ของมันแล้ว)
 
 // ---------------------------------------------------------------- รับข้อมูล
 static portMUX_TYPE rxMux = portMUX_INITIALIZER_UNLOCKED;
@@ -299,6 +300,7 @@ static void doDtc() {
 // ---------------------------------------------------------------- งานหลัก
 static void task(void*) {
   NimBLEDevice::init("Didissnap");
+  bleReady = true;
   static const uint8_t SLOW[] = {0x05, 0x0F, 0x04, 0x11, 0x0B, 0x10, 0x2F, 0x06};
   int slow = 0;
   for (;;) {
