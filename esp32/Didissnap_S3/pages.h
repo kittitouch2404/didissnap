@@ -5,6 +5,9 @@
 #include "bg.h"
 #include "pages2.h"
 #include "rpmface.h"
+#ifndef DIDI_PASS
+#define DIDI_PASS "12345678"   // รหัส WiFi ของบอร์ด (ค่าจริงอยู่ที่ DidissnapLink.h)
+#endif
 
 namespace pages {
 using namespace gfx;
@@ -117,12 +120,13 @@ inline void topBar() {               // หน้า 14-16
   obd(474, 14, RIGHT);
   rpmHp(8, by, PX_BAR_W, PX_BAR_H);
 }
-// หน้า 14-16 ตอนยังไม่มีรูป: พื้นดำ + ข้อความ 3 แถว (ตัวพิกเซลแบบหน้า 13)
+// หน้า 14-16 ตอนยังไม่มีรูป: พื้นดำ + ข้อความ 4 แถว (ตัวพิกเซลแบบหน้า 13)
 inline void noPics() {
   clear(BK);
-  pxText("DIDISSNAP.", W / 2, 106, 4, rgb(0xFFD23C), CENTER, 3);
-  pxText("Change Photo", W / 2, 160, 2, WH, CENTER, 2);
-  pxText("WIFI Didissnap 192.168.4.1", W / 2, 196, 1, rgb(0xAAAAAA), CENTER, 1);
+  pxText("DIDISSNAP.", W / 2, 100, 4, rgb(0xFFD23C), CENTER, 3);
+  pxText("Change Photo", W / 2, 152, 2, WH, CENTER, 2);
+  pxText("WIFI Didissnap 192.168.4.1", W / 2, 186, 1, rgb(0xAAAAAA), CENTER, 1);
+  pxText("Password " DIDI_PASS, W / 2, 204, 1, rgb(0xAAAAAA), CENTER, 1);
 }
 
 // ---------------------------------------------------------------- 1 Bar graph
