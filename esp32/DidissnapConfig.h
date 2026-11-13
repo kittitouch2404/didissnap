@@ -33,7 +33,8 @@ struct Config {
   int gearCount = 6;      // จำนวนเกียร์
   float gears[6] = {118, 68, 47, 36, 29, 24};   // rpm ต่อ 1 km/h ของแต่ละเกียร์
   int p13a = 0, p13b = 1, p13c = 2, p13d = 3;
-  int p13spd = 1;                                 // หน้า 13: โชว์ความเร็วมุมขวาบน (1 = เปิด)   // หน้ารูป (13): ค่าที่โชว์ในแถวล่าง 4 ช่อง (ลำดับใน SLOT_NAMES)
+  int p13spd = 1;
+  int pgMask = 0xFFFF;                            // หน้าที่เปิดใช้ (บิต 0 = หน้า 1) ปิดแล้วกดปุ่ม/สลับอัตโนมัติจะข้าม                                 // หน้า 13: โชว์ความเร็วมุมขวาบน (1 = เปิด)   // หน้ารูป (13): ค่าที่โชว์ในแถวล่าง 4 ช่อง (ลำดับใน SLOT_NAMES)
 };
 // ค่าที่เลือกโชว์ในช่องล่างของหน้า 13 ได้
 static const char* const SLOT_NAMES[] = {"COOLANT", "IAT", "BATT", "BOOST", "LOAD", "TPS", "MAF", "FUEL", "SPEED", "TRIP", "STFT"};
@@ -72,6 +73,8 @@ inline void load() {
   }
   cfg.p13a = constrain(prefs->getInt("p13a", cfg.p13a), 0, N_SLOTS - 1);
   cfg.p13spd = prefs->getInt("p13spd", cfg.p13spd) ? 1 : 0;
+  cfg.pgMask = prefs->getInt("pgMask", cfg.pgMask) & 0xFFFF;
+  if (!cfg.pgMask) cfg.pgMask = 0xFFFF;
   cfg.p13b = constrain(prefs->getInt("p13b", cfg.p13b), 0, N_SLOTS - 1);
   cfg.p13c = constrain(prefs->getInt("p13c", cfg.p13c), 0, N_SLOTS - 1);
   cfg.p13d = constrain(prefs->getInt("p13d", cfg.p13d), 0, N_SLOTS - 1);
@@ -93,6 +96,7 @@ inline void save() {
   }
   prefs->putInt("p13a", cfg.p13a);
   prefs->putInt("p13spd", cfg.p13spd);
+  prefs->putInt("pgMask", cfg.pgMask);
   prefs->putInt("p13b", cfg.p13b);
   prefs->putInt("p13c", cfg.p13c);
   prefs->putInt("p13d", cfg.p13d);
@@ -124,6 +128,8 @@ inline String toJson() {
     s += "\":";
     s += String(cfg.gears[g], 1);
   }
+  s += ",\"pgMask\":";
+  s += cfg.pgMask;
   s += ",\"p13spd\":";
   s += cfg.p13spd;
   s += ",\"p13a\":";
@@ -164,6 +170,13 @@ inline bool setKV(const String& k, float v) {
   else if (k == "autoCycle") cfg.autoCycle = constrain(iv, 0, 120);
   else if (k == "gearCount") cfg.gearCount = constrain(iv, 3, 6);
   else if (k == "p13spd") cfg.p13spd = iv ? 1 : 0;
+  else if (k == "pgMask") {
+    int m = iv & ((1 << pageCount) - 1);
+    if (m) {
+      cfg.pgMask = m;
+      for (int t = 0; t < pageCount && !((m >> cfg.page) & 1); t++) cfg.page = (cfg.page + 1) % pageCount;   // หน้าที่โชว์อยู่ถูกปิด → ไปหน้าถัดไปที่เปิด
+    }
+  }
   else if (k == "p13a") cfg.p13a = constrain(iv, 0, N_SLOTS - 1);
   else if (k == "p13b") cfg.p13b = constrain(iv, 0, N_SLOTS - 1);
   else if (k == "p13c") cfg.p13c = constrain(iv, 0, N_SLOTS - 1);
@@ -175,7 +188,7 @@ inline bool setKV(const String& k, float v) {
 }
 
 static const char* const KEYS[] = {"maxRpm", "tempAlert", "bri", "briAuto", "flip", "page",
-                                   "autoCycle", "gearCount", "g0", "g1", "g2", "g3", "g4", "g5", "p13a", "p13b", "p13c", "p13d", "p13spd"};
+                                   "autoCycle", "gearCount", "g0", "g1", "g2", "g3", "g4", "g5", "p13a", "p13b", "p13c", "p13d", "p13spd", "pgMask"};
 static const int N_KEYS = sizeof(KEYS) / sizeof(KEYS[0]);
 
 // หาเลขหลัง "key": ในข้อความ JSON แบบง่าย (ไม่ต้องใช้ไลบรารี JSON)
@@ -202,6 +215,15 @@ inline void changed(int oldPage) {
 }
 
 // เปลี่ยนหน้าจากที่อื่น (ปุ่ม/แอป/เว็บ) แล้วจำไว้
+// หน้าเปิดใช้อยู่ไหม / หาหน้าถัดไปที่เปิดอยู่ (dir = +1 / -1)
+inline bool pageOn(int p) { return (cfg.pgMask >> p) & 1; }
+inline int stepPage(int from, int dir) {
+  for (int k = 1; k <= pageCount; k++) {
+    int p = (((from + dir * k) % pageCount) + pageCount) % pageCount;
+    if (pageOn(p)) return p;
+  }
+  return from;
+}
 inline void setPage(int p) {
   if (pageCount <= 0) return;
   p = ((p % pageCount) + pageCount) % pageCount;
@@ -279,6 +301,7 @@ button.o{background:none;border:1px solid #888;color:#ddd}
 <div class="live" id="live"></div>
 <section><h3>หน้าจอ</h3>
 <div class="row"><span>หน้าที่แสดง</span><select id="page"></select></div>
+<div class="row"><span>หน้าที่ใช้ (ปิด = กดปุ่มข้ามไป)</span></div><div id="pgs" style="display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 8px"></div>
 <div class="row"><span>สลับหน้าเองทุก (วินาที, 0 = ปิด)</span><input type="number" id="autoCycle" min="0" max="120"></div>
 <div class="row"><span>ความสว่าง <b id="briV"></b></span><input type="range" id="bri" min="10" max="100" step="10"></div>
 <div class="row"><span>ปรับความสว่างตามแสงอัตโนมัติ</span><input type="checkbox" class="sw" id="briAuto"></div>
@@ -311,6 +334,7 @@ button.o{background:none;border:1px solid #888;color:#ddd}
 const $=i=>document.getElementById(i);let C={};
 function msg(t){const m=$('msg');m.textContent=t;m.style.opacity=1;clearTimeout(msg.t);msg.t=setTimeout(()=>m.style.opacity=0,1800)}
 function fill(j){C=j.cfg;if(j.slots){['p13a','p13b','p13c','p13d'].forEach(k=>{const e=$(k);e.innerHTML=j.slots.map((n,i)=>`<option value="${i}">${n}</option>`).join('');e.value=C[k];});document.querySelectorAll('.p13r').forEach(r=>r.style.display='');}const p=$('page');p.innerHTML=j.pages.map((n,i)=>`<option value="${i}">${i+1}. ${n}</option>`).join('');p.value=C.page;
+if(C.pgMask!==undefined){const g=$('pgs');g.innerHTML=j.pages.map((n,i)=>`<label style="font-size:13px"><input type="checkbox" data-i="${i}" ${(C.pgMask>>i)&1?'checked':''}> ${i+1}. ${n}</label>`).join('');g.querySelectorAll('input').forEach(e=>e.onchange=()=>{let m=0;g.querySelectorAll('input').forEach(x=>{if(x.checked)m|=1<<x.dataset.i});if(!m){e.checked=true;return;}set('pgMask',m);});}
 ['maxRpm','tempAlert','autoCycle','gearCount','bri'].forEach(k=>$(k).value=C[k]);$('briV').textContent=C.bri+'%';
 $('briAuto').checked=!!C.briAuto;$('flip').checked=!!C.flip;$('p13spd').checked=C.p13spd!==0;
 let g='';for(let i=0;i<C.gearCount;i++)g+=`<div class="row"><span>เกียร์ ${i+1}</span><input type="number" step="0.1" id="g${i}" value="${C['g'+i]}"></div>`;$('gears').innerHTML=g;
@@ -395,7 +419,7 @@ inline void loop() {
   web.handleClient();
   tick();
   if (cfg.autoCycle > 0 && millis() - lastCycle >= (uint32_t)cfg.autoCycle * 1000UL) {
-    int p = (cfg.page + 1) % pageCount;
+    int p = stepPage(cfg.page, 1);   // ข้ามหน้าที่ปิดไว้
     cfg.page = p;                 // สลับอัตโนมัติไม่บันทึกลงแฟลชทุกครั้ง (ถนอมแฟลช)
     if (onPage) onPage(p);
     lastCycle = millis();

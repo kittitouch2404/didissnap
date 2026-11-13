@@ -1242,6 +1242,25 @@ class _Esp32TabState extends State<Esp32Tab> {
               },
             ),
           ),
+          if ((_cfg?.containsKey('pgMask') ?? false) && _pages.isNotEmpty)
+            ExpansionTile(
+              title: const Text('เปิด/ปิดหน้า (ปิด = กดปุ่มข้ามไป)'),
+              subtitle: Text('ใช้อยู่ ${[for (var i = 0; i < _pages.length; i++) if ((_i('pgMask', 0xFFFF) >> i) & 1 == 1) i].length} จาก ${_pages.length} หน้า'),
+              children: [
+                for (var i = 0; i < _pages.length; i++)
+                  CheckboxListTile(
+                    dense: true,
+                    title: Text('${i + 1}. ${_pages[i]}'),
+                    value: (_i('pgMask', 0xFFFF) >> i) & 1 == 1,
+                    onChanged: (v) {
+                      final m0 = _i('pgMask', 0xFFFF);
+                      final m = v == true ? (m0 | (1 << i)) : (m0 & ~(1 << i));
+                      if (m == 0) return; // ต้องเหลืออย่างน้อย 1 หน้า
+                      _set('pgMask', m);
+                    },
+                  ),
+              ],
+            ),
           _StepRow('สลับหน้าเองทุก (0 = ปิด)', _i('autoCycle', 0), 0, 120, 5,
               (v) => _set('autoCycle', v),
               unit: ' วิ'),

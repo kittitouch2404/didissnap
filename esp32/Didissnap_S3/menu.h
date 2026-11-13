@@ -23,6 +23,7 @@ static const Item L_DISP[] = {
 };
 static const Item L_PAGES[] = {
     {"PAGE", "page", 0, pages::N - 1, 1, "Page shown now (also after restart)"},
+    {"SHOW PAGES", nullptr, 0, 0, 0, "Turn pages on/off (off = buttons skip it)"},
     {"AUTO CYCLE", "autoCycle", 0, 120, 5, "Change page by itself every N seconds"},
     {"P13 SPEED", "p13spd", 0, 1, 1, "Page 13: show speed at the top right"},
     {"P13 SLOT 1", "p13a", 0, 0, 1, "Page 13 bottom row - value 1"},
@@ -57,12 +58,19 @@ static const Item L_ADV[] = {
     {"GIF TEST", "gifTest", 0, 4, 1, "GIF decoder test modes"},
     {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
 };
+// เปิด/ปิดแต่ละหน้า (หมวดย่อยของ PAGES — ไม่อยู่ในช่องไอคอน)
+#define PGI(n) {"", "pg" #n, 0, 1, 1, "ON = page in use   OFF = skipped by buttons / auto cycle"}
+static const Item L_PGON[] = {PGI(0), PGI(1), PGI(2), PGI(3), PGI(4), PGI(5), PGI(6), PGI(7),
+                              PGI(8), PGI(9), PGI(10), PGI(11), PGI(12), PGI(13), PGI(14), PGI(15),
+                              {"BACK", nullptr, 0, 0, 0, "Back to PAGES"}};
 enum { IC_SUN, IC_PAGES, IC_BT, IC_CAR, IC_RESET, IC_GEAR };
 struct Cat { const char* name; const Item* it; int n; int icon; };
 #define MCAT(nm, arr, ic) {nm, arr, (int)(sizeof(arr) / sizeof(arr[0])), ic}
 static const Cat CATS[] = {MCAT("DISPLAY", L_DISP, IC_SUN), MCAT("PAGES", L_PAGES, IC_PAGES), MCAT("OBD", L_OBD, IC_BT),
-                           MCAT("CAR", L_CAR, IC_CAR), MCAT("RESET", L_RESET, IC_RESET), MCAT("ADVANCED", L_ADV, IC_GEAR)};
-static const int NC = sizeof(CATS) / sizeof(CATS[0]);
+                           MCAT("CAR", L_CAR, IC_CAR), MCAT("RESET", L_RESET, IC_RESET), MCAT("ADVANCED", L_ADV, IC_GEAR),
+                           MCAT("SHOW PAGES", L_PGON, IC_PAGES)};
+static const int NC = 6;      // ช่องไอคอน 6 ช่องแรก (ช่องที่ 7 = หมวดย่อย SHOW PAGES)
+static const int CAT_PGON = 6, CAT_PAGES = 1;
 static const int N = NC;
 static int cat = -1;          // -1 = หน้าช่องไอคอน, 0.. = อยู่ในหมวด
 static int gsel = 0;          // ช่องที่เลือกในหน้าช่องไอคอน
@@ -106,6 +114,7 @@ inline int value(const char* k) {
   if (!strcmp(k, "gearCount")) return c.gearCount;
   if (!strcmp(k, "p13a")) return c.p13a;
   if (!strcmp(k, "p13spd")) return c.p13spd;
+  if (!strncmp(k, "pg", 2) && isdigit((unsigned char)k[2])) return (c.pgMask >> atoi(k + 2)) & 1;
   if (!strcmp(k, "p13b")) return c.p13b;
   if (!strcmp(k, "p13c")) return c.p13c;
   if (!strcmp(k, "p13d")) return c.p13d;
@@ -128,7 +137,7 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "maxRpm")) snprintf(b, n, "%d rpm", v);
   else if (!strcmp(it.key, "tempAlert")) snprintf(b, n, "%d C", v);
   else if (!strcmp(it.key, "autoCycle")) { if (v) snprintf(b, n, "%d s", v); else snprintf(b, n, "OFF"); }
-  else if (!strcmp(it.key, "p13spd")) snprintf(b, n, v ? "ON" : "OFF");
+  else if (!strcmp(it.key, "p13spd") || (!strncmp(it.key, "pg", 2) && isdigit((unsigned char)it.key[2]))) snprintf(b, n, v ? "ON" : "OFF");
   else if (!strncmp(it.key, "p13", 3)) snprintf(b, n, "%s", didicfg::SLOT_NAMES[v % didicfg::N_SLOTS]);
   else if (!strcmp(it.key, "obdBle")) snprintf(b, n, "%s", v ? "ON" : "OFF");
   else if (!strcmp(it.key, "copySpd")) snprintf(b, n, "%d MB/s", v);
@@ -148,6 +157,14 @@ inline void set(const char* k, int v) {
   if (!strcmp(k, "bounce")) { bounceMode = v; if (onBounce) onBounce(v); return; }
   if (!strcmp(k, "copySpd")) { lcd::copyMBps = v; if (onPerfOpt) onPerfOpt(); return; }
   if (!strcmp(k, "perf")) { perfInfo = v; if (onPerfOpt) onPerfOpt(); return; }
+  if (!strncmp(k, "pg", 2) && isdigit((unsigned char)k[2])) {        // เปิด/ปิดหน้า (ต้องเหลืออย่างน้อย 1 หน้า)
+    int bit = 1 << atoi(k + 2), m = v ? (didicfg::cfg.pgMask | bit) : (didicfg::cfg.pgMask & ~bit);
+    if (!m) { toast("KEEP 1 PAGE ON"); return; }
+    int old = didicfg::cfg.page;
+    didicfg::setKV(String("pgMask"), (float)m);
+    didicfg::changed(old);
+    return;
+  }
   int old = didicfg::cfg.page;
   didicfg::setKV(String(k), (float)v);
   didicfg::changed(old);
@@ -191,7 +208,7 @@ inline void catSummary(int k, char* b, size_t n) {
   const auto& c = didicfg::cfg;
   switch (k) {
     case 0: snprintf(b, n, "%d%%  %s", c.bri, lcdMode == 1 ? "30 Hz" : (lcdMode >= 2 ? "60 Hz" : "44 Hz")); break;
-    case 1: snprintf(b, n, "page %d", c.page + 1); break;
+    case 1: snprintf(b, n, "page %d  (%d on)", c.page + 1, __builtin_popcount(c.pgMask & ((1 << pages::N) - 1))); break;
     case 2: snprintf(b, n, "%s", obdMode ? (obdStatus ? obdStatus() : "on") : "off"); break;
     case 3: snprintf(b, n, "redline %d", c.maxRpm); break;
     case 4: snprintf(b, n, "peak / trip"); break;
@@ -251,7 +268,7 @@ inline void drawList() {
   using pages::ORG;
   const Cat& C = CATS[cat];
   char t[32];
-  snprintf(t, sizeof(t), "MENU > %s", C.name);
+  snprintf(t, sizeof(t), cat == CAT_PGON ? "MENU > PAGES > %s" : "MENU > %s", C.name);
   header(t);
   bool ob = C.it == L_OBD;
   if (ob) obdBox();
@@ -266,7 +283,10 @@ inline void drawList() {
     bool s = j == sel;
     if (s) rrect(6, y, 468, rh - 3, 5, edit ? rgb(0x5A2E00) : rgb(0x2A2320), edit ? ORG : rgb(0x8A4A10), 2);
     int cy = y + (rh - 3) / 2 + 6;
-    text(it.label, 18, cy, 16, s ? rgb(0xFFB37A) : rgb(0xF0F0F0), LEFT, 800);
+    char lb[32];
+    const char* lab = it.label;
+    if (it.key && !strncmp(it.key, "pg", 2) && isdigit((unsigned char)it.key[2])) { int pn = atoi(it.key + 2); snprintf(lb, sizeof(lb), "%d  %s", pn + 1, pages::NAMES[pn]); lab = lb; }
+    text(lab, 18, cy, 16, s ? rgb(0xFFB37A) : rgb(0xF0F0F0), LEFT, 800);
     char v[40];
     fmt(it, v, sizeof(v));
     uint16_t vc = s && edit ? (bl ? 0xFFFF : ORG) : rgb(0xAAAAAA);
@@ -298,8 +318,7 @@ inline void button(int b, bool lng) {
   if (!open) {
     if (b == 0 && lng) { open = true; cat = -1; gsel = 0; sel = 0; edit = false; return; }
     if (lng) { if (onHold2) onHold2(); return; }
-    int p = didicfg::cfg.page + (b == 0 ? 1 : -1);
-    didicfg::setPage(((p % pages::N) + pages::N) % pages::N);
+    didicfg::setPage(didicfg::stepPage(didicfg::cfg.page, b == 0 ? 1 : -1));   // ข้ามหน้าที่ปิดไว้
     return;
   }
   if (cat < 0) {                              // หน้าช่องไอคอน
@@ -314,17 +333,18 @@ inline void button(int b, bool lng) {
     if (b == 1 && lng) { edit = false; return; }
     if (lng) return;
     int v = value(it.key) + (b == 0 ? it.st : -it.st);
-    if (!strcmp(it.key, "page")) v = (v + pages::N) % pages::N;
+    if (!strcmp(it.key, "page")) v = didicfg::stepPage(value(it.key), b == 0 ? 1 : -1);
     else if (!strncmp(it.key, "p13", 3) && strcmp(it.key, "p13spd")) v = (v + didicfg::N_SLOTS) % didicfg::N_SLOTS;   // วนรอบ
     else v = constrain(v, it.mn, it.mx);
     set(it.key, v);
     return;
   }
-  if (b == 0 && lng) { cat = -1; return; }   // ปุ่ม 1 ค้าง = กลับหน้าช่องไอคอน
+  if (b == 0 && lng) { if (cat == CAT_PGON) { cat = CAT_PAGES; sel = 1; } else cat = -1; return; }   // ปุ่ม 1 ค้าง = ย้อนกลับ
   if (!lng) { sel = (sel + (b == 0 ? 1 : C.n - 1)) % C.n; return; }
   // ปุ่ม 2 ค้าง = เลือก
   if (it.key) edit = true;
-  else if (!strcmp(it.label, "BACK")) cat = -1;
+  else if (!strcmp(it.label, "BACK")) { if (cat == CAT_PGON) { cat = CAT_PAGES; sel = 1; } else cat = -1; }
+  else if (!strcmp(it.label, "SHOW PAGES")) { cat = CAT_PGON; sel = 0; }
   else if (!strcmp(it.label, "PEAK RESET")) { if (onPeaks) onPeaks(); toast("PEAK RESET"); }
   else if (!strcmp(it.label, "TRIP RESET")) { if (onTrip) onTrip(); toast("TRIP RESET"); }
   else if (!strcmp(it.label, "FORGET ADAPTER")) { if (onObdForget) onObdForget(); }

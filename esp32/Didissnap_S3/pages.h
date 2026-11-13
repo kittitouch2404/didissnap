@@ -41,9 +41,14 @@ inline void obd(int x, int y, Align al = LEFT) {
   else if (D.link == 1) text(blink() ? "OBD ..." : "OBD", x, y, 11, YEL, al, 700);
   else text("DEMO", x, y, 11, rgb(0x888888), al, 700);
 }
-inline void dots() {
-  int n = N, p = didicfg::cfg.page, s = 11, x0 = W / 2 - (n - 1) * s / 2;
-  for (int i = 0; i < n; i++) circle(x0 + i * s, H - 5, i == p ? 3 : 2.2f, i == p ? WH : rgb(0xAAB4C8));
+inline void dots() {                 // จุดบอกหน้า: เฉพาะหน้าที่เปิดใช้
+  int n = 0, p = didicfg::cfg.page, s = 11;
+  for (int i = 0; i < N; i++) n += didicfg::pageOn(i) || i == p;
+  int x0 = W / 2 - (n - 1) * s / 2, k = 0;
+  for (int i = 0; i < N; i++) {
+    if (!didicfg::pageOn(i) && i != p) continue;
+    circle(x0 + k++ * s, H - 5, i == p ? 3 : 2.2f, i == p ? WH : rgb(0xAAB4C8));
+  }
 }
 inline void shiftFlash() {
   if (over() && blink()) frame(3, 3, W - 6, H - 6, RD, 6);
