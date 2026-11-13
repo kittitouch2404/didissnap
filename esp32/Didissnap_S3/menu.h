@@ -86,7 +86,8 @@ static void (*onLcdMode)(int) = nullptr;
 static int bounceMode = 1;                 // 1 = จอใช้ bounce buffer (ค่าเริ่มต้น — ทดสอบแล้วหายวูบ) มีผลหลังรีสตาร์ท
 static void (*onBounce)(int) = nullptr;
 // ทดสอบความเร็ว: วาดกี่คอร์ / อ่านตัวอักษรจาก PSRAM หรือแฟลช
-static int drawCores = 1, fontMem = 0, perfInfo = 0;   // perfInfo = ตัวเลข fps มุมล่างซ้าย
+static int drawCores = 1, fontMem = 0, perfInfo = 0;
+static int coresReal = 1;                        // วาดได้จริงกี่คอร์ (2 ไม่ได้ถ้า RAM ภายในไม่พอตอนเปิดเครื่อง)   // perfInfo = ตัวเลข fps มุมล่างซ้าย
 static void (*onPerfOpt)() = nullptr;
 // DTC บนจอ (ไม่บล็อกการวาด): เริ่ม 1 = อ่าน / 2 = ลบ · สถานะ 0 ว่าง, 1 กำลังทำ, 2 สำเร็จ, 3 ไม่สำเร็จ (buf = ข้อความผล)
 static bool (*dtcStart)(int) = nullptr;
@@ -145,6 +146,7 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "fontMem")) snprintf(b, n, v ? "FLASH" : "PSRAM");
   else if (!strcmp(it.key, "lcdMode")) snprintf(b, n, "%s", LCD_MODE_NAME[v & 3]);
   else if (!strcmp(it.key, "briAuto") || !strcmp(it.key, "flip") || !strcmp(it.key, "perf") || !strcmp(it.key, "bounce") || !strcmp(it.key, "bandSkip") || !strcmp(it.key, "p13spd")) snprintf(b, n, v ? "ON" : "OFF");
+  else if (!strcmp(it.key, "cores") && v == 2 && coresReal < 2) snprintf(b, n, "2 (NO RAM: 1)");
   else snprintf(b, n, "%d", v);
 }
 inline void set(const char* k, int v) {

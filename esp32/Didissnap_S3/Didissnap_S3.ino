@@ -295,6 +295,13 @@ void setup() {
   menu::onBounce = onBounce;
   if (!lcd::begin(LCD_HZ[menu::lcdMode], LCD_EVERY[menu::lcdMode], !safeLcd, menu::bounceMode)) Serial.println("LCD init FAILED (เช็ค PSRAM = OPI PSRAM)");
   showCrash();
+  // บัฟเฟอร์วาด 2 ชุด (ชุดละ 65 KB ใน RAM ภายใน) จองตอนนี้ ก่อน WiFi / ESP-NOW / Bluetooth ใช้ RAM ไป
+  //  (เดิมจองทีหลัง → RAM ภายในเหลือก้อนใหญ่ไม่พอ → ตกเป็นวาดคอร์เดียว ทั้งที่ตั้ง 2 คอร์)
+  stripBuf = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  if (!stripBuf) { Serial.println("strip buffer: no internal RAM -> PSRAM"); stripBuf = (uint16_t*)ps_malloc(LCD_W * STRIP_H * 2); }
+  if (!safeDraw && DIDI_2CORE) stripBuf2 = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  Serial.printf("strip buffers: %s / %s  (internal free %u, largest %u)\n", stripBuf ? "ok" : "-", stripBuf2 ? "ok" : "NONE",
+                (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
   step(4, "wifi");                                  // ต้องเปิด WiFi ก่อนเว็บเซิร์ฟเวอร์ (ไม่งั้น crash)
   if (skip(4)) { Serial.println("SAFE MODE: skip WiFi"); wifiOn = false; }
@@ -313,8 +320,6 @@ void setup() {
   bool picsOn = fsOk && !skip(7);
   if (!picsOn) Serial.println("pictures OFF");
   else if (!didipics::begin()) { Serial.println("LittleFS FAILED (เช็คว่ามี partitions.csv ในโฟลเดอร์)"); picsOn = false; }
-  stripBuf = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  if (!stripBuf) { Serial.println("strip buffer: no internal RAM -> PSRAM"); stripBuf = (uint16_t*)ps_malloc(LCD_W * STRIP_H * 2); }
   step(8, "background task");
   if (!picsOn || skip(8)) Serial.println("background task OFF");
   else if (!bg::begin()) Serial.println("bg buffers FAILED");
@@ -322,7 +327,6 @@ void setup() {
   menu::onTrip = resetTrip;
   menu::onHold2 = onHold2;
   step(9, "2-core draw + refresh");
-  if (!safeDraw && DIDI_2CORE) stripBuf2 = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (safeDraw) Serial.println("SAFE MODE: draw on 1 core, 44 Hz");
   else if (stripBuf2) {                                  // วาด 2 คอร์
     workGo = xSemaphoreCreateBinary();
@@ -330,6 +334,7 @@ void setup() {
     xTaskCreatePinnedToCore(drawWorker, "draw2", 8192, nullptr, 3, nullptr, 0);
   } else Serial.println("2nd strip buffer: no internal RAM -> draw on 1 core");
   menu::onLcdMode = onLcdMode;
+  menu::coresReal = workGo ? 2 : 1;
   menu::drawCores = safeDraw ? 1 : constrain(prefs.getInt("cores", 2), 1, 2);
   menu::fontMem = 0;   // ทดสอบแล้ว PSRAM/แฟลชเร็วเท่ากัน
   menu::perfInfo = prefs.getInt("perf", 0) & 1;   // ตัวเลข fps มุมล่างซ้าย (เมนู PERF INFO)
