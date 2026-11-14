@@ -34,10 +34,11 @@ struct Config {
   float gears[6] = {118, 68, 47, 36, 29, 24};   // rpm ต่อ 1 km/h ของแต่ละเกียร์
   int p13a = 0, p13b = 1, p13c = 2, p13d = 3;
   int p13spd = 1;
-  int pgMask = 0xFFFF;                            // หน้าที่เปิดใช้ (บิต 0 = หน้า 1) ปิดแล้วกดปุ่ม/สลับอัตโนมัติจะข้าม                                 // หน้า 13: โชว์ความเร็วมุมขวาบน (1 = เปิด)   // หน้ารูป (13): ค่าที่โชว์ในแถวล่าง 4 ช่อง (ลำดับใน SLOT_NAMES)
+  int gz[6] = {0, 8, 11, 1, 2, 12};               // หน้า 17-18 (6 เกจ): ค่าของแต่ละเกจ (ลำดับใน SLOT_NAMES)
+  int pgMask = 0x3FFFF;                            // หน้าที่เปิดใช้ (บิต 0 = หน้า 1) ปิดแล้วกดปุ่ม/สลับอัตโนมัติจะข้าม                                 // หน้า 13: โชว์ความเร็วมุมขวาบน (1 = เปิด)   // หน้ารูป (13): ค่าที่โชว์ในแถวล่าง 4 ช่อง (ลำดับใน SLOT_NAMES)
 };
 // ค่าที่เลือกโชว์ในช่องล่างของหน้า 13 ได้
-static const char* const SLOT_NAMES[] = {"COOLANT", "IAT", "BATT", "BOOST", "LOAD", "TPS", "MAF", "FUEL", "SPEED", "TRIP", "STFT", "AFR"};
+static const char* const SLOT_NAMES[] = {"COOLANT", "IAT", "BATT", "BOOST", "LOAD", "TPS", "MAF", "FUEL", "SPEED", "TRIP", "STFT", "AFR", "RPM"};
 static const int N_SLOTS = sizeof(SLOT_NAMES) / sizeof(SLOT_NAMES[0]);
 
 static Config cfg;
@@ -73,8 +74,10 @@ inline void load() {
   }
   cfg.p13a = constrain(prefs->getInt("p13a", cfg.p13a), 0, N_SLOTS - 1);
   cfg.p13spd = prefs->getInt("p13spd", cfg.p13spd) ? 1 : 0;
-  cfg.pgMask = prefs->getInt("pgMask", cfg.pgMask) & 0xFFFF;
-  if (!cfg.pgMask) cfg.pgMask = 0xFFFF;
+  cfg.pgMask = prefs->getInt("pgMask", cfg.pgMask) & 0x3FFFF;
+  if (prefs->getInt("pgV", 1) < 2) cfg.pgMask |= 0x30000;   // ตั้งค่าเก่า (16 หน้า) → เปิดหน้าเกจใหม่ 17-18 ให้
+  if (!cfg.pgMask) cfg.pgMask = 0x3FFFF;
+  for (int i = 0; i < 6; i++) { char k[4] = {'g', 'z', (char)('0' + i), 0}; cfg.gz[i] = constrain(prefs->getInt(k, cfg.gz[i]), 0, N_SLOTS - 1); }
   cfg.p13b = constrain(prefs->getInt("p13b", cfg.p13b), 0, N_SLOTS - 1);
   cfg.p13c = constrain(prefs->getInt("p13c", cfg.p13c), 0, N_SLOTS - 1);
   cfg.p13d = constrain(prefs->getInt("p13d", cfg.p13d), 0, N_SLOTS - 1);
@@ -97,6 +100,8 @@ inline void save() {
   prefs->putInt("p13a", cfg.p13a);
   prefs->putInt("p13spd", cfg.p13spd);
   prefs->putInt("pgMask", cfg.pgMask);
+  prefs->putInt("pgV", 2);
+  for (int i = 0; i < 6; i++) { char k[4] = {'g', 'z', (char)('0' + i), 0}; prefs->putInt(k, cfg.gz[i]); }
   prefs->putInt("p13b", cfg.p13b);
   prefs->putInt("p13c", cfg.p13c);
   prefs->putInt("p13d", cfg.p13d);
@@ -105,7 +110,7 @@ inline void save() {
 // ------------------------------------------------------------------ JSON
 inline String toJson() {
   String s;
-  s.reserve(420);
+  s.reserve(560);
   s += "{\"cfg\":{\"maxRpm\":";
   s += cfg.maxRpm;
   s += ",\"tempAlert\":";
@@ -140,6 +145,7 @@ inline String toJson() {
   s += cfg.p13c;
   s += ",\"p13d\":";
   s += cfg.p13d;
+  for (int i = 0; i < 6; i++) { s += ",\"gz"; s += i; s += "\":"; s += cfg.gz[i]; }
   s += "},\"slots\":[";
   for (int i = 0; i < N_SLOTS; i++) {
     if (i) s += ",";
@@ -181,6 +187,7 @@ inline bool setKV(const String& k, float v) {
   else if (k == "p13b") cfg.p13b = constrain(iv, 0, N_SLOTS - 1);
   else if (k == "p13c") cfg.p13c = constrain(iv, 0, N_SLOTS - 1);
   else if (k == "p13d") cfg.p13d = constrain(iv, 0, N_SLOTS - 1);
+  else if (k.length() == 3 && k[0] == 'g' && k[1] == 'z' && k[2] >= '0' && k[2] <= '5') cfg.gz[k[2] - '0'] = constrain(iv, 0, N_SLOTS - 1);
   else if (k.length() == 2 && k[0] == 'g' && k[1] >= '0' && k[1] <= '5') {
     if (v >= 5.0f && v <= 400.0f) cfg.gears[k[1] - '0'] = v;
   } else return false;
@@ -188,7 +195,7 @@ inline bool setKV(const String& k, float v) {
 }
 
 static const char* const KEYS[] = {"maxRpm", "tempAlert", "bri", "briAuto", "flip", "page",
-                                   "autoCycle", "gearCount", "g0", "g1", "g2", "g3", "g4", "g5", "p13a", "p13b", "p13c", "p13d", "p13spd", "pgMask"};
+                                   "autoCycle", "gearCount", "g0", "g1", "g2", "g3", "g4", "g5", "p13a", "p13b", "p13c", "p13d", "p13spd", "pgMask", "gz0", "gz1", "gz2", "gz3", "gz4", "gz5"};
 static const int N_KEYS = sizeof(KEYS) / sizeof(KEYS[0]);
 
 // หาเลขหลัง "key": ในข้อความ JSON แบบง่าย (ไม่ต้องใช้ไลบรารี JSON)
@@ -310,7 +317,13 @@ button.o{background:none;border:1px solid #888;color:#ddd}
 <div class="row p13r" style="display:none"><span>หน้า 13 แถวล่าง ช่อง 1</span><select id="p13a"></select></div>
 <div class="row p13r" style="display:none"><span>หน้า 13 แถวล่าง ช่อง 2</span><select id="p13b"></select></div>
 <div class="row p13r" style="display:none"><span>หน้า 13 แถวล่าง ช่อง 3</span><select id="p13c"></select></div>
-<div class="row p13r" style="display:none"><span>หน้า 13 แถวล่าง ช่อง 4</span><select id="p13d"></select></div></section>
+<div class="row p13r" style="display:none"><span>หน้า 13 แถวล่าง ช่อง 4</span><select id="p13d"></select></div>
+<div class="row p13r" style="display:none"><span>หน้า 17-18 เกจ 1</span><select id="gz0"></select></div>
+<div class="row p13r" style="display:none"><span>หน้า 17-18 เกจ 2</span><select id="gz1"></select></div>
+<div class="row p13r" style="display:none"><span>หน้า 17-18 เกจ 3</span><select id="gz2"></select></div>
+<div class="row p13r" style="display:none"><span>หน้า 17-18 เกจ 4</span><select id="gz3"></select></div>
+<div class="row p13r" style="display:none"><span>หน้า 17-18 เกจ 5</span><select id="gz4"></select></div>
+<div class="row p13r" style="display:none"><span>หน้า 17-18 เกจ 6</span><select id="gz5"></select></div></section>
 <section><h3>รอบ / ความร้อน</h3>
 <div class="row"><span>Redline (rpm)</span><input type="number" id="maxRpm" min="2000" max="12000" step="250"></div>
 <div class="row"><span>เตือนน้ำที่ (°C)</span><input type="number" id="tempAlert" min="70" max="130"></div></section>
@@ -333,7 +346,7 @@ button.o{background:none;border:1px solid #888;color:#ddd}
 <script>
 const $=i=>document.getElementById(i);let C={};
 function msg(t){const m=$('msg');m.textContent=t;m.style.opacity=1;clearTimeout(msg.t);msg.t=setTimeout(()=>m.style.opacity=0,1800)}
-function fill(j){C=j.cfg;if(j.slots){['p13a','p13b','p13c','p13d'].forEach(k=>{const e=$(k);e.innerHTML=j.slots.map((n,i)=>`<option value="${i}">${n}</option>`).join('');e.value=C[k];});document.querySelectorAll('.p13r').forEach(r=>r.style.display='');}const p=$('page');p.innerHTML=j.pages.map((n,i)=>`<option value="${i}">${i+1}. ${n}</option>`).join('');p.value=C.page;
+function fill(j){C=j.cfg;if(j.slots){['p13a','p13b','p13c','p13d','gz0','gz1','gz2','gz3','gz4','gz5'].forEach(k=>{const e=$(k);if(!e||C[k]===undefined)return;e.innerHTML=j.slots.map((n,i)=>`<option value="${i}">${n}</option>`).join('');e.value=C[k];});document.querySelectorAll('.p13r').forEach(r=>r.style.display='');}const p=$('page');p.innerHTML=j.pages.map((n,i)=>`<option value="${i}">${i+1}. ${n}</option>`).join('');p.value=C.page;
 if(C.pgMask!==undefined){const g=$('pgs');g.innerHTML=j.pages.map((n,i)=>`<label style="font-size:13px"><input type="checkbox" data-i="${i}" ${(C.pgMask>>i)&1?'checked':''}> ${i+1}. ${n}</label>`).join('');g.querySelectorAll('input').forEach(e=>e.onchange=()=>{let m=0;g.querySelectorAll('input').forEach(x=>{if(x.checked)m|=1<<x.dataset.i});if(!m){e.checked=true;return;}set('pgMask',m);});}
 ['maxRpm','tempAlert','autoCycle','gearCount','bri'].forEach(k=>$(k).value=C[k]);$('briV').textContent=C.bri+'%';
 $('briAuto').checked=!!C.briAuto;$('flip').checked=!!C.flip;$('p13spd').checked=C.p13spd!==0;
@@ -341,7 +354,7 @@ let g='';for(let i=0;i<C.gearCount;i++)g+=`<div class="row"><span>เกีย�
 for(let i=0;i<C.gearCount;i++)$('g'+i).onchange=e=>set('g'+i,e.target.value)}
 async function load(){fill(await (await fetch('/api/cfg')).json())}
 async function set(k,v){const r=await fetch('/api/set?'+k+'='+encodeURIComponent(v));fill(await r.json());msg('บันทึกแล้ว')}
-['maxRpm','tempAlert','autoCycle','gearCount','page','p13a','p13b','p13c','p13d'].forEach(k=>$(k).onchange=e=>set(k,e.target.value));
+['maxRpm','tempAlert','autoCycle','gearCount','page','p13a','p13b','p13c','p13d','gz0','gz1','gz2','gz3','gz4','gz5'].forEach(k=>$(k).onchange=e=>set(k,e.target.value));
 $('bri').oninput=e=>$('briV').textContent=e.target.value+'%';$('bri').onchange=e=>set('bri',e.target.value);
 $('briAuto').onchange=e=>set('briAuto',e.target.checked?1:0);$('flip').onchange=e=>set('flip',e.target.checked?1:0);$('p13spd').onchange=e=>set('p13spd',e.target.checked?1:0);
 async function dtc(){$('codes').textContent='กำลังอ่าน...';const j=await (await fetch('/api/dtc')).json();$('codes').innerHTML=j.dtc.length?j.dtc.map(c=>`<div>⚠ ${c}</div>`).join(''):'<div style="color:#00E05A">ไม่พบรหัส DTC ✓</div>'}
