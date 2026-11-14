@@ -337,7 +337,7 @@ static void doDtc() {
 static void task(void*) {
   NimBLEDevice::init("Didissnap");
   bleReady = true;
-  static const uint8_t SLOW[] = {0x05, 0x0F, 0x04, 0x11, 0x0B, 0x10, 0x2F, 0x06};
+  static const uint8_t SLOW[] = {0x05, 0x0F, 0x04, 0x0B, 0x10, 0x2F, 0x06, 0x0D};   // ค่าช้า (ความเร็วย้ายมาอยู่ที่นี่)
   int slow = 0;
   for (;;) {
     if (!linkUp) {
@@ -349,13 +349,15 @@ static void task(void*) {
       state = RUNNING;
     }
     if (dtcReq) { doDtc(); continue; }
-    // ลำดับ 6 คำถาม: รอบ ความเร็ว รอบ รอบ ค่าอื่น(วนทีละตัว) รอบ → รอบเครื่องได้ 4 ใน 6
-    static int step = 0;
-    int k = step++ % 6;
-    if (k == 1) pid(0x0D);
-    else if (k == 4) {
-      if (slow == (int)sizeof(SLOW)) { readVolt(); slow++; }
-      else if (slow > (int)sizeof(SLOW)) { if (afrPid) pid(afrPid); slow = 0; }   // AFR อ่านรอบละครั้งในชุดค่าช้า
+    // ลำดับ 4 คำถาม: รอบ TPS AFR รอบ → รอบได้ครึ่งหนึ่ง TPS/AFR ได้ 1 ใน 4
+    //  ทุกชุดที่ 4 ช่อง AFR ใช้ถามค่าช้าแทน (น้ำ แบต ความเร็ว ฯลฯ วนทีละตัว) · รถไม่มี AFR = ช่องนั้นถามค่าช้าทุกชุด
+    static uint32_t step = 0;
+    int k = step % 4, set = step / 4;
+    step++;
+    if (k == 1) pid(0x11);
+    else if (k == 2) {
+      if (afrPid && set % 4 != 3) pid(afrPid);
+      else if (slow >= (int)sizeof(SLOW)) { readVolt(); slow = 0; }
       else pid(SLOW[slow++]);
     }
     else pid(0x0C);
