@@ -103,6 +103,36 @@ static int parse(const String& r, uint8_t pid, uint8_t* out, int maxN) {
   return n;
 }
 
+// ---------------------------------------------------------------- AFR (ทางที่ 1: อ่านจาก OBD ไม่ต้องติดเซ็นเซอร์เพิ่ม)
+static uint32_t pidMask[3] = {0, 0, 0};   // PID ที่รถรองรับ (จาก 0100 / 0120 / 0140)
+static uint8_t afrPid = 0;                // PID ที่ใช้อ่าน AFR (0 = ไม่มี)
+static const float STOICH = 14.7f;        // เบนซิน (แก๊สโซฮอล์ E20 ~14.1)
+static bool pidOn(uint8_t p) {
+  if (p < 1 || p > 0x60) return false;
+  return (pidMask[(p - 1) / 32] >> (31 - (p - 1) % 32)) & 1;
+}
+static void readMasks() {
+  static const uint8_t Q[3] = {0x00, 0x20, 0x40};
+  for (int g = 0; g < 3; g++) {
+    if (g && !(pidMask[g - 1] & 1)) break;          // บิตสุดท้าย = มีชุดถัดไปไหม
+    char c[8], key[6];
+    snprintf(c, sizeof(c), "01%02X", Q[g]);
+    snprintf(key, sizeof(key), "41%02X", Q[g]);
+    String r = cmd(c, 3000);
+    int i = r.indexOf(key);
+    if (i < 0 || i + 12 > (int)r.length()) break;
+    pidMask[g] = strtoul(r.substring(i + 4, i + 12).c_str(), nullptr, 16);
+  }
+  // เลือกแหล่ง AFR ที่ดีที่สุด: wideband (24-2B หรือ 34-3B) > ค่าที่ ECU สั่ง (44) > narrowband (14)
+  afrPid = 0;
+  for (uint8_t p = 0x24; p <= 0x2B && !afrPid; p++) if (pidOn(p)) afrPid = p;
+  for (uint8_t p = 0x34; p <= 0x3B && !afrPid; p++) if (pidOn(p)) afrPid = p;
+  if (!afrPid && pidOn(0x44)) afrPid = 0x44;
+  if (!afrPid && pidOn(0x14)) afrPid = 0x14;
+  RAW.afrMode = !afrPid ? 0 : afrPid == 0x14 ? 2 : afrPid == 0x44 ? 3 : 1;
+  Serial.printf("[obd] PIDs %08X %08X %08X  AFR from PID %02X (mode %d)\n", (unsigned)pidMask[0], (unsigned)pidMask[1], (unsigned)pidMask[2], afrPid, RAW.afrMode);
+}
+
 static bool oneShot = false;         // (ปิด: ตัวอ่านที่ใช้ตอบไม่ได้เมื่อมีเลขต่อท้าย — ใช้แบบเดิมที่ต่อติดแล้ว)          // ตัวอ่านบางตัวไม่รองรับเลขต่อท้าย → ปิดเองถ้าตอบ '?'
 static uint32_t rateT = 0, rateN = 0;
 static volatile int rate = 0;        // คำตอบต่อวินาที (ดูในเมนู)
@@ -143,6 +173,12 @@ static bool pid(uint8_t p) {
     case 0x2F: RAW.fuel = b[0] * 100.f / 255; break;
     case 0x06: RAW.stft = (b[0] - 128) * 100.f / 128; break;
     case 0x42: if (n >= 2) RAW.volt = ((b[0] << 8) | b[1]) / 1000.f; break;
+    case 0x14: RAW.afr = b[0] / 200.f; break;                                 // narrowband: แรงดัน 0-1.275 V
+    default:
+      if (p >= 0x24 && p <= 0x2B && n >= 2) RAW.afr = ((b[0] << 8) | b[1]) * 2.f / 65536.f * STOICH;   // แลมบ์ดา → AFR
+      else if (p >= 0x34 && p <= 0x3B && n >= 2) RAW.afr = ((b[0] << 8) | b[1]) * 2.f / 65536.f * STOICH;
+      else if (p == 0x44 && n >= 2) RAW.afr = ((b[0] << 8) | b[1]) * 2.f / 65536.f * STOICH;
+      break;
   }
   lastData = millis();
   answers++;
@@ -308,6 +344,7 @@ static void task(void*) {
       state = SCANNING;
       if (!scanAndConnect()) { delay(3000); continue; }
       if (!initElm()) { if (client && linkUp) client->disconnect(); linkUp = false; delay(2000); continue; }
+      readMasks();
       lastMsg[0] = 0;
       state = RUNNING;
     }
@@ -316,7 +353,11 @@ static void task(void*) {
     static int step = 0;
     int k = step++ % 6;
     if (k == 1) pid(0x0D);
-    else if (k == 4) { if (slow == (int)sizeof(SLOW)) { readVolt(); slow = 0; } else pid(SLOW[slow++]); }
+    else if (k == 4) {
+      if (slow == (int)sizeof(SLOW)) { readVolt(); slow++; }
+      else if (slow > (int)sizeof(SLOW)) { if (afrPid) pid(afrPid); slow = 0; }   // AFR อ่านรอบละครั้งในชุดค่าช้า
+      else pid(SLOW[slow++]);
+    }
     else pid(0x0C);
     if (!linkUp) state = SCANNING;
   }
@@ -336,7 +377,8 @@ inline const char* status() {
     case RUNNING: {
       if (!live()) return "no data";
       static char b[40];
-      snprintf(b, sizeof(b), "%s %d/s", devName, rate);
+      static const char* const AM[] = {"", "  AFR wide", "  O2 narrow", "  AFR cmd"};
+      snprintf(b, sizeof(b), "%s %d/s%s", devName, rate, AM[RAW.afrMode & 3]);
       return b;
     }
     default: return "off";

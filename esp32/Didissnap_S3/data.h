@@ -7,6 +7,7 @@ struct CarData {
   // ค่าที่แสดง (ผ่านการหน่วงให้นุ่มแล้ว)
   float rpm = 0, spd = 0, ect = 0, iat = 0, volt = 0, load = 0, tps = 0, map = 0, maf = 0, fuel = 0;
   float boost = 0, stft = 0;
+  float afr = 0;          // AFR (หรือแรงดัน O2 ถ้ารถมีแค่ narrowband — ดู RAW.afrMode)
   char gear[3] = "N";
   float trip = 0;
   float pRpm = 0, pSpd = 0, pEct = 0, pIat = 0, pVmin = 99;   // ค่าสูงสุด/ต่ำสุด
@@ -17,6 +18,8 @@ static CarData D;
 // ค่าดิบล่าสุดจาก OBD (ตัวอ่าน OBD ใส่ค่าที่นี่ แล้ว data::update() หน่วงให้นุ่ม)
 struct RawData {
   float rpm = 850, spd = 0, ect = 45, iat = 36, volt = 14.1f, load = 18, tps = 0, map = 32, maf = 2, fuel = 67, stft = 0;
+  float afr = 14.7f;      // AFR จาก OBD (afrMode 1/3) หรือแรงดัน O2 narrowband (afrMode 2)
+  int afrMode = 1;        // 0 = รถไม่มีให้อ่าน, 1 = wideband (ค่าจริง), 2 = narrowband (แค่หนา/บาง), 3 = ค่าที่ ECU สั่ง
   float rpmRate = 0;      // รอบ/วินาที ที่เปลี่ยน (จากตัวอ่าน OBD) ใช้เดาค่าระหว่างรอคำตอบ
   uint32_t rpmT = 0;      // millis() ตอนได้ค่ารอบล่าสุด (0 = ไม่มี/โหมดจำลอง)
 };
@@ -80,6 +83,8 @@ inline void sim(float dt) {
   RAW.maf = simRpm / 1000 * (tps > 0 ? 9 : 2.2f);
   RAW.fuel = 67;
   RAW.stft = sinf(simT / 1.7f) * 3.4f;
+  RAW.afrMode = 1;
+  RAW.afr = tps > 0 ? 12.6f + sinf(simT * 2) * .3f : 14.7f + sinf(simT * 3) * .4f;
 }
 
 // เดาเกียร์จาก รอบ ÷ ความเร็ว เทียบกับค่าที่ตั้งไว้ (rpm ต่อ 1 km/h)
@@ -109,6 +114,7 @@ inline void update(float dt, bool demo) {
   sMaf.step(RAW.maf, dt, 10); sFuel.step(RAW.fuel, dt, 3);
   D.rpm = fmaxf(0, sRpm.x); D.spd = fmaxf(0, sSpd.x); D.ect = sEct.x; D.iat = sIat.x; D.volt = sVolt.x;
   D.load = sLoad.x; D.tps = sTps.x; D.map = sMap.x; D.maf = fmaxf(0, sMaf.x); D.fuel = sFuel.x; D.stft = RAW.stft;
+  D.afr += (RAW.afr - D.afr) * fminf(1.f, dt * 8);
   D.boost = fmaxf(-1.f, (D.map - 101) / 100);
   gearEstimate();
   D.pRpm = fmaxf(D.pRpm, D.rpm); D.pSpd = fmaxf(D.pSpd, D.spd); D.pEct = fmaxf(D.pEct, D.ect);

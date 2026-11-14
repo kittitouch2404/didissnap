@@ -27,6 +27,7 @@ static char tbs[2][8][16];   // ข้อความชั่วคราว (�
 static int tbis[2] = {0, 0};
 inline const char* f0(float v) { char* b = tbs[gfx::core()][tbis[gfx::core()]++ & 7]; snprintf(b, 16, "%d", (int)lroundf(v)); return b; }
 inline const char* f1(float v) { char* b = tbs[gfx::core()][tbis[gfx::core()]++ & 7]; snprintf(b, 16, "%.1f", v); return b; }
+inline const char* f2(float v) { char* b = tbs[gfx::core()][tbis[gfx::core()]++ & 7]; snprintf(b, 16, "%.2f", v); return b; }
 inline int maxRpm() { return didicfg::cfg.maxRpm; }
 inline int kMax() { return max(6, (int)ceilf(maxRpm() / 1000.f) + 1); }
 inline float rpmF() { return fminf(1.f, D.rpm / (kMax() * 1000.f)); }
@@ -95,12 +96,16 @@ inline SlotV slotVal(int i) {
     case 7: return {f0(D.fuel), "%", D.fuel < 12.f ? PXR : WH};
     case 8: return {f0(D.spd), "km/h", WH};
     case 9: return {f1(D.trip), "km", WH};
-    default: return {f1(D.stft), "%", WH};
+    case 10: return {f1(D.stft), "%", WH};
+    default:                                   // AFR: สีตามโซน (บาง = แดง, หนา = ฟ้า)
+      if (RAW.afrMode == 0) return {"--", "", rgb(0x888888)};
+      if (RAW.afrMode == 2) return {f2(D.afr), "V", D.afr > .55f ? rgb(0x66B3FF) : (D.afr < .3f ? PXR : WH)};
+      return {f1(D.afr), "", D.afr > 15.3f ? PXR : (D.afr < 12.2f ? rgb(0x66B3FF) : rgb(0x6CFF8A))};
   }
 }
 // ความกว้างมากสุดที่ช่องนั้นน่าจะใช้ (จัดช่องขวาไม่ให้ทับ)
 inline const char* slotWidest(int i) {
-  static const char* const Wd[] = {"110", "60", "14.8", "-0.9", "100", "100", "99.9", "100", "300", "999.9", "-10.0"};
+  static const char* const Wd[] = {"110", "60", "14.8", "-0.9", "100", "100", "99.9", "100", "300", "999.9", "-10.0", "18.8"};
   return (i >= 0 && i < (int)(sizeof(Wd) / sizeof(Wd[0]))) ? Wd[i] : "999";
 }
 inline void valU(const char* v, const char* u, int x, int y, int k, uint16_t c, int lab = PX_LAB) {
