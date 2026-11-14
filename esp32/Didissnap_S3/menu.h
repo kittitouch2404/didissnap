@@ -30,12 +30,6 @@ static const Item L_PAGES[] = {
     {"P13 SLOT 2", "p13b", 0, 0, 1, "Page 13 bottom row - value 2"},
     {"P13 SLOT 3", "p13c", 0, 0, 1, "Page 13 bottom row - value 3"},
     {"P13 SLOT 4", "p13d", 0, 0, 1, "Page 13 bottom row - value 4"},
-    {"GAUGE 1", "gz0", 0, 0, 1, "Pages 17-18: top left gauge"},
-    {"GAUGE 2", "gz1", 0, 0, 1, "Pages 17-18: top middle gauge"},
-    {"GAUGE 3", "gz2", 0, 0, 1, "Pages 17-18: top right gauge"},
-    {"GAUGE 4", "gz3", 0, 0, 1, "Pages 17-18: bottom left gauge"},
-    {"GAUGE 5", "gz4", 0, 0, 1, "Pages 17-18: bottom middle gauge"},
-    {"GAUGE 6", "gz5", 0, 0, 1, "Pages 17-18: bottom right gauge"},
     {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
 };
 static const Item L_OBD[] = {
@@ -67,7 +61,7 @@ static const Item L_ADV[] = {
 // เปิด/ปิดแต่ละหน้า (หมวดย่อยของ PAGES — ไม่อยู่ในช่องไอคอน)
 #define PGI(n) {"", "pg" #n, 0, 1, 1, "ON = page in use   OFF = skipped by buttons / auto cycle"}
 static const Item L_PGON[] = {PGI(0), PGI(1), PGI(2), PGI(3), PGI(4), PGI(5), PGI(6), PGI(7),
-                              PGI(8), PGI(9), PGI(10), PGI(11), PGI(12), PGI(13), PGI(14), PGI(15), PGI(16), PGI(17),
+                              PGI(8), PGI(9), PGI(10), PGI(11), PGI(12), PGI(13), PGI(14), PGI(15),
                               {"BACK", nullptr, 0, 0, 0, "Back to PAGES"}};
 enum { IC_SUN, IC_PAGES, IC_BT, IC_CAR, IC_RESET, IC_GEAR };
 struct Cat { const char* name; const Item* it; int n; int icon; };
@@ -125,7 +119,6 @@ inline int value(const char* k) {
   if (!strcmp(k, "p13b")) return c.p13b;
   if (!strcmp(k, "p13c")) return c.p13c;
   if (!strcmp(k, "p13d")) return c.p13d;
-  if (k[0] == 'g' && k[1] == 'z' && k[2] >= '0' && k[2] <= '5') return c.gz[k[2] - '0'];
   if (!strcmp(k, "lcdMode")) return lcdMode;
   if (!strcmp(k, "cores")) return drawCores;
   if (!strcmp(k, "fontMem")) return fontMem;
@@ -146,7 +139,7 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "tempAlert")) snprintf(b, n, "%d C", v);
   else if (!strcmp(it.key, "autoCycle")) { if (v) snprintf(b, n, "%d s", v); else snprintf(b, n, "OFF"); }
   else if (!strcmp(it.key, "p13spd") || (!strncmp(it.key, "pg", 2) && isdigit((unsigned char)it.key[2]))) snprintf(b, n, v ? "ON" : "OFF");
-  else if (!strncmp(it.key, "p13", 3) || !strncmp(it.key, "gz", 2)) snprintf(b, n, "%s", didicfg::SLOT_NAMES[v % didicfg::N_SLOTS]);
+  else if (!strncmp(it.key, "p13", 3)) snprintf(b, n, "%s", didicfg::SLOT_NAMES[v % didicfg::N_SLOTS]);
   else if (!strcmp(it.key, "obdBle")) snprintf(b, n, "%s", v ? "ON" : "OFF");
   else if (!strcmp(it.key, "copySpd")) snprintf(b, n, "%d MB/s", v);
   else if (!strcmp(it.key, "gifTest")) { static const char* const GT[] = {"NORMAL", "DECODE ONLY", "NO DECODE", "DECODE NO WRITE", "CPU LOAD ONLY"}; snprintf(b, n, "%s", GT[v % 5]); }
@@ -343,7 +336,7 @@ inline void button(int b, bool lng) {
     if (lng) return;
     int v = value(it.key) + (b == 0 ? it.st : -it.st);
     if (!strcmp(it.key, "page")) v = didicfg::stepPage(value(it.key), b == 0 ? 1 : -1);
-    else if ((!strncmp(it.key, "p13", 3) && strcmp(it.key, "p13spd")) || !strncmp(it.key, "gz", 2)) v = (v + didicfg::N_SLOTS) % didicfg::N_SLOTS;   // วนรอบ
+    else if (!strncmp(it.key, "p13", 3) && strcmp(it.key, "p13spd")) v = (v + didicfg::N_SLOTS) % didicfg::N_SLOTS;   // วนรอบ
     else v = constrain(v, it.mn, it.mx);
     set(it.key, v);
     return;

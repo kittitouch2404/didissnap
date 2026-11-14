@@ -419,7 +419,6 @@ void loop() {
   if (bri != lastBri) { lcd::brightness(bri); lastBri = bri; }
 
   chooseBackground(menu::open ? -1 : c.page);
-  if (!menu::open) pages::gzPrep(c.page);            // หน้า 17-18: เตรียมชั้นหน้าปัด (เฉพาะตอนค่าที่เลือกเปลี่ยน)
   uint32_t tr0 = micros();
   renderFrame(lcd::back(), c.page, menu::open, c.flip);
   uint32_t tr1 = micros();

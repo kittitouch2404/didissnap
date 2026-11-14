@@ -12,12 +12,11 @@
 namespace pages {
 using namespace gfx;
 
-static const int N = 18;
+static const int N = 16;
 static const char* const NAMES[N] = {"Bar graph", "Yellow box", "Race bar", "Half gauge", "Round gauge", "Strip",
                                      "Race dash", "Gear big", "Red stripe", "ECU", "Record", "OBD2 table",
-                                     "Character", "Car run", "Photo", "Pic by rpm", "6 gauge dark", "6 gauge white"};
+                                     "Character", "Car run", "Photo", "Pic by rpm"};
 // หน้ารูป (ใช้ slot 0-2 ของรูปที่ส่งจากแอป) และหน้ารูปตามรอบ
-static const int PG_GZA = 16, PG_GZB = 17;
 static const int PG_PIC = 12, PG_RUN = 13, PG_PHOTO = 14, PG_RPM = 15, PG_RECORD = 10;
 
 constexpr uint16_t ORG = rgb(0xFF7A00), YEL = rgb(0xFFC400), RD = rgb(0xFF2A2A), GR = rgb(0x00E05A),
@@ -98,7 +97,6 @@ inline SlotV slotVal(int i) {
     case 8: return {f0(D.spd), "km/h", WH};
     case 9: return {f1(D.trip), "km", WH};
     case 10: return {f1(D.stft), "%", WH};
-    case 12: return {f0(D.rpm), "rpm", over() ? PXR : WH};
     default:                                   // AFR: สีตามโซน (บาง = แดง, หนา = ฟ้า)
       if (RAW.afrMode == 0) return {"--", "", rgb(0x888888)};
       if (RAW.afrMode == 2) return {f2(D.afr), "V", D.afr > .55f ? rgb(0x66B3FF) : (D.afr < .3f ? PXR : WH)};
@@ -107,7 +105,7 @@ inline SlotV slotVal(int i) {
 }
 // ความกว้างมากสุดที่ช่องนั้นน่าจะใช้ (จัดช่องขวาไม่ให้ทับ)
 inline const char* slotWidest(int i) {
-  static const char* const Wd[] = {"110", "60", "14.8", "-0.9", "100", "100", "99.9", "100", "300", "999.9", "-10.0", "18.8", "8888"};
+  static const char* const Wd[] = {"110", "60", "14.8", "-0.9", "100", "100", "99.9", "100", "300", "999.9", "-10.0", "18.8"};
   return (i >= 0 && i < (int)(sizeof(Wd) / sizeof(Wd[0]))) ? Wd[i] : "999";
 }
 inline void valU(const char* v, const char* u, int x, int y, int k, uint16_t c, int lab = PX_LAB) {
@@ -562,164 +560,6 @@ inline void p12() {
   shiftFlash();
 }
 
-// ---------------------------------------------------------------- 17-18: 6 เกจ
-// 17 = โค้งแดงพื้นดำ · 18 = หน้าปัดขาว · ค่าของแต่ละเกจเลือกได้ (cfg.gz[0..5] = ลำดับใน SLOT_NAMES)
-// ส่วนที่ไม่ขยับ (หน้าปัด ขีด ตัวเลขสเกล) วาดครั้งเดียวเก็บใน PSRAM แล้วทุกเฟรมวาดแค่เข็ม + ตัวเลข
-struct GzR { float mn, mx, red, step; int dec; const char* unit; };
-inline GzR gzRange(int s) {
-  switch (s) {
-    case 0: return {50, 130, (float)didicfg::cfg.tempAlert, 20, 0, "\xC2\xB0" "C"};
-    case 1: return {20, 100, 70, 20, 0, "\xC2\xB0" "C"};
-    case 2: return {8, 16, 15, 2, 1, "V"};
-    case 3: return {-1, 2, 1.5f, 1, 1, "bar"};
-    case 4: return {0, 100, 90, 20, 0, "%"};
-    case 5: return {0, 100, 90, 20, 0, "%"};
-    case 6: return {0, 100, 80, 20, 1, "g/s"};
-    case 7: return {0, 100, 999, 25, 0, "%"};
-    case 8: return {0, 240, 180, 40, 0, "km/h"};
-    case 9: return {0, 1000, 99999, 200, 1, "km"};
-    case 10: return {-25, 25, 15, 10, 1, "%"};
-    case 11: return RAW.afrMode == 2 ? GzR{0, 1, 999, .2f, 2, "V"} : GzR{10, 18, 16, 2, 1, ":1"};
-    default: { float k = ceilf(maxRpm() / 1000.f + .5f); return {0, k, maxRpm() / 1000.f, 1, 1, "x1000"}; }
-  }
-}
-inline float gzVal(int s) {
-  switch (s) {
-    case 0: return D.ect; case 1: return D.iat; case 2: return D.volt; case 3: return D.boost;
-    case 4: return D.load; case 5: return D.tps; case 6: return D.maf; case 7: return D.fuel;
-    case 8: return D.spd; case 9: return D.trip; case 10: return D.stft; case 11: return D.afr;
-    default: return D.rpm / 1000.f;
-  }
-}
-static const float GZ_A0 = M_PI * .75f, GZ_A1 = M_PI * 2.25f;
-inline float gzAng(const GzR& r, float v) { return GZ_A0 + (GZ_A1 - GZ_A0) * clamp01((v - r.mn) / (r.mx - r.mn)); }
-inline int gzSlot(int i) { return constrain(didicfg::cfg.gz[i], 0, didicfg::N_SLOTS - 1); }
-inline float gzCx(int i) { return 80 + 160 * (i % 3); }
-inline const char* gzLab(int s) { return didicfg::SLOT_NAMES[s]; }
-inline const char* gzNum(float v) { char* b = tbs[gfx::core()][tbis[gfx::core()]++ & 7]; if (fabsf(v - lroundf(v)) < .01f) snprintf(b, 16, "%d", (int)lroundf(v)); else snprintf(b, 16, "%.1f", v); return b; }
-inline const char* gzValTxt(int s, const GzR& r) {
-  if (s == 11 && RAW.afrMode == 0) return "--";
-  float v = gzVal(s);
-  if (s == 12) return f0(D.rpm);
-  return r.dec == 2 ? f2(v) : (r.dec == 1 ? f1(v) : f0(v));
-}
-inline void tline(float cx, float cy, float a, float r0, float r1, uint16_t c, float w) {
-  float ca = cosf(a), sa = sinf(a);
-  line(cx + r0 * ca, cy + r0 * sa, cx + r1 * ca, cy + r1 * sa, c, w);
-}
-// ---- แบบ A: โค้งแดงพื้นดำ
-static const int GZA_R = 50;
-inline float gzaCy(int i) { return 77 + 136 * (i / 3); }
-inline void gzaStatic(int i) {
-  int s = gzSlot(i); GzR r = gzRange(s);
-  float cx = gzCx(i), cy = gzaCy(i), R = GZA_R;
-  arc(cx, cy, R, GZ_A0, GZ_A1, rgb(0x2D2D32), 9);
-  float ar = gzAng(r, r.red);
-  if (r.red < r.mx) {                          // โซนแดงไล่สี
-    const int n = 12;
-    for (int k = 0; k < n; k++) {
-      float t = (float)k / n;
-      arc(cx, cy, R, ar + (GZ_A1 - ar) * t, ar + (GZ_A1 - ar) * (t + 1.f / n) + .01f, rgb(((uint32_t)(150 + 105 * t) << 16) | ((uint32_t)(20 + 30 * t) << 8) | 20), 9);
-    }
-  }
-  arc(cx, cy, R + 6, GZ_A0, GZ_A1, rgb(0xC81E1E), 2);
-  float vs[3] = {r.mn, (r.mn + r.mx) / 2, r.mx};
-  for (float v : vs) {
-    float a = gzAng(r, v);
-    text(gzNum(v), (int)(cx + (R + 15) * cosf(a)), (int)(cy + (R + 15) * sinf(a) + 4), 10, rgb(0xE6E6E6), CENTER, 700);
-  }
-  text(gzLab(s), (int)cx, (int)cy - 15, 10, rgb(0xC8C8C8), CENTER, 500);
-  text(s == 12 ? "rpm" : r.unit, (int)cx, (int)cy + 29, 10, rgb(0xC8C8C8), CENTER, 500);
-}
-inline void gzaDyn(int i) {
-  int s = gzSlot(i); GzR r = gzRange(s);
-  float cx = gzCx(i), cy = gzaCy(i), R = GZA_R, v = gzVal(s), a = gzAng(r, v);
-  bool none = s == 11 && RAW.afrMode == 0;
-  if (!none) {
-    arc(cx, cy, R - 7, GZ_A0, a, rgb(0xE63C28), 2);
-    tline(cx, cy, a, R - 12, R + 4, rgb(0xFF4628), 4);
-  }
-  bool alert = !none && v >= r.red;
-  if (s == 0) alert = hot();
-  text(gzValTxt(s, r), (int)cx, (int)cy + 12, 26, alert ? (blink() || s != 0 ? RD : WH) : WH, CENTER, 800);
-}
-// ---- แบบ B: หน้าปัดขาว
-static const int GZB_R = 61;
-inline float gzbCy(int i) { return 68 + 134 * (i / 3); }
-inline void gzbStatic(int i) {
-  int s = gzSlot(i); GzR r = gzRange(s);
-  float cx = gzCx(i), cy = gzbCy(i), R = GZB_R, rf = R - 8;
-  radial(cx, cy, R, rgb(0x6E7078), rgb(0xC8CAD0), rgb(0x55575E), .9f, -R * .6f);   // ขอบโลหะ
-  circle(cx, cy, R - 5, rgb(0x16181C));
-  radial(cx, cy, rf, rgb(0xFFFFFF), rgb(0xF6F8FB), rgb(0xDDE1E8), .6f);           // หน้าปัด
-  if (r.red < r.mx) arc(cx, cy, rf - 8, gzAng(r, r.red), GZ_A1, rgb(0xD22323), 4);
-  int nm = (int)lroundf((r.mx - r.mn) / r.step * 10);
-  for (int k = 0; k <= nm; k++) {
-    float v = r.mn + r.step * k / 10.f, a = gzAng(r, v);
-    bool major = k % 10 == 0, half = k % 5 == 0;
-    uint16_t c = v >= r.red - 1e-4f ? rgb(0xC81E1E) : rgb(0x191C22);
-    tline(cx, cy, a, rf - 2 - (major ? 9 : half ? 6 : 3), rf - 2, c, major ? 2.2f : 1);
-    if (major) text(gzNum(v), (int)(cx + (rf - 20) * cosf(a)), (int)(cy + (rf - 20) * sinf(a) + 3), 9, c, CENTER, 700);
-  }
-  text("DIDISSNAP", (int)cx, (int)cy - 21, 7, rgb(0xC4C8D0), CENTER, 700);
-  text(gzLab(s), (int)cx, (int)cy + 18, 9, rgb(0x23262E), CENTER, 700);
-  text(r.unit, (int)cx, (int)cy + 27, 7, rgb(0x50545C), CENTER, 500);
-  rrect(cx - 18, cy + 31, 36, 13, 3, rgb(0x12141A));
-}
-inline void gzbDyn(int i) {
-  int s = gzSlot(i); GzR r = gzRange(s);
-  float cx = gzCx(i), cy = gzbCy(i), rf = GZB_R - 8, v = gzVal(s);
-  bool none = s == 11 && RAW.afrMode == 0;
-  bool alert = !none && (s == 0 ? hot() : v >= r.red);
-  text(gzValTxt(s, r), (int)cx, (int)cy + 42, 10, alert ? RD : rgb(0xFF8C3C), CENTER, 800);
-  float a = none ? GZ_A0 : gzAng(r, v), ca = cosf(a), sa = sinf(a);
-  for (int sh = 1; sh >= 0; sh--) {              // เงา แล้วตัวเข็ม
-    float ox = sh * 1.5f, w = 2.5f;
-    float xs[4] = {cx + ox + (rf - 5) * ca, cx + ox - w * sa, cx + ox - 14 * ca, cx + ox + w * sa};
-    float ys[4] = {cy + ox + (rf - 5) * sa, cy + ox + w * ca, cy + ox - 14 * sa, cy + ox - w * ca};
-    poly(xs, ys, 4, sh ? rgb(0xAAACB2) : rgb(0xE61E1E), sh ? 160 : 255);
-  }
-  circle(cx, cy, 7, rgb(0x282A30));
-  circle(cx, cy, 5.5f, rgb(0x141418));
-  circle(cx, cy, 2, rgb(0x9696A0));
-}
-static uint16_t* gzBuf = nullptr;
-static uint32_t gzKey = 0;
-inline uint32_t gzKeyFor(int p) {
-  uint32_t k = p * 2654435761u;
-  for (int i = 0; i < 6; i++) k = k * 31 + didicfg::cfg.gz[i];
-  return k * 31 + didicfg::cfg.tempAlert * 7 + didicfg::cfg.maxRpm * 13 + RAW.afrMode + 1;
-}
-inline void gzStaticAll(int p) {
-  clear(p == PG_GZA ? BK : rgb(0x06080C));
-  for (int i = 0; i < 6; i++) p == PG_GZA ? gzaStatic(i) : gzbStatic(i);
-}
-// เรียกจาก loop ก่อนวาดเฟรม (คอร์เดียว): สร้างชั้นหน้าปัดใหม่เมื่อหน้า/ค่าที่เลือกเปลี่ยน
-inline void gzPrep(int p) {
-  if (p != PG_GZA && p != PG_GZB) return;
-  uint32_t k = gzKeyFor(p);
-  if (k == gzKey && gzBuf) return;
-#ifdef BG_HOST
-  if (!gzBuf) gzBuf = (uint16_t*)malloc(W * H * 2);
-#else
-  if (!gzBuf) gzBuf = (uint16_t*)heap_caps_malloc(W * H * 2, MALLOC_CAP_SPIRAM);
-#endif
-  if (!gzBuf) return;
-  gfx::Ctx save = gfx::C();
-  gfx::target(gzBuf);
-  gzStaticAll(p);
-  gfx::C() = save;
-  gzKey = k;
-}
-inline void pGauge(int p) {
-  if (gzBuf && gzKey == gzKeyFor(p)) memcpy(GBUF + GY0 * W, gzBuf + GY0 * W, (GY1 - GY0) * W * 2);
-  else gzStaticAll(p);                           // ยังไม่มีชั้นหน้าปัด (PSRAM ไม่พอ) → วาดทุกเฟรม
-  for (int i = 0; i < 6; i++) p == PG_GZA ? gzaDyn(i) : gzbDyn(i);
-  if (D.link != 2) obd(474, 12, RIGHT);
-  dots();
-  shiftFlash();
-}
-
 inline void draw(int p) {
   switch (p) {
     case 0: p1(); break;
@@ -736,8 +576,7 @@ inline void draw(int p) {
     case 11: pages2::pids(); dots(); break;
     case 12: p9(); break;
     case 13: case 14: pTop(); break;
-    case 15: p12(); break;
-    default: pGauge(p); break;
+    default: p12(); break;
   }
 }
 
