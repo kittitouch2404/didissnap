@@ -97,6 +97,65 @@ inline uint16_t heatC(float f, uint16_t base) {
   if (t < .6f) return gfx::lerp565(rgb(0x20D060), rgb(0xFFD21E), t / .6f);
   return gfx::lerp565(rgb(0xFFD21E), rgb(0xFF3A1A), (t - .6f) / .4f);
 }
+// ---- เข็ม: เลือกแบบได้ (เมนู DISPLAY > NEEDLE) ----
+static const int N_NEEDLE = 6;
+static const char* const NEEDLE_NAMES[N_NEEDLE] = {"CLASSIC", "TAPER", "GLOW", "SPORT", "ARROW", "BLADE 3D"};
+// cx,cy = แกน · a = มุม · r0 = เริ่มที่รัศมี (0 = จากแกน มีหาง + ฝาครอบ) · r1 = ปลาย
+inline void needle(float cx, float cy, float a, float r0, float r1, int st = -1) {
+  if (st < 0) st = didicfg::cfg.needle;
+  float ca = cosf(a), sa = sinf(a), px = -sa, py = ca;
+  bool hub = r0 <= 0;
+  float tail = hub ? r1 * .2f : 0, b0 = hub ? -tail : r0;
+  auto P = [&](float r, float o, float& x, float& y) { x = cx + ca * r + px * o; y = cy + sa * r + py * o; };
+  switch (st) {
+    default:
+    case 0:                                       // CLASSIC: เส้นแดงตรง
+      line(cx + ca * (hub ? -14 : r0), cy + sa * (hub ? -14 : r0), cx + ca * r1, cy + sa * r1, RD, 4);
+      if (hub) circle(cx, cy, 9, rgb(0x777777));
+      break;
+    case 1: {                                     // TAPER: เรียวแหลม มีเงา ฝาครอบดำขอบเงิน
+      taper(cx + ca * b0 + 2, cy + sa * b0 + 3, cx + ca * r1 + 2, cy + sa * r1 + 3, 10, 1.4f, BK, 110);
+      taper(cx + ca * b0, cy + sa * b0, cx + ca * r1, cy + sa * r1, 10, 1.4f, rgb(0xFF2A1A));
+      taper(cx + ca * b0, cy + sa * b0, cx + ca * r1 * .92f, cy + sa * r1 * .92f, 2.6f, .6f, rgb(0xFF9A80));
+      if (hub) { circle(cx, cy, 11, rgb(0x9A9EA6)); circle(cx, cy, 9.5f, rgb(0x16171A)); circle(cx, cy, 3, rgb(0x5A5E66)); }
+      break;
+    }
+    case 2: {                                     // GLOW: แสงฟุ้งแบบไฟ LED
+      float s0 = hub ? 0 : r0;
+      taper(cx + ca * s0, cy + sa * s0, cx + ca * (r1 + 6), cy + sa * (r1 + 6), 20, 12, rgb(0xFF5A00), 60);
+      taper(cx + ca * s0, cy + sa * s0, cx + ca * (r1 + 3), cy + sa * (r1 + 3), 10, 6, rgb(0xFF7A10), 120);
+      taper(cx + ca * s0, cy + sa * s0, cx + ca * r1, cy + sa * r1, 4, 2.4f, rgb(0xFFF0C0));
+      if (hub) { circle(cx, cy, 12, rgb(0x3A1A00)); circle(cx, cy, 8, rgb(0x101010), rgb(0xFF7A10), 1.5f); }
+      break;
+    }
+    case 3: {                                     // SPORT: ตัวขาว ปลายแดง ขอบดำ
+      float xs = b0, xm = r1 * .62f;
+      taper(cx + ca * xs, cy + sa * xs, cx + ca * (r1 + 1), cy + sa * (r1 + 1), 11, 3.4f, BK);
+      taper(cx + ca * xs, cy + sa * xs, cx + ca * xm, cy + sa * xm, 8.5f, 5, rgb(0xF4F4F4));
+      taper(cx + ca * xm, cy + sa * xm, cx + ca * r1, cy + sa * r1, 5, 1.6f, rgb(0xFF2020));
+      if (hub) { circle(cx, cy, 12, rgb(0xE02020)); circle(cx, cy, 8.5f, rgb(0x111111)); circle(cx, cy, 2.5f, rgb(0x888888)); }
+      break;
+    }
+    case 4: {                                     // ARROW: ก้านเล็ก หัวลูกศรที่ปลาย
+      float s0 = hub ? -8 : r0, h = fminf(18.f, r1 * .2f);
+      taper(cx + ca * s0, cy + sa * s0, cx + ca * (r1 - h), cy + sa * (r1 - h), 3, 3, rgb(0xFF3A2A));
+      float xs[3], ys[3];
+      P(r1, 0, xs[0], ys[0]); P(r1 - h, 6, xs[1], ys[1]); P(r1 - h, -6, xs[2], ys[2]);
+      polyAA(xs, ys, 3, rgb(0xFF3A2A));
+      if (hub) { circle(cx, cy, 7, rgb(0xFF3A2A)); circle(cx, cy, 4, rgb(0x111111)); }
+      break;
+    }
+    case 5: {                                     // BLADE 3D: สองซีกสว่าง/มืด + ฝาครอบเงา
+      float xs[3], ys[3], w = 6;
+      P(b0, w, xs[0], ys[0]); P(r1, 0, xs[1], ys[1]); P(b0, 0, xs[2], ys[2]);
+      polyAA(xs, ys, 3, rgb(0xFF5A48));
+      P(b0, -w, xs[0], ys[0]); P(r1, 0, xs[1], ys[1]); P(b0, 0, xs[2], ys[2]);
+      polyAA(xs, ys, 3, rgb(0xA81010));
+      if (hub) { radial(cx, cy, 11, rgb(0xF0F2F6), rgb(0x8A8E96), rgb(0x34363C), .55f, -4); circle(cx, cy, 3.5f, rgb(0x1A1A1E)); }
+      break;
+    }
+  }
+}
 // 5 ไฟ shift เรียงแถว: ติดทีละดวงช่วง 1,500 rpm ก่อน redline · ถึง redline กะพริบทุกดวง
 inline void shiftLeds(int x, int y, int w, int n = 10) {
   if (!fx()) return;
@@ -385,9 +444,7 @@ inline void p5() {
   text("x1000 RPM", (int)cx, (int)cy - 36, 10, rgb(0xBBBBBB), CENTER, 600);
   if (fx()) arc(cx, cy, R - 2.5f, a0, A(rpmF()), heatC(rpmF(), YEL), 5);
   if (showPeak()) { float pa = A(peakF()); line(cx, cy, cx + (R - 30) * cosf(pa), cy + (R - 30) * sinf(pa), rgb(0x7A5A10), 2); }
-  float an = A(rpmF());
-  line(cx - 14 * cosf(an), cy - 14 * sinf(an), cx + (R - 30) * cosf(an), cy + (R - 30) * sinf(an), RD, 4);
-  circle(cx, cy, 9, rgb(0x777777));
+  needle(cx, cy, A(rpmF()), 0, R - 30);
   rrect(cx + 12, cy + 38, 30, 34, 4, rgb(0x0B2A12), GR, 1.5f);
   text(D.gear, (int)cx + 27, (int)cy + 67, 30, WH, CENTER, 900);
   rrect(cx + 46, cy + 38, 60, 34, 4, BK, rgb(0x888888), 1.5f);
@@ -508,7 +565,8 @@ inline void p8() {
     text(f0(k), (int)(cx + (R - 28) * cosf(a)), (int)(cy + (R - 28) * sinf(a) + 7), 19, k * 1000 >= maxRpm() ? RD : rgb(0xDDDDDD), CENTER, 600);
   }
   float an = A(fr);
-  line(cx + 30 * cosf(an), cy + 30 * sinf(an), cx + (R + 6) * cosf(an), cy + (R + 6) * sinf(an), ORG, 4);
+  if (didicfg::cfg.needle == 0) line(cx + 30 * cosf(an), cy + 30 * sinf(an), cx + (R + 6) * cosf(an), cy + (R + 6) * sinf(an), ORG, 4);
+  else needle(cx, cy, an, 30, R + 6);
   circle(cx, cy, 28, rgb(0x111111), ORG, 2);
   text("GEAR", (int)cx, (int)cy - 10, 9, ORG, CENTER, 600);
   text(D.gear, (int)cx, (int)cy + 20, 30, WH, CENTER, 900);

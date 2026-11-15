@@ -1289,6 +1289,25 @@ class _Esp32TabState extends State<Esp32Tab> {
             value: _i('flip', 0) != 0,
             onChanged: (v) => _set('flip', v ? 1 : 0),
           ),
+          if (_cfg?.containsKey('needle') ?? false)
+            ListTile(
+              dense: true,
+              title: const Text('แบบเข็ม (หน้า 5 และ 8)'),
+              trailing: DropdownButton<int>(
+                value: _i('needle', 0).clamp(0, 5),
+                items: const [
+                  DropdownMenuItem(value: 0, child: Text('1 CLASSIC')),
+                  DropdownMenuItem(value: 1, child: Text('2 TAPER')),
+                  DropdownMenuItem(value: 2, child: Text('3 GLOW')),
+                  DropdownMenuItem(value: 3, child: Text('4 SPORT')),
+                  DropdownMenuItem(value: 4, child: Text('5 ARROW')),
+                  DropdownMenuItem(value: 5, child: Text('6 BLADE 3D')),
+                ],
+                onChanged: (n) {
+                  if (n != null) _set('needle', n);
+                },
+              ),
+            ),
           if (_cfg?.containsKey('anim') ?? false)
             SwitchListTile(
               dense: true,

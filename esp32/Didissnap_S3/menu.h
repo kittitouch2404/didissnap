@@ -18,6 +18,7 @@ static const Item L_DISP[] = {
     {"AUTO BRIGHT", "briAuto", 0, 1, 1, "Brightness follows the light sensor"},
     {"FLIP 180", "flip", 0, 1, 1, "Turn the picture upside down"},
     {"GAUGE FX", "anim", 0, 1, 1, "Needle sweep, spring, peak hold, shift lights"},
+    {"NEEDLE", "needle", 0, 5, 1, "Needle style (pages 5 and 8)"},
     {"REFRESH", "lcdMode", 0, 3, 1, "Screen refresh rate (board restarts)"},
     {"PERF INFO", "perf", 0, 1, 1, "Show fps / timing text at the bottom"},
     {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
@@ -140,6 +141,7 @@ inline int value(const char* k) {
   if (!strcmp(k, "p13a")) return c.p13a;
   if (!strcmp(k, "p13spd")) return c.p13spd;
   if (!strcmp(k, "anim")) return c.anim;
+  if (!strcmp(k, "needle")) return c.needle;
   if (!strncmp(k, "pg", 2) && isdigit((unsigned char)k[2])) return (c.pgMask >> atoi(k + 2)) & 1;
   if (!strcmp(k, "p13b")) return c.p13b;
   if (!strcmp(k, "p13c")) return c.p13c;
@@ -170,6 +172,7 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "ectO") || !strcmp(it.key, "iatO")) snprintf(b, n, "%+d C", v);
   else if (!strcmp(it.key, "vOfs")) snprintf(b, n, "%+.1f V", v / 10.f);
   else if (!strcmp(it.key, "tps0") || !strcmp(it.key, "tps1")) snprintf(b, n, "raw %d %%", v);
+  else if (!strcmp(it.key, "needle")) snprintf(b, n, "%s", pages::NEEDLE_NAMES[v % pages::N_NEEDLE]);
   else if (!strcmp(it.key, "obdBle")) snprintf(b, n, "%s", v ? "ON" : "OFF");
   else if (!strcmp(it.key, "copySpd")) snprintf(b, n, "%d MB/s", v);
   else if (!strcmp(it.key, "gifTest")) { static const char* const GT[] = {"NORMAL", "DECODE ONLY", "NO DECODE", "DECODE NO WRITE", "CPU LOAD ONLY"}; snprintf(b, n, "%s", GT[v % 5]); }

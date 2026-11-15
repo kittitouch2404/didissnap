@@ -36,6 +36,7 @@ struct Config {
   int p13spd = 1;
   // ปรับค่าให้ตรง: เกน % (100 = ไม่ปรับ) · ออฟเซ็ต · TPS จุด 0/100 (ค่าดิบจากรถ %)
   int spdG = 100, rpmG = 100, afrG = 100, ectO = 0, iatO = 0, vOfs = 0 /* x0.1 V */, tps0 = 0, tps1 = 100;
+  int needle = 0;                                 // แบบเข็ม (pages::NEEDLE_NAMES)
   int anim = 1;                                   // อนิเมชันเกจ (กวาดเข็มตอนเปิด สปริง ค้างค่าสูงสุด สี ไฟ shift)
   int pgMask = 0xFFFF;                            // หน้าที่เปิดใช้ (บิต 0 = หน้า 1) ปิดแล้วกดปุ่ม/สลับอัตโนมัติจะข้าม                                 // หน้า 13: โชว์ความเร็วมุมขวาบน (1 = เปิด)   // หน้ารูป (13): ค่าที่โชว์ในแถวล่าง 4 ช่อง (ลำดับใน SLOT_NAMES)
 };
@@ -87,6 +88,7 @@ inline void load() {
   cfg.p13a = constrain(prefs->getInt("p13a", cfg.p13a), 0, N_SLOTS - 1);
   cfg.p13spd = prefs->getInt("p13spd", cfg.p13spd) ? 1 : 0;
   cfg.anim = prefs->getInt("anim", cfg.anim) ? 1 : 0;
+  cfg.needle = constrain(prefs->getInt("needle", cfg.needle), 0, 5);
   cfg.pgMask = prefs->getInt("pgMask", cfg.pgMask) & 0xFFFF;
   if (!cfg.pgMask) cfg.pgMask = 0xFFFF;
   cfg.p13b = constrain(prefs->getInt("p13b", cfg.p13b), 0, N_SLOTS - 1);
@@ -113,6 +115,7 @@ inline void save() {
   prefs->putInt("p13a", cfg.p13a);
   prefs->putInt("p13spd", cfg.p13spd);
   prefs->putInt("anim", cfg.anim);
+  prefs->putInt("needle", cfg.needle);
   prefs->putInt("pgMask", cfg.pgMask);
   prefs->putInt("p13b", cfg.p13b);
   prefs->putInt("p13c", cfg.p13c);
@@ -150,6 +153,8 @@ inline String toJson() {
   s += cfg.pgMask;
   s += ",\"anim\":";
   s += cfg.anim;
+  s += ",\"needle\":";
+  s += cfg.needle;
   s += ",\"p13spd\":";
   s += cfg.p13spd;
   s += ",\"p13a\":";
@@ -193,6 +198,7 @@ inline bool setKV(const String& k, float v) {
   else if (k == "gearCount") cfg.gearCount = constrain(iv, 3, 6);
   else if (k == "p13spd") cfg.p13spd = iv ? 1 : 0;
   else if (k == "anim") cfg.anim = iv ? 1 : 0;
+  else if (k == "needle") cfg.needle = constrain(iv, 0, 5);
   else if (k == "pgMask") {
     int m = iv & ((1 << pageCount) - 1);
     if (m) {
@@ -219,7 +225,7 @@ inline bool setKV(const String& k, float v) {
 }
 
 static const char* const KEYS[] = {"maxRpm", "tempAlert", "bri", "briAuto", "flip", "page",
-                                   "autoCycle", "gearCount", "g0", "g1", "g2", "g3", "g4", "g5", "p13a", "p13b", "p13c", "p13d", "p13spd", "anim", "pgMask", "spdG", "rpmG", "afrG", "ectO", "iatO", "vOfs", "tps0", "tps1", "tpsSet", "calReset"};
+                                   "autoCycle", "gearCount", "g0", "g1", "g2", "g3", "g4", "g5", "p13a", "p13b", "p13c", "p13d", "p13spd", "anim", "needle", "pgMask", "spdG", "rpmG", "afrG", "ectO", "iatO", "vOfs", "tps0", "tps1", "tpsSet", "calReset"};
 static const int N_KEYS = sizeof(KEYS) / sizeof(KEYS[0]);
 
 // หาเลขหลัง "key": ในข้อความ JSON แบบง่าย (ไม่ต้องใช้ไลบรารี JSON)
@@ -337,6 +343,7 @@ button.o{background:none;border:1px solid #888;color:#ddd}
 <div class="row"><span>ความสว่าง <b id="briV"></b></span><input type="range" id="bri" min="10" max="100" step="10"></div>
 <div class="row"><span>ปรับความสว่างตามแสงอัตโนมัติ</span><input type="checkbox" class="sw" id="briAuto"></div>
 <div class="row"><span>กลับจอ 180°</span><input type="checkbox" class="sw" id="flip"></div>
+<div class="row" id="needleR" style="display:none"><span>แบบเข็ม</span><select id="needle"><option value="0">CLASSIC</option><option value="1">TAPER</option><option value="2">GLOW</option><option value="3">SPORT</option><option value="4">ARROW</option><option value="5">BLADE 3D</option></select></div>
 <div class="row" id="animR" style="display:none"><span>อนิเมชันเกจ (กวาดเข็ม สปริง ค้างค่าสูงสุด ไฟ shift)</span><input type="checkbox" class="sw" id="anim"></div>
 <div class="row p13r" style="display:none"><span>หน้า 13 โชว์ความเร็ว</span><input type="checkbox" class="sw" id="p13spd"></div>
 <div class="row p13r" style="display:none"><span>หน้า 13 แถวล่าง ช่อง 1</span><select id="p13a"></select></div>
@@ -381,6 +388,7 @@ function fill(j){C=j.cfg;if(j.slots){['p13a','p13b','p13c','p13d'].forEach(k=>{c
 if(C.pgMask!==undefined){const g=$('pgs');g.innerHTML=j.pages.map((n,i)=>`<label style="font-size:13px"><input type="checkbox" data-i="${i}" ${(C.pgMask>>i)&1?'checked':''}> ${i+1}. ${n}</label>`).join('');g.querySelectorAll('input').forEach(e=>e.onchange=()=>{let m=0;g.querySelectorAll('input').forEach(x=>{if(x.checked)m|=1<<x.dataset.i});if(!m){e.checked=true;return;}set('pgMask',m);});}
 ['maxRpm','tempAlert','autoCycle','gearCount','bri'].forEach(k=>$(k).value=C[k]);$('briV').textContent=C.bri+'%';
 if(C.spdG!==undefined){$('calSec').style.display='';['spdG','rpmG','afrG','ectO','iatO','tps0','tps1'].forEach(k=>$(k).value=C[k]);$('vOfsV').value=(C.vOfs/10).toFixed(1);$('tpsRaw').textContent=C.tpsRaw!==undefined?'TPS ดิบตอนนี้ '+C.tpsRaw+' %':'';}
+if(C.needle!==undefined){$('needleR').style.display='';$('needle').value=C.needle;}
 if(C.anim!==undefined){$('animR').style.display='';$('anim').checked=!!C.anim;}
 $('briAuto').checked=!!C.briAuto;$('flip').checked=!!C.flip;$('p13spd').checked=C.p13spd!==0;
 let g='';for(let i=0;i<C.gearCount;i++)g+=`<div class="row"><span>เกียร์ ${i+1}</span><input type="number" step="0.1" id="g${i}" value="${C['g'+i]}"></div>`;$('gears').innerHTML=g;
@@ -389,7 +397,7 @@ async function load(){fill(await (await fetch('/api/cfg')).json())}
 async function set(k,v){const r=await fetch('/api/set?'+k+'='+encodeURIComponent(v));fill(await r.json());msg('บันทึกแล้ว')}
 ['maxRpm','tempAlert','autoCycle','gearCount','page','p13a','p13b','p13c','p13d','spdG','rpmG','afrG','ectO','iatO','tps0','tps1'].forEach(k=>$(k).onchange=e=>set(k,e.target.value));$('vOfsV').onchange=e=>set('vOfs',Math.round(e.target.value*10));
 $('bri').oninput=e=>$('briV').textContent=e.target.value+'%';$('bri').onchange=e=>set('bri',e.target.value);
-$('briAuto').onchange=e=>set('briAuto',e.target.checked?1:0);$('flip').onchange=e=>set('flip',e.target.checked?1:0);$('p13spd').onchange=e=>set('p13spd',e.target.checked?1:0);$('anim').onchange=e=>set('anim',e.target.checked?1:0);
+$('briAuto').onchange=e=>set('briAuto',e.target.checked?1:0);$('flip').onchange=e=>set('flip',e.target.checked?1:0);$('p13spd').onchange=e=>set('p13spd',e.target.checked?1:0);$('anim').onchange=e=>set('anim',e.target.checked?1:0);$('needle').onchange=e=>set('needle',e.target.value);
 async function dtc(){$('codes').textContent='กำลังอ่าน...';const j=await (await fetch('/api/dtc')).json();$('codes').innerHTML=j.dtc.length?j.dtc.map(c=>`<div>⚠ ${c}</div>`).join(''):'<div style="color:#00E05A">ไม่พบรหัส DTC ✓</div>'}
 async function dtcClear(){if(!confirm('ลบรหัส DTC และดับไฟ Check Engine?'))return;const j=await (await fetch('/api/dtc_clear')).json();msg(j.cleared?'ลบแล้ว':'ECU ไม่ยืนยัน');if(j.cleared)$('codes').innerHTML=''}
 async function act(a,t){await fetch('/api/'+a);msg(t)}

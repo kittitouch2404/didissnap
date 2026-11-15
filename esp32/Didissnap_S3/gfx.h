@@ -243,6 +243,44 @@ inline void poly(const float* xs, const float* ys, int n, uint16_t c, uint8_t al
     }
   }
 }
+// รูปหลายเหลี่ยมนูน ขอบเนียน (anti-alias) — ใช้วาดเข็ม
+inline void polyAA(const float* xs, const float* ys, int n, uint16_t c, uint8_t alpha = 255) {
+  if (n < 3 || n > 8) return;
+  float area = 0, mnx = 1e9, mxx = -1e9, mny = 1e9, mxy = -1e9;
+  for (int i = 0, j = n - 1; i < n; j = i++) {
+    area += xs[j] * ys[i] - xs[i] * ys[j];
+    mnx = fminf(mnx, xs[i]); mxx = fmaxf(mxx, xs[i]); mny = fminf(mny, ys[i]); mxy = fmaxf(mxy, ys[i]);
+  }
+  float sg = area > 0 ? 1.f : -1.f, nx[8], ny[8], nd[8];
+  for (int i = 0; i < n; i++) {                       // เส้นขอบ → สมการระยะ (ด้านในเป็นบวก)
+    int j = (i + 1) % n;
+    float ex = xs[j] - xs[i], ey = ys[j] - ys[i], L = sqrtf(ex * ex + ey * ey);
+    if (L < 1e-4f) { nx[i] = ny[i] = 0; nd[i] = 1e9; continue; }
+    nx[i] = -ey / L * sg; ny[i] = ex / L * sg; nd[i] = -(nx[i] * xs[i] + ny[i] * ys[i]);
+  }
+  int ya = max(GY0, (int)floorf(mny)), yb = min(GY1 - 1, (int)ceilf(mxy));
+  int xa = max(0, (int)floorf(mnx)), xb = min(W - 1, (int)ceilf(mxx));
+  for (int yy = ya; yy <= yb; yy++) {
+    float py = yy + .5f;
+    uint16_t* rp = GBUF + yy * W;
+    for (int xx = xa; xx <= xb; xx++) {
+      float px = xx + .5f, d = 1e9;
+      for (int i = 0; i < n; i++) { if (nd[i] > 1e8f) continue; float e = nx[i] * px + ny[i] * py + nd[i]; if (e < d) d = e; }
+      float a = cov(d);
+      if (a <= 0) continue;
+      rp[xx] = blend(c, rp[xx], (uint8_t)(a * alpha));
+    }
+  }
+}
+// เส้นหนาปลายเรียว: ความกว้าง w0 ที่ (x0,y0) → w1 ที่ (x1,y1) ขอบเนียน
+inline void taper(float x0, float y0, float x1, float y1, float w0, float w1, uint16_t c, uint8_t alpha = 255) {
+  float dx = x1 - x0, dy = y1 - y0, L = sqrtf(dx * dx + dy * dy);
+  if (L < .01f) return;
+  float px = -dy / L, py = dx / L;
+  float xs[4] = {x0 + px * w0 / 2, x1 + px * w1 / 2, x1 - px * w1 / 2, x0 - px * w0 / 2};
+  float ys[4] = {y0 + py * w0 / 2, y1 + py * w1 / 2, y1 - py * w1 / 2, y0 - py * w0 / 2};
+  polyAA(xs, ys, 4, c, alpha);
+}
 inline void line(float x0, float y0, float x1, float y1, uint16_t c, float w = 1) {
   float dx = x1 - x0, dy = y1 - y0, L = sqrtf(dx * dx + dy * dy);
   if (L < 0.01f) return;
