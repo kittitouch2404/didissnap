@@ -109,12 +109,18 @@ inline void update(float dt, bool demo) {
     float age = (millis() - RAW.rpmT) / 1000.f;
     if (age < 0.25f) rpmT = fmaxf(0, RAW.rpm + RAW.rpmRate * age);
   }
-  sRpm.step(rpmT, dt, 16); sSpd.step(RAW.spd, dt, 9); sEct.step(RAW.ect, dt, 4); sIat.step(RAW.iat, dt, 4);
-  sVolt.step(RAW.volt, dt, 5); sLoad.step(RAW.load, dt, 10); sTps.step(RAW.tps, dt, 14); sMap.step(RAW.map, dt, 10);
+  // ปรับค่าให้ตรง (เมนู CAR > CALIBRATE / แอป / เว็บ)
+  const auto& c = didicfg::cfg;
+  float tpsC = c.tps1 > c.tps0 ? (RAW.tps - c.tps0) * 100.f / (c.tps1 - c.tps0) : RAW.tps;
+  tpsC = fminf(100.f, fmaxf(0.f, tpsC));
+  sRpm.step(rpmT * c.rpmG / 100.f, dt, 16); sSpd.step(RAW.spd * c.spdG / 100.f, dt, 9);
+  sEct.step(RAW.ect + c.ectO, dt, 4); sIat.step(RAW.iat + c.iatO, dt, 4);
+  sVolt.step(RAW.volt + c.vOfs / 10.f, dt, 5); sLoad.step(RAW.load, dt, 10); sTps.step(tpsC, dt, 14); sMap.step(RAW.map, dt, 10);
   sMaf.step(RAW.maf, dt, 10); sFuel.step(RAW.fuel, dt, 3);
   D.rpm = fmaxf(0, sRpm.x); D.spd = fmaxf(0, sSpd.x); D.ect = sEct.x; D.iat = sIat.x; D.volt = sVolt.x;
   D.load = sLoad.x; D.tps = sTps.x; D.map = sMap.x; D.maf = fmaxf(0, sMaf.x); D.fuel = sFuel.x; D.stft = RAW.stft;
-  D.afr += (RAW.afr - D.afr) * fminf(1.f, dt * 8);
+  float afrC = RAW.afrMode == 2 ? RAW.afr : RAW.afr * c.afrG / 100.f;   // narrowband (V) ไม่คูณเกน
+  D.afr += (afrC - D.afr) * fminf(1.f, dt * 8);
   D.boost = fmaxf(-1.f, (D.map - 101) / 100);
   gearEstimate();
   D.pRpm = fmaxf(D.pRpm, D.rpm); D.pSpd = fmaxf(D.pSpd, D.spd); D.pEct = fmaxf(D.pEct, D.ect);

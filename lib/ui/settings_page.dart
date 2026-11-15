@@ -270,8 +270,9 @@ class _ConnectionTabState extends State<ConnectionTab> {
 class _StepRow extends StatelessWidget {
   const _StepRow(this.label, this.value, this.min, this.max, this.step,
       this.onChanged,
-      {this.unit = ''});
+      {this.unit = '', this.fmt});
   final String label, unit;
+  final String Function(int)? fmt;
   final int value, min, max, step;
   final ValueChanged<int> onChanged;
 
@@ -287,7 +288,7 @@ class _StepRow extends StatelessWidget {
         ),
         SizedBox(
           width: 90,
-          child: Text('$value$unit',
+          child: Text(fmt != null ? fmt!(value) : '$value$unit',
               textAlign: TextAlign.center,
               style:
                   const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
@@ -1308,6 +1309,47 @@ class _Esp32TabState extends State<Esp32Tab> {
           _StepRow('เตือนน้ำที่', _i('tempAlert', 100), 70, 130, 1,
               (v) => _set('tempAlert', v),
               unit: ' °C'),
+          if (_cfg?.containsKey('spdG') ?? false) ...[
+            const _Header('ปรับค่าให้ตรง'),
+            const _Hint('ค่าที่โชว์ = ค่าจากรถ × เกน% + บวก/ลบ · ปรับแล้วจอ CYD ตรงตามด้วย'),
+            _StepRow('ความเร็ว เกน', _i('spdG', 100), 80, 130, 1, (v) => _set('spdG', v), unit: ' %'),
+            _StepRow('รอบ เกน', _i('rpmG', 100), 80, 120, 1, (v) => _set('rpmG', v), unit: ' %'),
+            _StepRow('AFR เกน', _i('afrG', 100), 80, 120, 1, (v) => _set('afrG', v), unit: ' %'),
+            _StepRow('น้ำ บวก/ลบ', _i('ectO', 0), -15, 15, 1, (v) => _set('ectO', v),
+                fmt: (v) => '${v > 0 ? '+' : ''}$v °C'),
+            _StepRow('อากาศเข้า บวก/ลบ', _i('iatO', 0), -15, 15, 1, (v) => _set('iatO', v),
+                fmt: (v) => '${v > 0 ? '+' : ''}$v °C'),
+            _StepRow('แบต บวก/ลบ', _i('vOfs', 0), -20, 20, 1, (v) => _set('vOfs', v),
+                fmt: (v) => '${v > 0 ? '+' : ''}${(v / 10).toStringAsFixed(1)} V'),
+            _StepRow('TPS จุด 0% (ค่าดิบ)', _i('tps0', 0), 0, 60, 1, (v) => _set('tps0', v), unit: ' %'),
+            _StepRow('TPS จุด 100% (ค่าดิบ)', _i('tps1', 100), 30, 100, 1, (v) => _set('tps1', v), unit: ' %'),
+            if (_cfg?.containsKey('tpsRaw') ?? false)
+              _Hint('TPS ดิบตอนกดอ่าน: ${_d('tpsRaw', 0).toStringAsFixed(1)} % (กด "โหลดค่า" เพื่ออ่านใหม่)'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Wrap(spacing: 8, runSpacing: 8, children: [
+                OutlinedButton(onPressed: () => _set('tpsSet', 0), child: const Text('ตั้ง TPS ตอนนี้ = 0%')),
+                OutlinedButton(onPressed: () => _set('tpsSet', 1), child: const Text('ตั้ง TPS ตอนนี้ = 100%')),
+                TextButton(
+                  onPressed: () async {
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        title: const Text('คืนค่าปรับทั้งหมด?'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('ยกเลิก')),
+                          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('คืนค่า')),
+                        ],
+                      ),
+                    );
+                    if (ok == true) _set('calReset', 1);
+                  },
+                  child: const Text('คืนค่าเดิม'),
+                ),
+              ]),
+            ),
+            const _Hint('ตั้ง TPS 0%: ปล่อยคันเร่ง บิดกุญแจ ON · ตั้ง 100%: ดับเครื่อง บิดกุญแจ ON แล้วกดคันเร่งสุด'),
+          ],
           const _Header('เกียร์ (rpm ต่อ 1 km/h)'),
           _StepRow('จำนวนเกียร์', _i('gearCount', 6), 3, 6, 1, (v) => _set('gearCount', v)),
           for (var g = 0; g < _i('gearCount', 6); g++)

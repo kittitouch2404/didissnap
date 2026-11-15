@@ -43,6 +43,7 @@ static const Item L_CAR[] = {
     {"REDLINE", "maxRpm", 2000, 12000, 250, "Shift light / red zone starts here"},
     {"TEMP ALERT", "tempAlert", 70, 130, 1, "Coolant warning temperature"},
     {"GEARS", "gearCount", 3, 6, 1, "Number of gears for the gear display"},
+    {"CALIBRATE", nullptr, 0, 0, 0, "Fix values that read wrong (gain / offset / TPS)"},
     {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
 };
 static const Item L_RESET[] = {
@@ -58,6 +59,21 @@ static const Item L_ADV[] = {
     {"GIF TEST", "gifTest", 0, 4, 1, "GIF decoder test modes"},
     {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
 };
+// ปรับค่าให้ตรง (หมวดย่อยของ CAR)
+static const Item L_CAL[] = {
+    {"SPEED GAIN", "spdG", 80, 130, 1, "Speed x %  (OBD often reads 3-8% low)"},
+    {"RPM GAIN", "rpmG", 80, 120, 1, "RPM x %"},
+    {"AFR GAIN", "afrG", 80, 120, 1, "AFR x %  (E20: about 97%)"},
+    {"COOLANT +/-", "ectO", -15, 15, 1, "Add / remove degrees"},
+    {"IAT +/-", "iatO", -15, 15, 1, "Add / remove degrees"},
+    {"BATTERY +/-", "vOfs", -20, 20, 1, "Add / remove volts (0.1 V steps)"},
+    {"TPS 0% AT", "tps0", 0, 60, 1, "Raw TPS that means 0% (pedal up)"},
+    {"TPS 100% AT", "tps1", 30, 100, 1, "Raw TPS that means 100% (pedal down)"},
+    {"SET TPS 0% NOW", nullptr, 0, 0, 0, "Pedal up, key ON, then hold BTN2"},
+    {"SET TPS 100% NOW", nullptr, 0, 0, 0, "Engine OFF, key ON, pedal down, hold BTN2"},
+    {"RESET CALIBRATE", nullptr, 0, 0, 0, "Put every value back to normal (hold twice)"},
+    {"BACK", nullptr, 0, 0, 0, "Back to CAR"},
+};
 // เปิด/ปิดแต่ละหน้า (หมวดย่อยของ PAGES — ไม่อยู่ในช่องไอคอน)
 #define PGI(n) {"", "pg" #n, 0, 1, 1, "ON = page in use   OFF = skipped by buttons / auto cycle"}
 static const Item L_PGON[] = {PGI(0), PGI(1), PGI(2), PGI(3), PGI(4), PGI(5), PGI(6), PGI(7),
@@ -68,14 +84,21 @@ struct Cat { const char* name; const Item* it; int n; int icon; };
 #define MCAT(nm, arr, ic) {nm, arr, (int)(sizeof(arr) / sizeof(arr[0])), ic}
 static const Cat CATS[] = {MCAT("DISPLAY", L_DISP, IC_SUN), MCAT("PAGES", L_PAGES, IC_PAGES), MCAT("OBD", L_OBD, IC_BT),
                            MCAT("CAR", L_CAR, IC_CAR), MCAT("RESET", L_RESET, IC_RESET), MCAT("ADVANCED", L_ADV, IC_GEAR),
-                           MCAT("SHOW PAGES", L_PGON, IC_PAGES)};
+                           MCAT("SHOW PAGES", L_PGON, IC_PAGES), MCAT("CALIBRATE", L_CAL, IC_CAR)};
 static const int NC = 6;      // ช่องไอคอน 6 ช่องแรก (ช่องที่ 7 = หมวดย่อย SHOW PAGES)
-static const int CAT_PGON = 6, CAT_PAGES = 1;
+static const int CAT_PGON = 6, CAT_PAGES = 1, CAT_CAL = 7, CAT_CAR = 3;
+static uint32_t calArm = 0;
 static const int N = NC;
 static int cat = -1;          // -1 = หน้าช่องไอคอน, 0.. = อยู่ในหมวด
 static int gsel = 0;          // ช่องที่เลือกในหน้าช่องไอคอน
 static bool open = false, edit = false;
 static int sel = 0;
+// หมวดย่อย → ย้อนกลับไปหมวดแม่ (ชี้ที่รายการที่เข้ามา)
+inline void goBack() {
+  if (cat == CAT_PGON) { cat = CAT_PAGES; sel = 1; }
+  else if (cat == CAT_CAL) { cat = CAT_CAR; sel = 3; }
+  else cat = -1;
+}
 static void (*onPeaks)() = nullptr;
 static void (*onTrip)() = nullptr;
 static void (*onHold2)() = nullptr;
@@ -119,6 +142,7 @@ inline int value(const char* k) {
   if (!strcmp(k, "p13b")) return c.p13b;
   if (!strcmp(k, "p13c")) return c.p13c;
   if (!strcmp(k, "p13d")) return c.p13d;
+  for (int i = 0; i < didicfg::N_CALS; i++) if (!strcmp(k, didicfg::CALS[i].k)) return c.*(didicfg::CALS[i].f);
   if (!strcmp(k, "lcdMode")) return lcdMode;
   if (!strcmp(k, "cores")) return drawCores;
   if (!strcmp(k, "fontMem")) return fontMem;
@@ -140,6 +164,10 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "autoCycle")) { if (v) snprintf(b, n, "%d s", v); else snprintf(b, n, "OFF"); }
   else if (!strcmp(it.key, "p13spd") || (!strncmp(it.key, "pg", 2) && isdigit((unsigned char)it.key[2]))) snprintf(b, n, v ? "ON" : "OFF");
   else if (!strncmp(it.key, "p13", 3)) snprintf(b, n, "%s", didicfg::SLOT_NAMES[v % didicfg::N_SLOTS]);
+  else if (!strcmp(it.key, "spdG") || !strcmp(it.key, "rpmG") || !strcmp(it.key, "afrG")) snprintf(b, n, "%d %%", v);
+  else if (!strcmp(it.key, "ectO") || !strcmp(it.key, "iatO")) snprintf(b, n, "%+d C", v);
+  else if (!strcmp(it.key, "vOfs")) snprintf(b, n, "%+.1f V", v / 10.f);
+  else if (!strcmp(it.key, "tps0") || !strcmp(it.key, "tps1")) snprintf(b, n, "raw %d %%", v);
   else if (!strcmp(it.key, "obdBle")) snprintf(b, n, "%s", v ? "ON" : "OFF");
   else if (!strcmp(it.key, "copySpd")) snprintf(b, n, "%d MB/s", v);
   else if (!strcmp(it.key, "gifTest")) { static const char* const GT[] = {"NORMAL", "DECODE ONLY", "NO DECODE", "DECODE NO WRITE", "CPU LOAD ONLY"}; snprintf(b, n, "%s", GT[v % 5]); }
@@ -270,7 +298,7 @@ inline void drawList() {
   using pages::ORG;
   const Cat& C = CATS[cat];
   char t[32];
-  snprintf(t, sizeof(t), cat == CAT_PGON ? "MENU > PAGES > %s" : "MENU > %s", C.name);
+  snprintf(t, sizeof(t), cat == CAT_PGON ? "MENU > PAGES > %s" : cat == CAT_CAL ? "MENU > CAR > %s" : "MENU > %s", C.name);
   header(t);
   bool ob = C.it == L_OBD;
   if (ob) obdBox();
@@ -300,7 +328,20 @@ inline void drawList() {
       text(v, 464, cy, 14, vc, RIGHT, 700);
     } else text(v, 464, cy, 14, vc, RIGHT, 600);
   }
-  footer(edit ? "BTN1 = +     BTN2 = -     HOLD BTN2 = OK" : C.it[sel].desc);
+  static char live[64];
+  const char* ft = edit ? "BTN1 = +     BTN2 = -     HOLD BTN2 = OK" : C.it[sel].desc;
+  if (cat == CAT_CAL && C.it[sel].key) {            // ปรับค่า: โชว์ค่าดิบจากรถ → ค่าที่โชว์ ให้เทียบกับมาตรวัดจริง
+    const char* k = C.it[sel].key;
+    if (k[0] == 't') snprintf(live, sizeof(live), "%s   now raw %.0f%% = %.0f%%", edit ? "BTN1 + / BTN2 -" : "TPS", RAW.tps, D.tps);
+    else if (k[0] == 's') snprintf(live, sizeof(live), "%s   car %.0f -> %.0f km/h", edit ? "BTN1 + / BTN2 -" : "SPEED", RAW.spd, D.spd);
+    else if (k[0] == 'r') snprintf(live, sizeof(live), "%s   car %.0f -> %.0f rpm", edit ? "BTN1 + / BTN2 -" : "RPM", RAW.rpm, D.rpm);
+    else if (k[0] == 'a') snprintf(live, sizeof(live), "%s   car %.1f -> %.1f", edit ? "BTN1 + / BTN2 -" : "AFR", RAW.afr, D.afr);
+    else if (k[0] == 'e') snprintf(live, sizeof(live), "%s   car %.0f -> %.0f C", edit ? "BTN1 + / BTN2 -" : "COOLANT", RAW.ect, D.ect);
+    else if (k[0] == 'i') snprintf(live, sizeof(live), "%s   car %.0f -> %.0f C", edit ? "BTN1 + / BTN2 -" : "IAT", RAW.iat, D.iat);
+    else snprintf(live, sizeof(live), "%s   car %.1f -> %.1f V", edit ? "BTN1 + / BTN2 -" : "BATTERY", RAW.volt, D.volt);
+    ft = live;
+  }
+  footer(ft);
 }
 
 inline void draw() {
@@ -341,11 +382,24 @@ inline void button(int b, bool lng) {
     set(it.key, v);
     return;
   }
-  if (b == 0 && lng) { if (cat == CAT_PGON) { cat = CAT_PAGES; sel = 1; } else cat = -1; return; }   // ปุ่ม 1 ค้าง = ย้อนกลับ
+  if (b == 0 && lng) { goBack(); return; }   // ปุ่ม 1 ค้าง = ย้อนกลับ
   if (!lng) { sel = (sel + (b == 0 ? 1 : C.n - 1)) % C.n; return; }
   // ปุ่ม 2 ค้าง = เลือก
   if (it.key) edit = true;
-  else if (!strcmp(it.label, "BACK")) { if (cat == CAT_PGON) { cat = CAT_PAGES; sel = 1; } else cat = -1; }
+  else if (!strcmp(it.label, "BACK")) goBack();
+  else if (!strcmp(it.label, "CALIBRATE")) { cat = CAT_CAL; sel = 0; }
+  else if (!strncmp(it.label, "SET TPS", 7)) {
+    bool full = strstr(it.label, "100") != nullptr;
+    int old = didicfg::cfg.page;
+    if (!didicfg::setKV(String("tpsSet"), full ? 1.f : 0.f)) { toast("NO TPS"); return; }
+    didicfg::changed(old);
+    char m[32]; snprintf(m, sizeof(m), "TPS %s = RAW %d", full ? "100%" : "0%", full ? didicfg::cfg.tps1 : didicfg::cfg.tps0);
+    toast(m);
+  }
+  else if (!strcmp(it.label, "RESET CALIBRATE")) {
+    if (!calArm || millis() - calArm > 3000) { calArm = millis(); toast("HOLD AGAIN TO RESET"); }
+    else { calArm = 0; int old = didicfg::cfg.page; didicfg::calReset(); didicfg::changed(old); toast("CALIBRATE RESET"); }
+  }
   else if (!strcmp(it.label, "SHOW PAGES")) { cat = CAT_PGON; sel = 0; }
   else if (!strcmp(it.label, "PEAK RESET")) { if (onPeaks) onPeaks(); toast("PEAK RESET"); }
   else if (!strcmp(it.label, "TRIP RESET")) { if (onTrip) onTrip(); toast("TRIP RESET"); }

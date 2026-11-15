@@ -54,8 +54,11 @@ inline void loop(uint8_t link) {
     DidiNowData m;
     m.magic = DIDINOW_MAGIC; m.type = DN_DATA; m.link = link; m.seq = seq++;
     m.rpmT = RAW.rpmT;
-    m.rpm = RAW.rpm; m.spd = RAW.spd; m.ect = RAW.ect; m.iat = RAW.iat; m.volt = RAW.volt;
-    m.load = RAW.load; m.tps = RAW.tps; m.map = RAW.map; m.maf = RAW.maf; m.fuel = RAW.fuel; m.stft = RAW.stft;
+    const auto& c = didicfg::cfg;                 // ส่งค่าที่ปรับแล้ว (CALIBRATE) ให้จอ CYD ตรงกับจอนี้
+    float tp = c.tps1 > c.tps0 ? (RAW.tps - c.tps0) * 100.f / (c.tps1 - c.tps0) : RAW.tps;
+    m.rpm = RAW.rpm * c.rpmG / 100.f; m.spd = RAW.spd * c.spdG / 100.f; m.ect = RAW.ect + c.ectO; m.iat = RAW.iat + c.iatO;
+    m.volt = RAW.volt + c.vOfs / 10.f;
+    m.load = RAW.load; m.tps = fminf(100.f, fmaxf(0.f, tp)); m.map = RAW.map; m.maf = RAW.maf; m.fuel = RAW.fuel; m.stft = RAW.stft;
     esp_now_send(BCAST, (const uint8_t*)&m, sizeof(m));
   }
 }

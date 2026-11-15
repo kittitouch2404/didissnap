@@ -34,6 +34,8 @@ struct Config {
   float gears[6] = {118, 68, 47, 36, 29, 24};   // rpm ต่อ 1 km/h ของแต่ละเกียร์
   int p13a = 0, p13b = 1, p13c = 2, p13d = 3;
   int p13spd = 1;
+  // ปรับค่าให้ตรง: เกน % (100 = ไม่ปรับ) · ออฟเซ็ต · TPS จุด 0/100 (ค่าดิบจากรถ %)
+  int spdG = 100, rpmG = 100, afrG = 100, ectO = 0, iatO = 0, vOfs = 0 /* x0.1 V */, tps0 = 0, tps1 = 100;
   int pgMask = 0xFFFF;                            // หน้าที่เปิดใช้ (บิต 0 = หน้า 1) ปิดแล้วกดปุ่ม/สลับอัตโนมัติจะข้าม                                 // หน้า 13: โชว์ความเร็วมุมขวาบน (1 = เปิด)   // หน้ารูป (13): ค่าที่โชว์ในแถวล่าง 4 ช่อง (ลำดับใน SLOT_NAMES)
 };
 // ค่าที่เลือกโชว์ในช่องล่างของหน้า 13 ได้
@@ -41,6 +43,16 @@ static const char* const SLOT_NAMES[] = {"COOLANT", "IAT", "BATT", "BOOST", "LOA
 static const int N_SLOTS = sizeof(SLOT_NAMES) / sizeof(SLOT_NAMES[0]);
 
 static Config cfg;
+// ค่าที่ปรับได้: ชื่อ, ต่ำสุด, สูงสุด, ค่าเริ่มต้น
+struct CalK { const char* k; int mn, mx, def; int Config::*f; };
+static const CalK CALS[] = {{"spdG", 80, 130, 100, &Config::spdG}, {"rpmG", 80, 120, 100, &Config::rpmG},
+                            {"afrG", 80, 120, 100, &Config::afrG}, {"ectO", -15, 15, 0, &Config::ectO},
+                            {"iatO", -15, 15, 0, &Config::iatO},   {"vOfs", -20, 20, 0, &Config::vOfs},
+                            {"tps0", 0, 60, 0, &Config::tps0},     {"tps1", 30, 100, 100, &Config::tps1}};
+static const int N_CALS = sizeof(CALS) / sizeof(CALS[0]);
+static float (*rawTps)() = nullptr;   // ค่า TPS ดิบตอนนี้ (ตั้งจากสเก็ตช์) — ใช้กับ "ตั้งตอนนี้เป็น 0% / 100%"
+inline void calFix() { if (cfg.tps1 < cfg.tps0 + 10) cfg.tps1 = min(100, cfg.tps0 + 10); if (cfg.tps1 < cfg.tps0 + 10) cfg.tps0 = cfg.tps1 - 10; }
+inline void calReset() { for (int i = 0; i < N_CALS; i++) cfg.*(CALS[i].f) = CALS[i].def; }
 static Preferences* prefs = nullptr;
 static const char* const* pageNames = nullptr;
 static int pageCount = 1;
@@ -78,6 +90,8 @@ inline void load() {
   cfg.p13b = constrain(prefs->getInt("p13b", cfg.p13b), 0, N_SLOTS - 1);
   cfg.p13c = constrain(prefs->getInt("p13c", cfg.p13c), 0, N_SLOTS - 1);
   cfg.p13d = constrain(prefs->getInt("p13d", cfg.p13d), 0, N_SLOTS - 1);
+  for (int i = 0; i < N_CALS; i++) cfg.*(CALS[i].f) = constrain(prefs->getInt(CALS[i].k, CALS[i].def), CALS[i].mn, CALS[i].mx);
+  calFix();
 }
 
 inline void save() {
@@ -100,12 +114,13 @@ inline void save() {
   prefs->putInt("p13b", cfg.p13b);
   prefs->putInt("p13c", cfg.p13c);
   prefs->putInt("p13d", cfg.p13d);
+  for (int i = 0; i < N_CALS; i++) prefs->putInt(CALS[i].k, cfg.*(CALS[i].f));
 }
 
 // ------------------------------------------------------------------ JSON
 inline String toJson() {
   String s;
-  s.reserve(420);
+  s.reserve(560);
   s += "{\"cfg\":{\"maxRpm\":";
   s += cfg.maxRpm;
   s += ",\"tempAlert\":";
@@ -140,6 +155,8 @@ inline String toJson() {
   s += cfg.p13c;
   s += ",\"p13d\":";
   s += cfg.p13d;
+  for (int i = 0; i < N_CALS; i++) { s += ",\""; s += CALS[i].k; s += "\":"; s += cfg.*(CALS[i].f); }
+  if (rawTps) { s += ",\"tpsRaw\":"; s += String(rawTps(), 1); }
   s += "},\"slots\":[";
   for (int i = 0; i < N_SLOTS; i++) {
     if (i) s += ",";
@@ -181,6 +198,14 @@ inline bool setKV(const String& k, float v) {
   else if (k == "p13b") cfg.p13b = constrain(iv, 0, N_SLOTS - 1);
   else if (k == "p13c") cfg.p13c = constrain(iv, 0, N_SLOTS - 1);
   else if (k == "p13d") cfg.p13d = constrain(iv, 0, N_SLOTS - 1);
+  else if (k == "tpsSet") {                       // 0 = ตั้ง TPS ตอนนี้เป็น 0% · 1 = เป็น 100%
+    if (!rawTps) return false;
+    int r = constrain((int)lroundf(rawTps()), 0, 100);
+    if (iv) cfg.tps1 = constrain(r, 30, 100); else cfg.tps0 = constrain(r, 0, 60);
+    if (iv) { if (cfg.tps0 > cfg.tps1 - 10) cfg.tps0 = max(0, cfg.tps1 - 10); } else calFix();
+  }
+  else if (k == "calReset") calReset();
+  else if ([&] { for (int i = 0; i < N_CALS; i++) if (k == CALS[i].k) { cfg.*(CALS[i].f) = constrain(iv, CALS[i].mn, CALS[i].mx); calFix(); return true; } return false; }()) {}
   else if (k.length() == 2 && k[0] == 'g' && k[1] >= '0' && k[1] <= '5') {
     if (v >= 5.0f && v <= 400.0f) cfg.gears[k[1] - '0'] = v;
   } else return false;
@@ -188,7 +213,7 @@ inline bool setKV(const String& k, float v) {
 }
 
 static const char* const KEYS[] = {"maxRpm", "tempAlert", "bri", "briAuto", "flip", "page",
-                                   "autoCycle", "gearCount", "g0", "g1", "g2", "g3", "g4", "g5", "p13a", "p13b", "p13c", "p13d", "p13spd", "pgMask"};
+                                   "autoCycle", "gearCount", "g0", "g1", "g2", "g3", "g4", "g5", "p13a", "p13b", "p13c", "p13d", "p13spd", "pgMask", "spdG", "rpmG", "afrG", "ectO", "iatO", "vOfs", "tps0", "tps1", "tpsSet", "calReset"};
 static const int N_KEYS = sizeof(KEYS) / sizeof(KEYS[0]);
 
 // หาเลขหลัง "key": ในข้อความ JSON แบบง่าย (ไม่ต้องใช้ไลบรารี JSON)
@@ -314,6 +339,18 @@ button.o{background:none;border:1px solid #888;color:#ddd}
 <section><h3>รอบ / ความร้อน</h3>
 <div class="row"><span>Redline (rpm)</span><input type="number" id="maxRpm" min="2000" max="12000" step="250"></div>
 <div class="row"><span>เตือนน้ำที่ (°C)</span><input type="number" id="tempAlert" min="70" max="130"></div></section>
+<section id="calSec" style="display:none"><h3>ปรับค่าให้ตรง</h3>
+<div class="row"><span>ความเร็ว เกน (%)</span><input type="number" id="spdG" min="80" max="130"></div>
+<div class="row"><span>รอบ เกน (%)</span><input type="number" id="rpmG" min="80" max="120"></div>
+<div class="row"><span>AFR เกน (%)</span><input type="number" id="afrG" min="80" max="120"></div>
+<div class="row"><span>น้ำ บวก/ลบ (°C)</span><input type="number" id="ectO" min="-15" max="15"></div>
+<div class="row"><span>อากาศเข้า บวก/ลบ (°C)</span><input type="number" id="iatO" min="-15" max="15"></div>
+<div class="row"><span>แบต บวก/ลบ (V)</span><input type="number" id="vOfsV" min="-2" max="2" step="0.1"></div>
+<div class="row"><span>TPS จุด 0% (ค่าดิบ %)</span><input type="number" id="tps0" min="0" max="60"></div>
+<div class="row"><span>TPS จุด 100% (ค่าดิบ %)</span><input type="number" id="tps1" min="30" max="100"></div>
+<div class="hint" id="tpsRaw"></div>
+<button onclick="set('tpsSet',0)">ตั้ง TPS ตอนนี้ = 0%</button><button onclick="set('tpsSet',1)">ตั้ง TPS ตอนนี้ = 100%</button>
+<button class="o" onclick="if(confirm('คืนค่าปรับทั้งหมด?'))set('calReset',1)">คืนค่าเดิม</button></section>
 <section><h3>เกียร์ (rpm ต่อ 1 km/h)</h3>
 <div class="row"><span>จำนวนเกียร์</span><input type="number" id="gearCount" min="3" max="6"></div>
 <div id="gears"></div></section>
@@ -336,12 +373,13 @@ function msg(t){const m=$('msg');m.textContent=t;m.style.opacity=1;clearTimeout(
 function fill(j){C=j.cfg;if(j.slots){['p13a','p13b','p13c','p13d'].forEach(k=>{const e=$(k);e.innerHTML=j.slots.map((n,i)=>`<option value="${i}">${n}</option>`).join('');e.value=C[k];});document.querySelectorAll('.p13r').forEach(r=>r.style.display='');}const p=$('page');p.innerHTML=j.pages.map((n,i)=>`<option value="${i}">${i+1}. ${n}</option>`).join('');p.value=C.page;
 if(C.pgMask!==undefined){const g=$('pgs');g.innerHTML=j.pages.map((n,i)=>`<label style="font-size:13px"><input type="checkbox" data-i="${i}" ${(C.pgMask>>i)&1?'checked':''}> ${i+1}. ${n}</label>`).join('');g.querySelectorAll('input').forEach(e=>e.onchange=()=>{let m=0;g.querySelectorAll('input').forEach(x=>{if(x.checked)m|=1<<x.dataset.i});if(!m){e.checked=true;return;}set('pgMask',m);});}
 ['maxRpm','tempAlert','autoCycle','gearCount','bri'].forEach(k=>$(k).value=C[k]);$('briV').textContent=C.bri+'%';
+if(C.spdG!==undefined){$('calSec').style.display='';['spdG','rpmG','afrG','ectO','iatO','tps0','tps1'].forEach(k=>$(k).value=C[k]);$('vOfsV').value=(C.vOfs/10).toFixed(1);$('tpsRaw').textContent=C.tpsRaw!==undefined?'TPS ดิบตอนนี้ '+C.tpsRaw+' %':'';}
 $('briAuto').checked=!!C.briAuto;$('flip').checked=!!C.flip;$('p13spd').checked=C.p13spd!==0;
 let g='';for(let i=0;i<C.gearCount;i++)g+=`<div class="row"><span>เกียร์ ${i+1}</span><input type="number" step="0.1" id="g${i}" value="${C['g'+i]}"></div>`;$('gears').innerHTML=g;
 for(let i=0;i<C.gearCount;i++)$('g'+i).onchange=e=>set('g'+i,e.target.value)}
 async function load(){fill(await (await fetch('/api/cfg')).json())}
 async function set(k,v){const r=await fetch('/api/set?'+k+'='+encodeURIComponent(v));fill(await r.json());msg('บันทึกแล้ว')}
-['maxRpm','tempAlert','autoCycle','gearCount','page','p13a','p13b','p13c','p13d'].forEach(k=>$(k).onchange=e=>set(k,e.target.value));
+['maxRpm','tempAlert','autoCycle','gearCount','page','p13a','p13b','p13c','p13d','spdG','rpmG','afrG','ectO','iatO','tps0','tps1'].forEach(k=>$(k).onchange=e=>set(k,e.target.value));$('vOfsV').onchange=e=>set('vOfs',Math.round(e.target.value*10));
 $('bri').oninput=e=>$('briV').textContent=e.target.value+'%';$('bri').onchange=e=>set('bri',e.target.value);
 $('briAuto').onchange=e=>set('briAuto',e.target.checked?1:0);$('flip').onchange=e=>set('flip',e.target.checked?1:0);$('p13spd').onchange=e=>set('p13spd',e.target.checked?1:0);
 async function dtc(){$('codes').textContent='กำลังอ่าน...';const j=await (await fetch('/api/dtc')).json();$('codes').innerHTML=j.dtc.length?j.dtc.map(c=>`<div>⚠ ${c}</div>`).join(''):'<div style="color:#00E05A">ไม่พบรหัส DTC ✓</div>'}
