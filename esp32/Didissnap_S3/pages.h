@@ -30,7 +30,42 @@ inline const char* f1(float v) { char* b = tbs[gfx::core()][tbis[gfx::core()]++ 
 inline const char* f2(float v) { char* b = tbs[gfx::core()][tbis[gfx::core()]++ & 7]; snprintf(b, 16, "%.2f", v); return b; }
 inline int maxRpm() { return didicfg::cfg.maxRpm; }
 inline int kMax() { return max(6, (int)ceilf(maxRpm() / 1000.f) + 1); }
-inline float rpmF() { return fminf(1.f, D.rpm / (kMax() * 1000.f)); }
+inline float rpmRawF() { return fminf(1.f, D.rpm / (kMax() * 1000.f)); }
+// ---- อนิเมชันเกจ (เมนู DISPLAY > GAUGE FX) — คำนวณครั้งเดียวต่อเฟรม (animTick) ทุกแถบ/ทุกคอร์ใช้ค่าเดียวกัน
+//  1 กวาดเข็มตอนเปิดเครื่อง · 2 เข็มสปริงเลยค่านิดแล้วเด้งกลับ · 3 ค้างค่าสูงสุดแล้วค่อยลง
+static float aF = 0, aV = 0, pkF = 0;      // ตำแหน่งเข็ม (0-1) ความเร็วเข็ม ค่าสูงสุดที่ค้าง
+static uint32_t aT = 0, pkT = 0, sweepT0 = 0;
+static bool sweepDone = false;
+inline bool fx() { return didicfg::cfg.anim != 0; }
+inline float sweepF(uint32_t t) {           // 0 → 1 → 0 ใน 1.5 วิ (ขึ้นเร็ว ค้างนิด ลงนุ่ม)
+  float s = t / 1000.f;
+  if (s < .6f) { float u = s / .6f; return 1 - (1 - u) * (1 - u); }
+  if (s < .8f) return 1;
+  float u = fminf(1.f, (s - .8f) / .7f); return 1 - u * u * (3 - 2 * u);
+}
+inline void animTick() {
+  uint32_t now = gfx::nowMs();
+  float dt = aT ? fminf(.1f, (now - aT) / 1000.f) : 0;
+  aT = now;
+  float tgt = rpmRawF();
+  if (!fx()) { aF = tgt; aV = 0; pkF = tgt; sweepDone = true; return; }
+  if (!sweepDone) {
+    if (!sweepT0) sweepT0 = now;
+    uint32_t e = now - sweepT0;
+    if (e < 1500) { aF = sweepF(e); aV = 0; pkF = 0; pkT = now; return; }
+    sweepDone = true; aF = 0;
+  }
+  // สปริง-แดมป์ (เลยค่าราว 6%) — แบ่งก้าวย่อยให้นิ่งที่ fps ต่ำ
+  const float k = 260, c = 2 * sqrtf(k) * .62f;
+  for (int i = 0; i < 4; i++) { float h = dt / 4; aV += (k * (tgt - aF) - c * aV) * h; aF += aV * h; }
+  aF = fminf(1.04f, fmaxf(0.f, aF));
+  if (aF >= pkF) { pkF = aF; pkT = now; }
+  else if (now - pkT > 2500) pkF = fmaxf(aF, pkF - .3f * dt);          // ค้าง 2.5 วิ แล้วไหลลง
+}
+inline void sweepAgain() { sweepDone = false; sweepT0 = 0; }
+inline float rpmF() { return fx() ? fminf(1.f, aF) : rpmRawF(); }
+inline float peakF() { return fminf(1.f, pkF); }
+inline bool showPeak() { return fx() && sweepDone && pkF > rpmF() + .015f; }
 inline float redF() { return maxRpm() / (kMax() * 1000.f); }
 inline bool over() { return D.rpm >= maxRpm(); }
 inline bool hot() { return D.ect >= didicfg::cfg.tempAlert; }
@@ -53,6 +88,28 @@ inline void dots() {                 // จุดบอกหน้า: เฉ�
 }
 inline void shiftFlash() {
   if (over() && blink()) frame(3, 3, W - 6, H - 6, RD, 6);
+}
+// 4 สีตามค่า: เขียว → เหลือง → ส้ม → แดง (ถึง redline) · เกิน redline = แดงกะพริบ
+inline uint16_t heatC(float f, uint16_t base) {
+  if (!fx()) return base;
+  float r = redF(), t = clamp01(f / r);
+  if (f >= r) return blink() ? RD : rgb(0xFF8080);
+  if (t < .6f) return gfx::lerp565(rgb(0x20D060), rgb(0xFFD21E), t / .6f);
+  return gfx::lerp565(rgb(0xFFD21E), rgb(0xFF3A1A), (t - .6f) / .4f);
+}
+// 5 ไฟ shift เรียงแถว: ติดทีละดวงช่วง 1,500 rpm ก่อน redline · ถึง redline กะพริบทุกดวง
+inline void shiftLeds(int x, int y, int w, int n = 10) {
+  if (!fx()) return;
+  float from = maxRpm() - 1500.f, rpm = rpmF() * kMax() * 1000.f;
+  float lit = (rpm - from) / 1500.f * n;
+  int s = w / n, d = s - 4;
+  for (int i = 0; i < n; i++) {
+    uint16_t c = i < n * .4f ? rgb(0x20E060) : (i < n * .7f ? rgb(0xFFC81E) : rgb(0xFF2A2A));
+    bool on = over() ? blink() : lit > i;
+    float cx = x + i * s + s / 2.f, cy = y + d / 2.f;
+    if (on) { circle(cx, cy, d / 2.f + 2, gfx::lerp565(BK, c, .35f)); circle(cx, cy, d / 2.f, c); }
+    else circle(cx, cy, d / 2.f, rgb(0x262628), rgb(0x3A3A3E), 1);
+  }
 }
 inline void vbox(int x, int y, int w, int h, const char* lab, const char* val, const char* mn, const char* mx, bool yel = false, uint16_t vc = BK) {
   text(mn, x + 2, y + 9, 9, rgb(0xBBBBBB), LEFT, 500);
@@ -148,7 +205,8 @@ inline void p1() {
   float red = redF(), fr = rpmF();
   for (int i = 0; i < NB; i++) {
     float f = (float)i / NB, bx = x0 + i * (float)(x1 - x0) / NB, bw = (float)(x1 - x0) / NB - 1.5f, bh = 16 + f * 62;
-    uint16_t c = f < fr ? (f >= red ? RD : rgb(0xFF9A1A)) : (f >= red ? rgb(0x5A2020) : rgb(0xC9C9D4));
+    uint16_t c = f < fr ? (f >= red ? RD : heatC(f, rgb(0xFF9A1A))) : (f >= red ? rgb(0x5A2020) : rgb(0xC9C9D4));
+    if (showPeak() && fabsf(f - peakF()) < .5f / NB) c = WH;
     fill((int)bx, (int)(yb - bh), (int)ceilf(bw), (int)bh, c);
   }
   for (int k = 1; k <= K; k++) {
@@ -185,7 +243,8 @@ inline void p2() {
   for (int k = 1; k <= K; k++) text(f0(k), (int)(x0 + (k - .5f) / K * (x1 - x0)), 17, 17, k * 1000 > maxRpm() ? RD : WH, CENTER, 800);
   fill(x0, 22, x1 - x0, 14, rgb(0x10235A));
   fill((int)(x0 + red * (x1 - x0)), 22, (int)((1 - red) * (x1 - x0)) + 1, 14, rgb(0x4A0D0D));
-  fill(x0, 22, (int)(fminf(fr, red) * (x1 - x0)), 14, BL);
+  fill(x0, 22, (int)(fminf(fr, red) * (x1 - x0)), 14, heatC(fr, BL));
+  if (showPeak()) fill((int)(x0 + peakF() * (x1 - x0)) - 1, 20, 3, 18, WH);
   if (fr > red) fill((int)(x0 + red * (x1 - x0)), 22, (int)((fr - red) * (x1 - x0)), 14, RD);
   rrect(160, 42, 150, 38, 4, YEL);
   text(f0(D.spd), 235, 76, 36, BK, CENTER, 900, true);
@@ -225,11 +284,13 @@ inline void p3() {
     bool lit = f < fr;
     if (f < split) {
       float a = M_PI + f / split * M_PI / 2, ca = cosf(a), sa = sinf(a), len = .16f + f * .12f;
-      line(cx + rx * ca, cy + ry * sa, cx + rx * (1 - len) * ca, cy + ry * (1 - len) * sa, lit ? WH : rgb(0x3A3A3A), 3);
+      bool pk = showPeak() && fabsf(f - peakF()) < .5f / NB;
+      line(cx + rx * ca, cy + ry * sa, cx + rx * (1 - len) * ca, cy + ry * (1 - len) * sa, pk ? YEL : lit ? WH : rgb(0x3A3A3A), 3);
     } else {
       float g = (f - split) / (1 - split);
       int x = (int)(cx + 4 + g * 140);
-      fill(x, 6, 2, 76, lit ? (f >= red ? RD : YEL) : (f >= red ? rgb(0x4A1010) : rgb(0x4A4300)));
+      bool pk = showPeak() && fabsf(f - peakF()) < .5f / NB;
+      fill(x, 6, 2, 76, pk ? WH : lit ? (f >= red ? RD : heatC(f, YEL)) : (f >= red ? rgb(0x4A1010) : rgb(0x4A4300)));
     }
   }
   for (int k = 0; k <= K; k++) {
@@ -261,7 +322,8 @@ inline void p4() {
   const float cx = 150, cy = 150, R = 112, a0 = M_PI * .42f, a1 = M_PI * 1.82f;
   auto A = [&](float f) { return a0 + (a1 - a0) * f; };
   arc(cx, cy, R - 22, a0, a1, rgb(0x1C2C50), 44);
-  arc(cx, cy, R - 22, a0, A(fr), YEL, 44);
+  arc(cx, cy, R - 22, a0, A(fr), heatC(fr, YEL), 44);
+  if (showPeak()) { float pa = A(peakF()); line(cx + (R - 44) * cosf(pa), cy + (R - 44) * sinf(pa), cx + R * cosf(pa), cy + R * sinf(pa), WH, 3); }
   arc(cx, cy, R + 3, A(red), a1, over() && blink() ? rgb(0xFF6060) : RD, 9);
   arc(cx, cy, R + 3, a0, A(red), rgb(0x555555), 9);
   for (int k = 1; k <= K; k++) {
@@ -273,6 +335,7 @@ inline void p4() {
   text("GEAR", (int)cx + 8, (int)cy + 42, 10, WH, CENTER, 600);
   text("x1000 RPM", 8, 264, 10, rgb(0xAAAAAA), LEFT, 600);
   obd(8, 14);
+  shiftLeds(76, 3, 200);
   text("BOOST", 300, 20, 12, WH, LEFT, 500);
   text("bar", 474, 20, 12, WH, RIGHT, 500);
   text(f1(D.boost), 390, 58, 36, WH, CENTER, 900);
@@ -291,6 +354,7 @@ inline void p4() {
   text("60", 415, 232, 9, rgb(0xAAAAAA));
   text(f0(didicfg::cfg.tempAlert), 474, 232, 9, RD, RIGHT);
   dots();
+  shiftFlash();
 }
 
 // ---------------------------------------------------------------- 5 Round gauge
@@ -319,6 +383,8 @@ inline void p5() {
     text(f0(k), (int)(cx + (R - 12) * cosf(a)), (int)(cy + (R - 12) * sinf(a) + 8), 22, k * 1000 >= maxRpm() ? WH : BK, CENTER, 900);
   }
   text("x1000 RPM", (int)cx, (int)cy - 36, 10, rgb(0xBBBBBB), CENTER, 600);
+  if (fx()) arc(cx, cy, R - 2.5f, a0, A(rpmF()), heatC(rpmF(), YEL), 5);
+  if (showPeak()) { float pa = A(peakF()); line(cx, cy, cx + (R - 30) * cosf(pa), cy + (R - 30) * sinf(pa), rgb(0x7A5A10), 2); }
   float an = A(rpmF());
   line(cx - 14 * cosf(an), cy - 14 * sinf(an), cx + (R - 30) * cosf(an), cy + (R - 30) * sinf(an), RD, 4);
   circle(cx, cy, 9, rgb(0x777777));
@@ -335,6 +401,7 @@ inline void p5() {
   side5(384, 104, "AIR C", f0(D.iat), D.iat / 80);
   side5(384, 178, "BATT V", f1(D.volt), (D.volt - 10) / 6);
   obd(6, 18);
+  shiftLeds(128, 4, 224);
   dots();
   shiftFlash();
 }
@@ -358,7 +425,8 @@ inline void p6() {
   for (int i = 0; i < NB; i++) {
     float f = (float)i / NB;
     int x = (int)(x0 + f * (x1 - x0));
-    fill(x, 10, 4, i % 5 ? 22 : 30, f < fr ? (f >= red ? RD : ORG) : rgb(0x3A2A10));
+    bool pk = showPeak() && fabsf(f - peakF()) < .5f / NB;
+    fill(x, 10, 4, i % 5 ? 22 : 30, pk ? WH : f < fr ? (f >= red ? RD : heatC(f, ORG)) : rgb(0x3A2A10));
   }
   for (int k = 1; k <= K; k++) text(f0(k), (int)(x0 + (float)k / K * (x1 - x0) - 3), 54, 13, k * 1000 >= maxRpm() ? RD : WH, CENTER, 600);
   circle(x0 + fr * (x1 - x0), 46, 3.5f, WH);
@@ -397,6 +465,7 @@ inline void p7() {
   }
   fill(8, 28, 464, 6, rgb(0x3A1D00));
   fill(8, 28, (int)(464 * fr), 6, ORG);
+  if (showPeak()) fill(8 + (int)(464 * peakF()) - 1, 26, 3, 10, WH);
   const char* L[4][2] = {{"Water TMP", f0(D.ect)}, {"Air TMP", f0(D.iat)}, {"Air Press", f1(D.map / 100)}, {"AIR FLOW", f1(D.maf)}};
   const char* R[4][2] = {{"Km/h", f0(D.spd)}, {"ENGINE L", f1(D.load)}, {"Short FT", f1(D.stft)}, {"Batt Vol", f1(D.volt)}};
   for (int i = 0; i < 4; i++) {
@@ -430,7 +499,8 @@ inline void p8() {
   const float cx = 150, cy = 148, R = 106, a0 = M_PI * .75f, a1 = M_PI * 2.25f;
   auto A = [&](float f) { return a0 + (a1 - a0) * f; };
   arc(cx, cy, R, a0, a1, rgb(0x2C2C30), 16);
-  arc(cx, cy, R, a0, A(fminf(fr, red)), rgb(0x3AA0FF), 16);
+  arc(cx, cy, R, a0, A(fminf(fr, red)), heatC(fr, rgb(0x3AA0FF)), 16);
+  if (showPeak()) { float pa = A(peakF()); line(cx + (R - 9) * cosf(pa), cy + (R - 9) * sinf(pa), cx + (R + 9) * cosf(pa), cy + (R + 9) * sinf(pa), WH, 3); }
   if (fr > red) arc(cx, cy, R, A(red), A(fr), RD, 16);
   arc(cx, cy, R + 11, A(red), a1, RD, 4);
   for (int k = 0; k <= K; k++) {
@@ -445,6 +515,7 @@ inline void p8() {
   text(f0(D.spd), (int)cx, (int)cy + 82, 40, WH, CENTER, 900);
   text("km/h - x1000 RPM", (int)cx, (int)cy + 100, 11, rgb(0xAAAAAA), CENTER, 500);
   obd(6, 16);
+  shiftLeds(84, 2, 150);
   char v[16], t[24];
   snprintf(v, 16, "%d\xC2\xB0", (int)lroundf(D.ect));
   snprintf(t, 24, "MAX %d", (int)lroundf(D.pEct));

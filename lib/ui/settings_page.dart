@@ -1289,6 +1289,14 @@ class _Esp32TabState extends State<Esp32Tab> {
             value: _i('flip', 0) != 0,
             onChanged: (v) => _set('flip', v ? 1 : 0),
           ),
+          if (_cfg?.containsKey('anim') ?? false)
+            SwitchListTile(
+              dense: true,
+              title: const Text('อนิเมชันเกจ'),
+              subtitle: const Text('กวาดเข็มตอนเปิด · เข็มสปริง · ค้างค่าสูงสุด · สีตามรอบ · ไฟ shift'),
+              value: _i('anim', 1) != 0,
+              onChanged: (v) => _set('anim', v ? 1 : 0),
+            ),
           if (_cfg?.containsKey('p13spd') ?? false)
             SwitchListTile(
               dense: true,

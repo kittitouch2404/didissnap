@@ -17,6 +17,7 @@ static const Item L_DISP[] = {
     {"BRIGHTNESS", "bri", 10, 100, 10, "Screen brightness"},
     {"AUTO BRIGHT", "briAuto", 0, 1, 1, "Brightness follows the light sensor"},
     {"FLIP 180", "flip", 0, 1, 1, "Turn the picture upside down"},
+    {"GAUGE FX", "anim", 0, 1, 1, "Needle sweep, spring, peak hold, shift lights"},
     {"REFRESH", "lcdMode", 0, 3, 1, "Screen refresh rate (board restarts)"},
     {"PERF INFO", "perf", 0, 1, 1, "Show fps / timing text at the bottom"},
     {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
@@ -138,6 +139,7 @@ inline int value(const char* k) {
   if (!strcmp(k, "gearCount")) return c.gearCount;
   if (!strcmp(k, "p13a")) return c.p13a;
   if (!strcmp(k, "p13spd")) return c.p13spd;
+  if (!strcmp(k, "anim")) return c.anim;
   if (!strncmp(k, "pg", 2) && isdigit((unsigned char)k[2])) return (c.pgMask >> atoi(k + 2)) & 1;
   if (!strcmp(k, "p13b")) return c.p13b;
   if (!strcmp(k, "p13c")) return c.p13c;
@@ -173,7 +175,7 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "gifTest")) { static const char* const GT[] = {"NORMAL", "DECODE ONLY", "NO DECODE", "DECODE NO WRITE", "CPU LOAD ONLY"}; snprintf(b, n, "%s", GT[v % 5]); }
   else if (!strcmp(it.key, "fontMem")) snprintf(b, n, v ? "FLASH" : "PSRAM");
   else if (!strcmp(it.key, "lcdMode")) snprintf(b, n, "%s", LCD_MODE_NAME[v & 3]);
-  else if (!strcmp(it.key, "briAuto") || !strcmp(it.key, "flip") || !strcmp(it.key, "perf") || !strcmp(it.key, "bounce") || !strcmp(it.key, "bandSkip") || !strcmp(it.key, "p13spd")) snprintf(b, n, v ? "ON" : "OFF");
+  else if (!strcmp(it.key, "briAuto") || !strcmp(it.key, "flip") || !strcmp(it.key, "perf") || !strcmp(it.key, "bounce") || !strcmp(it.key, "bandSkip") || !strcmp(it.key, "p13spd") || !strcmp(it.key, "anim")) snprintf(b, n, v ? "ON" : "OFF");
   else if (!strcmp(it.key, "cores") && v == 2 && coresReal < 2) snprintf(b, n, "2 (NO RAM: 1)");
   else snprintf(b, n, "%d", v);
 }

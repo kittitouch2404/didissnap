@@ -118,6 +118,7 @@ static void renderFrame(uint16_t* fb, int page, bool menuOpen, bool flip) {
   jobFlip = flip;
   gfx::frameMs = millis();
   pages::rfTick((int)lroundf(D.rpm));
+  pages::animTick();                               // อนิเมชันเกจ: คำนวณครั้งเดียวต่อเฟรม
   __atomic_store_n(&nextStrip, 0, __ATOMIC_SEQ_CST);
   bool two = workGo && menu::drawCores == 2;
   if (two) xSemaphoreGive(workGo);
