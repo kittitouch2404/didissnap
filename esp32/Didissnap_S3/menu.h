@@ -35,7 +35,7 @@ static const Item L_PAGES[] = {
     {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
 };
 static const Item L_OBD[] = {
-    {"OBD BLE", "obdBle", 0, 1, 1, "Bluetooth LE OBD adapter on/off (board restarts)"},
+    {"OBD SOURCE", "obdBle", 0, 3, 1, "OFF / BLE adapter / C3 at OBD port / C3 demo (restarts)"},
     {"READ DTC", nullptr, 0, 0, 0, "Read stored fault codes from the car"},
     {"CLEAR DTC", nullptr, 0, 0, 0, "Erase fault codes (engine OFF, key ON)"},
     {"FORGET ADAPTER", nullptr, 0, 0, 0, "Forget the saved adapter and search again"},
@@ -173,7 +173,7 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "vOfs")) snprintf(b, n, "%+.1f V", v / 10.f);
   else if (!strcmp(it.key, "tps0") || !strcmp(it.key, "tps1")) snprintf(b, n, "raw %d %%", v);
   else if (!strcmp(it.key, "needle")) snprintf(b, n, "%s", pages::NEEDLE_NAMES[v % pages::N_NEEDLE]);
-  else if (!strcmp(it.key, "obdBle")) snprintf(b, n, "%s", v ? "ON" : "OFF");
+  else if (!strcmp(it.key, "obdBle")) { static const char* const OS[] = {"OFF", "BLE", "C3", "C3 DEMO"}; snprintf(b, n, "%s", OS[v & 3]); }
   else if (!strcmp(it.key, "copySpd")) snprintf(b, n, "%d MB/s", v);
   else if (!strcmp(it.key, "gifTest")) { static const char* const GT[] = {"NORMAL", "DECODE ONLY", "NO DECODE", "DECODE NO WRITE", "CPU LOAD ONLY"}; snprintf(b, n, "%s", GT[v % 5]); }
   else if (!strcmp(it.key, "fontMem")) snprintf(b, n, v ? "FLASH" : "PSRAM");
@@ -188,7 +188,7 @@ inline void set(const char* k, int v) {
   if (!strcmp(k, "fontMem")) { fontMem = v; if (onPerfOpt) onPerfOpt(); return; }
   if (!strcmp(k, "gifTest")) { bg::gifTest = v; return; }
   if (!strcmp(k, "bandSkip")) { lcd::bandSkip = v != 0; return; }
-  if (!strcmp(k, "obdBle")) { obdMode = v & 1; if (onObd) onObd(obdMode); return; }
+  if (!strcmp(k, "obdBle")) { obdMode = v & 3; if (onObd) onObd(obdMode); return; }
   if (!strcmp(k, "bounce")) { bounceMode = v; if (onBounce) onBounce(v); return; }
   if (!strcmp(k, "copySpd")) { lcd::copyMBps = v; if (onPerfOpt) onPerfOpt(); return; }
   if (!strcmp(k, "perf")) { perfInfo = v; if (onPerfOpt) onPerfOpt(); return; }

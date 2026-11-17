@@ -618,6 +618,28 @@ volatile uint16_t nowDtcWait = 0;
 DidiNowDtc nowDtcRes;
 static const uint8_t NOW_BCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
+volatile uint32_t nowS3Last = 0, nowGwLast = 0;   // ได้ยินจอ S3 / C3 ล่าสุด
+volatile bool nowFromGw = false;                   // ค่าที่ใช้อยู่มาจาก C3 โดยตรง
+void nowApply(uint8_t link, uint32_t rpmT, float r, float spd, float ect, float ia, float volt, float load, float tps,
+              float map, float maf, float fuel, float stft) {
+  nowLast = millis();
+  nowLink = link;
+  nowPkts = nowPkts + 1;
+  if (demoMode) return;                                   // เดโมของจอนี้เอง: ไม่ใช้ค่าที่ส่งมา
+  if (link == DN_LINK_WAIT) {                             // ยังไม่ได้ค่าจากรถ
+    rpm = 0; speedKmh = 0;
+    for (int i = 0; i < N_METRICS; i++) metricHave[i] = false;
+    return;
+  }
+  rpm = (int)lroundf(r);
+  speedKmh = min((int)lroundf(spd), MAX_SPEED);
+  coolant = (int)lroundf(ect);
+  iat = (int)lroundf(ia);
+  const float v[N_METRICS] = {ect, ia, volt, load, tps, map, maf, fuel, stft};
+  for (int i = 0; i < N_METRICS; i++) { metricVal[i] = v[i]; metricHave[i] = true; }
+  if (rpmT == 0 || rpmT != nowRpmT) { nowRpmT = rpmT; obdSample(); }   // ค่ารอบใหม่
+}
+
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
 void nowRecv(const esp_now_recv_info_t *, const uint8_t *d, int n) {
 #else
@@ -630,24 +652,20 @@ void nowRecv(const uint8_t *, const uint8_t *d, int n) {
     if (nowDtcWait && r->id == nowDtcWait && !nowDtcGot) { memcpy(&nowDtcRes, r, sizeof(nowDtcRes)); nowDtcGot = true; }
     return;
   }
-  if (type != DN_DATA || n < (int)sizeof(DidiNowData)) return;
-  const DidiNowData *m = (const DidiNowData *)d;
-  nowLast = millis();
-  nowLink = m->link;
-  nowPkts = nowPkts + 1;
-  if (demoMode) return;                                   // เดโมของจอนี้เอง: ไม่ใช้ค่าจาก S3
-  if (m->link == DN_LINK_WAIT) {                          // S3 ยังไม่ได้ค่าจากรถ
-    rpm = 0; speedKmh = 0;
-    for (int i = 0; i < N_METRICS; i++) metricHave[i] = false;
+  // ค่าจาก C3 (Super Mini ที่ช่อง OBD): ใช้เมื่อไม่ได้ยินจอ S3 (S3 ส่งค่าที่ปรับ CALIBRATE แล้วมาให้แทน)
+  if (type == DN_GW && n >= (int)sizeof(DidiNowGw)) {
+    const DidiNowGw *g = (const DidiNowGw *)d;
+    nowGwLast = millis();
+    if (nowS3Last && millis() - nowS3Last < 1500) return;
+    nowFromGw = true;
+    nowApply(g->link, g->rpmT, g->rpm, g->spd, g->ect, g->iat, g->volt, g->load, g->tps, g->map, g->maf, g->fuel, g->stft);
     return;
   }
-  rpm = (int)lroundf(m->rpm);
-  speedKmh = min((int)lroundf(m->spd), MAX_SPEED);
-  coolant = (int)lroundf(m->ect);
-  iat = (int)lroundf(m->iat);
-  const float v[N_METRICS] = {m->ect, m->iat, m->volt, m->load, m->tps, m->map, m->maf, m->fuel, m->stft};
-  for (int i = 0; i < N_METRICS; i++) { metricVal[i] = v[i]; metricHave[i] = true; }
-  if (m->rpmT == 0 || m->rpmT != nowRpmT) { nowRpmT = m->rpmT; obdSample(); }   // ค่ารอบใหม่ (โหมดจำลองของ S3 = ทุกชุด)
+  if (type != DN_DATA || n < (int)sizeof(DidiNowData)) return;
+  const DidiNowData *m = (const DidiNowData *)d;
+  nowS3Last = millis();
+  nowFromGw = false;
+  nowApply(m->link, m->rpmT, m->rpm, m->spd, m->ect, m->iat, m->volt, m->load, m->tps, m->map, m->maf, m->fuel, m->stft);
 }
 
 void nowBegin() {
@@ -673,8 +691,8 @@ void nowTick(uint32_t now) {
   bool alive = nowLast && age < 2000;
   if (!demoMode) {
     if (!alive) { obdOk = false; setStatus("NO LINK"); }
-    else if (nowLink == DN_LINK_OK) { obdOk = true; setStatus("OBD OK"); }
-    else if (nowLink == DN_LINK_DEMO) { obdOk = true; setStatus("S3 DEMO"); }
+    else if (nowLink == DN_LINK_OK) { obdOk = true; setStatus(nowFromGw ? "C3 OK" : "OBD OK"); }
+    else if (nowLink == DN_LINK_DEMO) { obdOk = true; setStatus(nowFromGw ? "C3 DEMO" : "S3 DEMO"); }
     else { obdOk = false; setStatus("NO OBD"); }
   }
   if ((!nowLast || age > 3000) && now - lastHop > 250) {  // ไม่ได้ยิน S3 → เปลี่ยนช่อง 1..13 วนหา
@@ -688,7 +706,9 @@ bool linkConnected() { return nowLast && millis() - nowLast < 2000 && nowLink ==
 // ขอ DTC จาก S3 (รอสูงสุด ~10 วินาที) คืน true ถ้าได้คำตอบ
 bool nowDtc(uint8_t cmd) {
   static uint16_t id = 1;
-  DidiNowCmd c = {DIDINOW_MAGIC, DN_CMD, cmd, ++id};
+  // จอ S3 อยู่ → ขอผ่าน S3 (S3 ส่งต่อเอง) · ไม่มี S3 แต่มี C3 → ขอ C3 ตรง
+  bool s3 = nowS3Last && millis() - nowS3Last < 2000;
+  DidiNowCmd c = {DIDINOW_MAGIC, s3 ? (uint8_t)DN_CMD : (uint8_t)DN_GWCMD, cmd, ++id};
   nowDtcGot = false;
   nowDtcWait = c.id;
   uint32_t t0 = millis(), sent = 0;

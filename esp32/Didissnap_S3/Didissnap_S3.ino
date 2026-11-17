@@ -145,7 +145,7 @@ static void onBounce(int v) {
   restartAt = millis() + 1200;
 }
 static void onObd(int v) {
-  prefs.putInt("obdBle", v & 1);
+  prefs.putInt("obdBle", v & 3);
   menu::toast("RESTARTING...");
   restartAt = millis() + 1200;
 }
@@ -153,7 +153,8 @@ static void onObdForget() {
   obdble::forget();
   menu::toast("OBD FORGOTTEN");
 }
-static const char* obdStatus() { return obdOn ? obdble::status() : "off"; }
+static bool gwOnly = false;   // ค่ารถมาจาก C3 (Super Mini ที่ช่อง OBD) ทาง ESP-NOW
+static const char* obdStatus() { return gwOnly ? didinow::gwStatus() : obdOn ? obdble::status() : "off"; }
 static void onLcdMode(int m) {
   prefs.putInt("lcdMode", m & 3);
   menu::toast("RESTARTING...");
@@ -341,15 +342,21 @@ void setup() {
   didibtn::onEvent = onButton;
   didibtn::begin(PIN_BTN1, PIN_BTN2, -1, PIN_BTN2_ALT);
   // ตัวอ่าน OBD แบบ BLE (เริ่มหลังจองแรมจอ/วาดเสร็จ เพราะ Bluetooth ใช้ RAM ภายในเยอะ)
-  menu::obdMode = prefs.getInt("obdBle", 1) & 1;
+  menu::obdMode = prefs.getInt("obdBle", 1) & 3;   // 0 ปิด · 1 BLE · 2 C3 · 3 C3 จำลอง
   menu::onObd = onObd;
   menu::onObdForget = onObdForget;
   menu::obdStatus = obdStatus;
-  menu::dtcStart = [](int c) { return obdOn && obdble::startDtc(c); };
-  menu::dtcPoll = [](char* b, size_t n) { return obdOn ? obdble::pollDtc(b, n) : 0; };
+  menu::dtcStart = [](int c) { return gwOnly ? didinow::gwStartDtc(c) : (obdOn && obdble::startDtc(c)); };
+  menu::dtcPoll = [](char* b, size_t n) { return gwOnly ? didinow::gwPollDtc(b, n) : obdOn ? obdble::pollDtc(b, n) : 0; };
   step(11, "obd ble");
   if (skip(11)) Serial.println("SAFE MODE: skip OBD BLE");
-  else if (menu::obdMode) {
+  else if (menu::obdMode >= 2) {                   // C3: ไม่เปิด Bluetooth เลย (RAM เหลือให้วาด 2 คอร์)
+    if (!wifiOn) Serial.println("C3 mode needs WiFi (ESP-NOW) — WiFi is off");
+    gwOnly = true;
+    didinow::gwBegin(menu::obdMode == 3);
+    didilink::onDtcRead = didinow::gwReadDtc;
+    didilink::onDtcClear = didinow::gwClearDtc;
+  } else if (menu::obdMode) {
     obdOn = true;
     obdble::begin(&prefs);
     didilink::onDtcRead = obdble::readDtc;
@@ -395,7 +402,14 @@ void loop() {
   didibtn::loop();
   didicfg::tick();   // บันทึกค่าตั้งลงแฟลชทีหลัง
 
-  if (obdOn) {                       // มีตัวอ่าน OBD: ใช้ค่าจริง (ยังไม่ได้ค่า = รอบ/ความเร็ว 0)
+  if (gwOnly) {                      // ค่าจาก C3
+    demo = false;
+    didinow::gwLoop();
+    bool lv = didinow::gwLive();
+    if (!lv) { RAW.rpm = 0; RAW.spd = 0; }
+    D.link = !lv ? 1 : didinow::gwIsDemo() ? 0 : 2;
+    menu::obdLive = lv;
+  } else if (obdOn) {                // มีตัวอ่าน OBD: ใช้ค่าจริง (ยังไม่ได้ค่า = รอบ/ความเร็ว 0)
     demo = false;
     bool lv = obdble::live();
     if (!lv) { RAW.rpm = 0; RAW.spd = 0; }
@@ -407,7 +421,8 @@ void loop() {
     didinow::loop((uint8_t)D.link);
     uint16_t id;
     uint8_t cmd = didinow::takeCmd(&id);
-    if (cmd) {
+    if (cmd && gwOnly) didinow::gwForward(cmd, id);   // จอ CYD ขอ DTC → ส่งต่อให้ C3 (C3 ตอบจอ CYD เอง)
+    else if (cmd) {
       bool run = obdOn && obdble::state == obdble::RUNNING;
       if (cmd == DN_CMD_DTC_READ) didinow::reply(cmd, id, run, run ? obdble::readDtc() : String("[]"));
       else if (cmd == DN_CMD_DTC_CLEAR) didinow::reply(cmd, id, run && obdble::clearDtc(), String("[]"));
