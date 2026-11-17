@@ -122,7 +122,11 @@ class Esp32Pics {
         progress?.call(math.min(1.0, (o + chunk) / data.length));
       }
       rq.add(tail);
-      final r = await rq.close().timeout(const Duration(seconds: 30));
+      // บอร์ดเขียนลงแฟลชช้ากว่าส่ง WiFi มาก (ไฟล์ 6 MB อาจเกิน 1 นาที) → รอตามขนาดไฟล์
+      final wait = Duration(seconds: 40 + data.length ~/ (40 * 1024));
+      final r = await rq.close().timeout(wait,
+          onTimeout: () => throw Exception('บอร์ดยังบันทึกไฟล์ไม่เสร็จใน ${wait.inSeconds} วินาที — '
+              'รอสักครู่แล้วกด "โหลดใหม่" ดูว่ารูปเข้าแล้วหรือยัง'));
       return await _read(r);
     } finally {
       c.close();

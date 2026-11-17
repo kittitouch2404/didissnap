@@ -196,6 +196,16 @@ static File upF;
 static String upName, upErr;
 static size_t upSize = 0;
 static uint8_t upHead[4];
+// รวมข้อมูลเป็นก้อน 32 KB ก่อนเขียน LittleFS (เขียนทีละ ~1.4 KB ช้ามากกับไฟล์ใหญ่)
+static uint8_t* upBuf = nullptr;
+static size_t upBufN = 0;
+static const size_t UP_BUF = 32 * 1024;
+static bool upFlush() {
+  if (!upBufN) return true;
+  bool ok = upF.write(upBuf, upBufN) == upBufN;
+  upBufN = 0;
+  return ok;
+}
 
 inline void onUpload() {
   HTTPUpload& u = didicfg::web.upload();
@@ -210,6 +220,10 @@ inline void onUpload() {
       LittleFS.remove(TMP);
       upF = LittleFS.open(TMP, "w");
       if (!upF) upErr = "open";
+#ifdef BOARD_HAS_PSRAM
+      if (!upBuf) upBuf = (uint8_t*)ps_malloc(UP_BUF);
+#endif
+      upBufN = 0;
     }
   } else if (u.status == UPLOAD_FILE_WRITE) {
     if (upErr.length()) return;
@@ -217,9 +231,15 @@ inline void onUpload() {
     size_t freeB = LittleFS.totalBytes() - LittleFS.usedBytes();
     if (upSize + u.currentSize > MAX_FILE) upErr = "toobig";
     else if (freeB < u.currentSize + KEEP_FREE) upErr = "nospace";
-    else if (upF.write(u.buf, u.currentSize) != u.currentSize) upErr = "write";
+    else if (upBuf) {
+      if (upBufN + u.currentSize > UP_BUF && !upFlush()) upErr = "write";
+      memcpy(upBuf + upBufN, u.buf, u.currentSize);
+      upBufN += u.currentSize;
+    } else if (upF.write(u.buf, u.currentSize) != u.currentSize) upErr = "write";
     upSize += u.currentSize;
   } else if (u.status == UPLOAD_FILE_END) {
+    if (upF && !upErr.length() && upBuf && !upFlush()) upErr = "write";
+    upBufN = 0;
     if (upF) upF.close();
     if (!upErr.length()) {
       bool jpg = upSize >= 4 && upHead[0] == 0xFF && upHead[1] == 0xD8;
@@ -232,6 +252,7 @@ inline void onUpload() {
     addName(upName);
     changed();
   } else if (u.status == UPLOAD_FILE_ABORTED) {
+    upBufN = 0;
     if (upF) upF.close();
     LittleFS.remove(TMP);
     upErr = "aborted";
