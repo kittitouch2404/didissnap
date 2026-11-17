@@ -84,6 +84,8 @@ static volatile bool jobFlip = false, jobMenu = false;
 static volatile int jobPage = 0;
 static SemaphoreHandle_t workGo = nullptr, workDone = nullptr;
 static bool wantCore2 = false, core2Tried = false;
+static void tryCore2();
+static bool core2Early = false;   // เรียกก่อนเปิด WiFi → เผื่อ RAM ให้ WiFi/ESP-NOW มากขึ้น
 
 static void drawStrip(int k, uint16_t* sb) {
   int y0 = k * STRIP_H;
@@ -303,6 +305,8 @@ void setup() {
   stripBuf = (uint16_t*)heap_caps_malloc(LCD_W * STRIP_H * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (!stripBuf) { Serial.println("strip buffer: no internal RAM -> PSRAM"); stripBuf = (uint16_t*)ps_malloc(LCD_W * STRIP_H * 2); }
   wantCore2 = !safeDraw && DIDI_2CORE;
+  // ไม่ใช้ Bluetooth (OBD SOURCE = C3 / ปิด) → จองบัฟเฟอร์วาดชุดที่สองเลยตอนนี้ ก่อน WiFi แบ่ง RAM ภายในเป็นชิ้นเล็ก ๆ
+  if ((prefs.getInt("obdBle", 1) & 3) != 1) { core2Early = true; tryCore2(); core2Early = false; }
 
   step(4, "wifi");                                  // ต้องเปิด WiFi ก่อนเว็บเซิร์ฟเวอร์ (ไม่งั้น crash)
   if (skip(4)) { Serial.println("SAFE MODE: skip WiFi"); wifiOn = false; }
@@ -375,17 +379,18 @@ static void tryCore2() {
   if (!wantCore2 || core2Tried || workGo) return;
   if (obdOn && !obdble::bleReady && millis() < 20000) return;
   core2Tried = true;
-  const size_t need = LCD_W * STRIP_H * 2, keep = 24 * 1024;
+  const size_t need = LCD_W * STRIP_H * 2, keep = core2Early ? 110 * 1024 : 24 * 1024;
   size_t freeB = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-  if (freeB >= need + keep) stripBuf2 = (uint16_t*)heap_caps_malloc(need, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  size_t bigB = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);   // ต้องได้ก้อนเดียวติดกัน 65 KB
+  if (freeB >= need + keep && bigB >= need) stripBuf2 = (uint16_t*)heap_caps_malloc(need, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (stripBuf2) {
     workGo = xSemaphoreCreateBinary();
     workDone = xSemaphoreCreateBinary();
     xTaskCreatePinnedToCore(drawWorker, "draw2", 8192, nullptr, 3, nullptr, 0);
     menu::coresReal = 2;
   }
-  Serial.printf("2-core draw: %s  (internal free before %u, after %u)\n", stripBuf2 ? "ON" : "OFF - not enough internal RAM",
-                (unsigned)freeB, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+  Serial.printf("2-core draw: %s  (internal free before %u, biggest block %u, after %u)\n", stripBuf2 ? "ON" : "OFF - not enough internal RAM",
+                (unsigned)freeB, (unsigned)bigB, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 }
 
 void loop() {
