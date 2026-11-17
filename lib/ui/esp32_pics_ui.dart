@@ -13,7 +13,7 @@ import '../data/hub.dart';
 import 'paint_utils.dart';
 
 const int kBoardW = 480, kBoardH = 272;
-const int kMaxUpload = 4 * 1024 * 1024; // บอร์ด S3 รับได้ 4 MB (บอร์ดรุ่นเก่าจะตอบ "ใหญ่เกิน" เอง)
+const int kMaxUpload = 6 * 1024 * 1024; // บอร์ด S3 รับได้ 6 MB (บอร์ดบอกค่าจริงมาใน maxFile)
 // ช่องรูปในบอร์ด: 0 = หน้า 13 (ตอนนี้เป็นหน้าตัวละครที่ฝังในบอร์ด ไม่ใช้รูปที่อัป), 1 = หน้า 14, 2 = หน้า 15
 const _slotNames = ['หน้า 13 · Character', 'หน้า 14 · Car run', 'หน้า 15 · Photo'];
 const _slotShown = [1, 2]; // ช่องที่เลือกรูปได้
@@ -25,12 +25,69 @@ bool _isGif(Uint8List b) => b.length > 3 && b[0] == 0x47 && b[1] == 0x49 && b[2]
 
 // ============================================================ แปลงรูป (ทำใน isolate แยก ไม่ให้แอปค้าง)
 class PicJob {
-  PicJob(this.src, this.x, this.y, this.w, this.h);
+  PicJob(this.src, this.x, this.y, this.w, this.h, [this.maxBytes = kMaxUpload]);
   final Uint8List src;
   final double x, y, w, h; // ส่วนที่ครอป (0..1 ของภาพ)
+  final int maxBytes; // ขนาดไฟล์สูงสุดที่บอร์ดรับ (GIF จะถูกย่อให้ไม่เกินนี้)
 }
 
-Uint8List processPic(PicJob j) {
+class PicOut {
+  PicOut(this.bytes, [this.note]);
+  final Uint8List bytes;
+  final String? note; // บอกว่าย่ออะไรไปบ้าง (null = ไม่ได้ย่อเพิ่ม)
+}
+
+// เก็บเฟรมทุก ๆ step เฟรม (เวลาของเฟรมที่ตัดทิ้งรวมเข้าเฟรมที่เหลือ → ความยาว GIF เท่าเดิม)
+img.Image _dropFrames(img.Image im, int step) {
+  if (step <= 1) return im;
+  final fr = im.frames;
+  img.Image? out;
+  for (var i = 0; i < fr.length; i += step) {
+    final f = img.Image.from(fr[i], noAnimation: true);
+    var d = 0;
+    for (var k = i; k < i + step && k < fr.length; k++) {
+      d += fr[k].frameDuration;
+    }
+    f.frameDuration = d;
+    if (out == null) {
+      out = f;
+    } else {
+      out.addFrame(f);
+    }
+  }
+  return out ?? im;
+}
+
+// ย่อ GIF ให้ไม่เกิน limit: ปิด dither → ลดสี → ลดเฟรม (ไล่จากแบบที่ภาพเสียน้อยสุด)
+PicOut _fitGif(img.Image im, int limit) {
+  final first = img.encodeGif(im, samplingFactor: 10);
+  if (first.length <= limit) return PicOut(first);
+  const levels = [
+    (1, 256, 'ปิด dither'),
+    (1, 128, 'ลดสีเหลือ 128'),
+    (2, 128, 'ลดเฟรมครึ่งหนึ่ง + 128 สี'),
+    (2, 64, 'ลดเฟรมครึ่งหนึ่ง + 64 สี'),
+    (3, 64, 'เหลือ 1 ใน 3 เฟรม + 64 สี'),
+    (4, 48, 'เหลือ 1 ใน 4 เฟรม + 48 สี'),
+  ];
+  Uint8List best = first;
+  for (final (step, colors, note) in levels) {
+    final src = _dropFrames(im, step);
+    final out = img.GifEncoder(
+      numColors: colors,
+      samplingFactor: 10,
+      dither: img.DitherKernel.none,
+    ).encode(src);
+    best = out;
+    if (out.length <= limit) {
+      return PicOut(out, 'ย่อ GIF ${(first.length / 1048576).toStringAsFixed(1)} → ${(out.length / 1048576).toStringAsFixed(1)} MB ($note)');
+    }
+  }
+  return PicOut(best, 'ย่อสุดแล้วยังเกิน');
+}
+
+PicOut processPic(PicJob j) {
+  final limit = j.maxBytes - 64 * 1024; // เผื่อพื้นที่นิดหน่อย
   final gif = _isGif(j.src);
   img.Image? im;
   if (gif) {
@@ -38,7 +95,7 @@ Uint8List processPic(PicJob j) {
     if (info == null) throw Exception('อ่านไฟล์ GIF ไม่ได้');
     // GIF ที่ขนาด 480×272 อยู่แล้วและไม่ได้ครอป → ส่งไฟล์เดิมเลย (เข้ารหัสใหม่ทุกเฟรมจะใหญ่ขึ้นหลายเท่า)
     final full = j.x < 0.002 && j.y < 0.002 && j.w > 0.996 && j.h > 0.996;
-    if (full && info.width == kBoardW && info.height == kBoardH) return j.src;
+    if (full && info.width == kBoardW && info.height == kBoardH && j.src.length <= limit) return PicOut(j.src);
     if (info.numFrames * info.width * info.height > 40000000) {
       throw Exception('GIF ใหญ่/ยาวเกินไป (${info.numFrames} เฟรม ${info.width}×${info.height}) '
           '— ลองตัดให้สั้นลงหรือย่อก่อน');
@@ -56,8 +113,8 @@ Uint8List processPic(PicJob j) {
   im = img.copyCrop(im, x: x, y: y, width: w, height: h);
   im = img.copyResize(im,
       width: kBoardW, height: kBoardH, interpolation: img.Interpolation.average);
-  if (gif && im.numFrames > 1) return img.encodeGif(im, samplingFactor: 10);
-  return img.encodeJpg(im, quality: 85);
+  if (gif && im.numFrames > 1) return _fitGif(im, limit);
+  return PicOut(img.encodeJpg(im, quality: 85));
 }
 
 // ============================================================ หน้าครอป 480×272
@@ -230,11 +287,15 @@ class _Esp32PicsSectionState extends State<Esp32PicsSection> {
     setState(() {
       _busy = true;
       _err = null;
-      _step = _isGif(src) ? 'กำลังย่อ GIF ทุกเฟรมเป็น 480×272 ...' : 'กำลังย่อรูปเป็น 480×272 ...';
+      _step = _isGif(src) ? 'กำลังย่อ GIF ทุกเฟรมเป็น 480×272 (ถ้าไฟล์ใหญ่จะย่อเพิ่มให้พอดี อาจใช้เวลาสักพัก) ...' : 'กำลังย่อรูปเป็น 480×272 ...';
     });
     Uint8List out;
+    String? note;
+    final maxFile = _p?.maxFile ?? kMaxUpload;
     try {
-      out = await compute(processPic, PicJob(src, crop.left, crop.top, crop.width, crop.height));
+      final r = await compute(processPic, PicJob(src, crop.left, crop.top, crop.width, crop.height, maxFile));
+      out = r.bytes;
+      note = r.note;
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -248,11 +309,11 @@ class _Esp32PicsSectionState extends State<Esp32PicsSection> {
     if (!mounted) return;
     final gif = _isGif(out);
     final p = _p;
-    if (out.length > kMaxUpload) {
+    if (out.length > maxFile) {
       setState(() {
         _busy = false;
         _step = null;
-        _err = 'ไฟล์หลังย่อยังใหญ่ ${fmtBytes(out.length)} (เกิน ${fmtBytes(kMaxUpload)}) — ใช้ GIF ที่สั้นลง';
+        _err = 'ไฟล์หลังย่อยังใหญ่ ${fmtBytes(out.length)} (เกิน ${fmtBytes(maxFile)}) — ใช้ GIF ที่สั้นลง';
       });
       return;
     }
@@ -266,7 +327,7 @@ class _Esp32PicsSectionState extends State<Esp32PicsSection> {
     }
     final name = 'p${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}${gif ? '.gif' : '.jpg'}';
     setState(() {
-      _step = 'กำลังส่ง ${fmtBytes(out.length)} เข้าบอร์ด ...';
+      _step = '${note != null ? '$note\n' : ''}กำลังส่ง ${fmtBytes(out.length)} เข้าบอร์ด ...';
       _prog = 0;
     });
     await _run(

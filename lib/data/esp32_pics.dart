@@ -18,8 +18,9 @@ class BoardPic {
 
 /// สถานะรูปทั้งหมดในบอร์ด (ตอบจาก /api/pics)
 class BoardPics {
-  BoardPics(this.total, this.used, this.maxPics, this.auto, this.slots, this.pics);
+  BoardPics(this.total, this.used, this.maxPics, this.auto, this.slots, this.pics, [this.maxFile]);
   final int total, used, maxPics;
+  final int? maxFile; // ขนาดไฟล์สูงสุดที่บอร์ดรับ (บอร์ดรุ่นเก่าไม่ส่งมา)
   final bool auto;
   final List<String> slots; // หน้า 13, 14, 15 บนบอร์ด ('' = รูปเดิม; หน้า 13 = ตัวละคร ไม่ใช้)
   final List<BoardPic> pics;
@@ -36,13 +37,13 @@ class BoardPics {
       sl.add('');
     }
     return BoardPics((j['total'] as num?)?.toInt() ?? 0, (j['used'] as num?)?.toInt() ?? 0,
-        (j['max'] as num?)?.toInt() ?? 40, (j['auto'] ?? 1) != 0, sl, ps);
+        (j['max'] as num?)?.toInt() ?? 40, (j['auto'] ?? 1) != 0, sl, ps, (j['maxFile'] as num?)?.toInt());
   }
 }
 
 String _err(String code) => const {
       'nospace': 'พื้นที่ในบอร์ดไม่พอ — ลบรูปเก่าก่อน',
-      'toobig': 'ไฟล์ใหญ่เกิน 1.5 MB',
+      'toobig': 'ไฟล์ใหญ่เกินที่บอร์ดรับ (จอ 4.3" รับได้ 6 MB, บอร์ดรุ่นเก่า 1.5 MB)',
       'full': 'บอร์ดเก็บรูปได้สูงสุด 40 รูป',
       'badfile': 'ไฟล์เสีย หรือไม่ใช่ JPG/GIF',
       'badname': 'ชื่อไฟล์ไม่ถูกต้อง',

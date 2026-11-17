@@ -169,6 +169,7 @@ inline String json() {
   s += "{\"ok\":true,\"total\":"; s += (unsigned long)(fsOk ? LittleFS.totalBytes() : 0);
   s += ",\"used\":"; s += (unsigned long)(fsOk ? LittleFS.usedBytes() : 0);
   s += ",\"max\":"; s += MAX_PICS;
+  s += ",\"maxFile\":"; s += (unsigned long)MAX_FILE;   // แอปใช้ย่อ GIF ให้พอดี
   s += ",\"auto\":"; s += autoSplit;
   s += ",\"slots\":[";
   for (int i = 0; i < SLOTS; i++) { if (i) s += ","; s += "\""; s += slot[i]; s += "\""; }
