@@ -32,6 +32,9 @@ static const Item L_PAGES[] = {
     {"P13 SLOT 2", "p13b", 0, 0, 1, "Page 13 bottom row - value 2"},
     {"P13 SLOT 3", "p13c", 0, 0, 1, "Page 13 bottom row - value 3"},
     {"P13 SLOT 4", "p13d", 0, 0, 1, "Page 13 bottom row - value 4"},
+    {"P14 STYLE", "lay14", 0, 1, 1, "Page 14: old top bar / same layout as page 13"},
+    {"P15 STYLE", "lay15", 0, 1, 1, "Page 15: old top bar / same layout as page 13"},
+    {"P16 STYLE", "lay16", 0, 1, 1, "Page 16: old top bar / same layout as page 13"},
     {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
 };
 static const Item L_OBD[] = {
@@ -142,6 +145,7 @@ inline int value(const char* k) {
   if (!strcmp(k, "p13spd")) return c.p13spd;
   if (!strcmp(k, "anim")) return c.anim;
   if (!strcmp(k, "needle")) return c.needle;
+  if (!strncmp(k, "lay1", 4)) return (c.picLay >> (k[4] - '4')) & 1;
   if (!strncmp(k, "pg", 2) && isdigit((unsigned char)k[2])) return (c.pgMask >> atoi(k + 2)) & 1;
   if (!strcmp(k, "p13b")) return c.p13b;
   if (!strcmp(k, "p13c")) return c.p13c;
@@ -172,6 +176,7 @@ inline void fmt(const Item& it, char* b, size_t n) {
   else if (!strcmp(it.key, "ectO") || !strcmp(it.key, "iatO")) snprintf(b, n, "%+d C", v);
   else if (!strcmp(it.key, "vOfs")) snprintf(b, n, "%+.1f V", v / 10.f);
   else if (!strcmp(it.key, "tps0") || !strcmp(it.key, "tps1")) snprintf(b, n, "raw %d %%", v);
+  else if (!strncmp(it.key, "lay1", 4)) snprintf(b, n, "%s", v ? "LIKE P13" : "TOP BAR");
   else if (!strcmp(it.key, "needle")) snprintf(b, n, "%s", pages::NEEDLE_NAMES[v % pages::N_NEEDLE]);
   else if (!strcmp(it.key, "obdBle")) { static const char* const OS[] = {"OFF", "BLE", "C3", "C3 DEMO"}; snprintf(b, n, "%s", OS[v & 3]); }
   else if (!strcmp(it.key, "copySpd")) snprintf(b, n, "%d MB/s", v);

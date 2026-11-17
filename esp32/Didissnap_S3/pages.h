@@ -247,12 +247,13 @@ inline void topBar() {               // หน้า 14-16
   rpmHp(8, by, PX_BAR_W, PX_BAR_H);
 }
 // หน้า 14-16 ตอนยังไม่มีรูป: พื้นดำ + ข้อความ 4 แถว (ตัวพิกเซลแบบหน้า 13)
-inline void noPics() {
+inline void noPics(bool compact = false) {   // compact = เว้นที่บน/ล่างให้แบบหน้า 13
   clear(BK);
-  pxText("DIDISSNAP.", W / 2, 100, 4, rgb(0xFFD23C), CENTER, 3);
-  pxText("Change Photo", W / 2, 152, 2, WH, CENTER, 2);
-  pxText("WIFI Didissnap 192.168.4.1", W / 2, 186, 1, rgb(0xAAAAAA), CENTER, 1);
-  pxText("Password " DIDI_PASS, W / 2, 204, 1, rgb(0xAAAAAA), CENTER, 1);
+  const int y[4] = {compact ? 82 : 100, compact ? 120 : 152, compact ? 148 : 186, compact ? 164 : 204};
+  pxText("DIDISSNAP.", W / 2, y[0], compact ? 3 : 4, rgb(0xFFD23C), CENTER, compact ? 2 : 3);
+  pxText("Change Photo", W / 2, y[1], 2, WH, CENTER, 2);
+  pxText("WIFI Didissnap 192.168.4.1", W / 2, y[2], 1, rgb(0xAAAAAA), CENTER, 1);
+  pxText("Password " DIDI_PASS, W / 2, y[3], 1, rgb(0xAAAAAA), CENTER, 1);
 }
 
 // ---------------------------------------------------------------- 1 Bar graph
@@ -642,9 +643,14 @@ inline void rfDrawFace() {
     memcpy(GBUF + y * W + RF_FACE_X, f + (y - RF_FACE_Y) * RF_FACE_W, RF_FACE_W * 2);
 }
 
+inline void p13Overlay();
 inline void p9() {                   // หน้า 13
   bg::draw();
   rfDrawFace();
+  p13Overlay();
+}
+// ตัวเลข/แถบแบบหน้า 13 (ใช้กับหน้า 14-16 ได้ด้วย เมนู PAGES > P14-P16 STYLE)
+inline void p13Overlay() {
   pt("RPM", 10, 10, PX_LAB);
   int rr = 10 + pxWidth("RPM", PX_LAB) + 12 + pxWidth("8888", PX_RPM);
   pt(f0(D.rpm), rr, 10, PX_RPM, over() ? PXR : WH, RIGHT);
@@ -676,18 +682,17 @@ inline void p9() {                   // หน้า 13
   dots();
   shiftFlash();
 }
-inline void pTop() {          // 14, 15
-  if (!bg::draw()) noPics();
+// หน้า 14-16: แบบ 0 = แถบบนแบบเดิม · แบบ 1 = แบบหน้า 13 (ใช้ช่องค่า 4 ช่อง + SPEED ชุดเดียวกับหน้า 13)
+inline bool p13Style(int page) { return (didicfg::cfg.picLay >> (page - 13)) & 1; }
+inline void pTop() {          // 14, 15, 16
+  bool p13s = p13Style(didicfg::cfg.page);
+  if (!bg::draw()) noPics(p13s);
+  if (p13s) { p13Overlay(); return; }
   topBar();
   dots();
   shiftFlash();
 }
-inline void p12() {
-  if (!bg::draw()) noPics();
-  topBar();
-  dots();
-  shiftFlash();
-}
+inline void p12() { pTop(); }
 
 inline void draw(int p) {
   switch (p) {

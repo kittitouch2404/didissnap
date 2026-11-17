@@ -1329,6 +1329,24 @@ class _Esp32TabState extends State<Esp32Tab> {
             _slotRow('หน้า 13 แถวล่าง ช่อง 3', 'p13c', 2),
             _slotRow('หน้า 13 แถวล่าง ช่อง 4', 'p13d', 3),
           ],
+          if (_cfg?.containsKey('picLay') ?? false)
+            for (final n in [14, 15, 16])
+              ListTile(
+                dense: true,
+                title: Text('หน้า $n แบบ'),
+                trailing: DropdownButton<int>(
+                  value: (_i('picLay', 0) >> (n - 14)) & 1,
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('แบบเดิม (แถบบน)')),
+                    DropdownMenuItem(value: 1, child: Text('แบบหน้า 13')),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    final b = 1 << (n - 14), m = _i('picLay', 0);
+                    _set('picLay', v == 1 ? (m | b) : (m & ~b));
+                  },
+                ),
+              ),
           const _Header('รอบ / ความร้อน'),
           _StepRow('Redline', _i('maxRpm', 7500), 2000, 12000, 250,
               (v) => _set('maxRpm', v),
