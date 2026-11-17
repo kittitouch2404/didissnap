@@ -59,25 +59,36 @@ img.Image _dropFrames(img.Image im, int step) {
 }
 
 // ย่อ GIF ให้ไม่เกิน limit: ปิด dither → ลดสี → ลดเฟรม (ไล่จากแบบที่ภาพเสียน้อยสุด)
+// เทียบเฟรมแรกของ GIF ที่เข้ารหัสแล้วกับต้นฉบับ (สุ่มจุดเป็นตาราง) — กันไฟล์สีเพี้ยนหลุดไปถึงบอร์ด
+bool _gifLooksRight(Uint8List gif, img.Image src) {
+  final d = img.decodeGif(gif);
+  if (d == null || d.width != src.width || d.height != src.height) return false;
+  var sum = 0.0, n = 0;
+  for (var y = 4; y < src.height; y += 17) {
+    for (var x = 4; x < src.width; x += 17) {
+      final a = src.getPixel(x, y), b = d.getPixel(x, y);
+      sum += (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs();
+      n++;
+    }
+  }
+  return n > 0 && sum / n < 60; // ต่างเฉลี่ยไม่เกิน ~20 ต่อสี
+}
+
+// ย่อ GIF ให้ไม่เกิน limit: ปิด dither → ลดเฟรม (ใช้ 256 สีเสมอ — การลดจำนวนสีทำให้สีเพี้ยนทั้งภาพ)
 PicOut _fitGif(img.Image im, int limit) {
   final first = img.encodeGif(im, samplingFactor: 10);
   if (first.length <= limit) return PicOut(first);
   const levels = [
-    (1, 256, 'ปิด dither'),
-    (1, 128, 'ลดสีเหลือ 128'),
-    (2, 128, 'ลดเฟรมครึ่งหนึ่ง + 128 สี'),
-    (2, 64, 'ลดเฟรมครึ่งหนึ่ง + 64 สี'),
-    (3, 64, 'เหลือ 1 ใน 3 เฟรม + 64 สี'),
-    (4, 48, 'เหลือ 1 ใน 4 เฟรม + 48 สี'),
+    (1, 'ปิด dither'),
+    (2, 'ลดเฟรมครึ่งหนึ่ง'),
+    (3, 'เหลือ 1 ใน 3 เฟรม'),
+    (4, 'เหลือ 1 ใน 4 เฟรม'),
   ];
   Uint8List best = first;
-  for (final (step, colors, note) in levels) {
+  for (final (step, note) in levels) {
     final src = _dropFrames(im, step);
-    final out = img.GifEncoder(
-      numColors: colors,
-      samplingFactor: 10,
-      dither: img.DitherKernel.none,
-    ).encode(src);
+    final out = img.encodeGif(src, samplingFactor: 10, dither: img.DitherKernel.none);
+    if (!_gifLooksRight(out, src)) continue;  // เข้ารหัสแล้วสีเพี้ยน → ข้ามขั้นนี้
     best = out;
     if (out.length <= limit) {
       return PicOut(out, 'ย่อ GIF ${(first.length / 1048576).toStringAsFixed(1)} → ${(out.length / 1048576).toStringAsFixed(1)} MB ($note)');
