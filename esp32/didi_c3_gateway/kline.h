@@ -128,10 +128,19 @@ static int readMsg(uint8_t* buf, int maxLen, uint32_t firstMs) {
 
 // ถาม 1 ข้อความ: data = [mode, pid, ...] → คำตอบ (ตัดหัว/ท้ายแล้ว เริ่มที่ mode+0x40) คืนจำนวนไบต์ หรือ -1
 //  multi = รวมทุกข้อความที่ตอบมา (DTC บางรถตอบหลายข้อความ)
-inline int request(const uint8_t* data, int dl, uint8_t* resp, int maxLen, uint32_t timeoutMs, bool multi = false) {
+// P3 (ช่วงเว้นก่อนถามต่อ): มาตรฐาน ≥ 55 ms แต่ ECU หลายรุ่นรับเร็วกว่านั้นได้ → ลดลงเรื่อย ๆ ถ้าตอบดี ถ้าพลาดค่อยถอยกลับ
+static uint16_t p3 = 55;
+static int okStreak = 0;
+inline void p3Result(bool ok) {
+  if (ok) { if (++okStreak >= 25 && p3 > 20) { p3 -= 5; okStreak = 0; } }
+  else { p3 = min(60, p3 + 10); okStreak = 0; }
+}
+// expect = ความยาวคำตอบที่รู้ล่วงหน้า (mode+pid+ข้อมูล) → อ่านครบแล้วกลับทันที ไม่ต้องรอสายเงียบ 25 ms
+inline int request(const uint8_t* data, int dl, uint8_t* resp, int maxLen, uint32_t timeoutMs, bool multi = false, int expect = 0) {
   if (proto == NONE || dl > 7) return -1;
   uint32_t gap = millis() - lastRx;
-  if (gap < 60) delay(60 - gap);                 // P3: เว้นอย่างน้อย 55 ms หลังคำตอบก่อนหน้า
+  uint16_t wait = (multi || !expect) ? 60 : p3;
+  if (gap < wait) delay(wait - gap);
   uint8_t m[12];
   int n = 0;
   if (proto == ISO9141) { m[n++] = 0x68; m[n++] = 0x6A; m[n++] = 0xF1; }
@@ -141,12 +150,24 @@ inline int request(const uint8_t* data, int dl, uint8_t* resp, int maxLen, uint3
   flushRx();
   K.write(m, n);
   K.flush();
-  // ตัด echo
   uint8_t raw[96];
-  int rn = readMsg(raw, sizeof(raw), timeoutMs);
-  int off = 0;
-  if (rn >= n && !memcmp(raw, m, n)) off = n;
-  if (rn - off <= 0) { int k = readMsg(raw, sizeof(raw), timeoutMs); rn = k; off = 0; }
+  int rn = 0, off = 0;
+  if (expect > 0 && !multi) {
+    // ตัด echo ทีละไบต์ (ถ้าไบต์แรกไม่ตรง = โมดูลไม่ echo → เป็นคำตอบเลย)
+    for (int i = 0; i < n; i++) {
+      int b = readByte(i ? 15 : 30);
+      if (b < 0) break;
+      if (b != m[i]) { raw[rn++] = (uint8_t)b; break; }
+    }
+    int need = (proto == KWP ? 3 : 3) + expect + 1;   // หัว 3 ไบต์ + ข้อมูล + checksum
+    int b = rn ? 0 : readByte(timeoutMs);
+    if (!rn && b >= 0) raw[rn++] = (uint8_t)b;
+    while (rn > 0 && rn < need && rn < (int)sizeof(raw) && (b = readByte(25)) >= 0) raw[rn++] = (uint8_t)b;
+  } else {
+    rn = readMsg(raw, sizeof(raw), timeoutMs);
+    if (rn >= n && !memcmp(raw, m, n)) off = n;
+    if (rn - off <= 0) { int k = readMsg(raw, sizeof(raw), timeoutMs); rn = k; off = 0; }
+  }
   lastRx = millis();
   // แยกข้อความ: ISO9141 = 48 6B xx data.. cs (ยาวไม่บอก → ใช้ช่วงเงียบแบ่ง: ทั้งก้อนคือ 1 ข้อความหรือหลายข้อความติดกัน)
   //            KWP     = fmt tgt src [len] data.. cs (fmt & 0x3F = ความยาว)
@@ -171,12 +192,13 @@ inline int request(const uint8_t* data, int dl, uint8_t* resp, int maxLen, uint3
     const uint8_t* d = raw + i + hdr;
     if (d[0] == want && (dl < 2 || data[0] != 0x01 || d[1] == data[1])) {
       int k = min(len, maxLen - out);
-      if (!multi) { memcpy(resp, d, k); return k; }
+      if (!multi) { memcpy(resp, d, k); if (expect) p3Result(true); return k; }
       if (out == 0) { memcpy(resp, d, k); out = k; }
       else if (len > 1) { k = min(len - 1, maxLen - out); memcpy(resp + out, d + 1, k); out += k; }   // ต่อท้าย ไม่เอา 0x43 ซ้ำ
     }
     i += hdr + len + 1;
   }
+  if (out <= 0 && expect && !multi) p3Result(false);
   return out > 0 ? out : -1;
 }
 

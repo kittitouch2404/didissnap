@@ -46,9 +46,9 @@ static uint16_t rate = 0;
 static int fails = 0;
 
 // ---------------------------------------------------------------- ส่งคำถาม OBD ผ่านโปรโตคอลที่ต่อได้
-static int ask(const uint8_t* req, int rl, uint8_t* resp, int maxLen, uint32_t tmo = 0, bool multi = false) {
+static int ask(const uint8_t* req, int rl, uint8_t* resp, int maxLen, uint32_t tmo = 0, bool multi = false, int expect = 0) {
   if (proto == DN_P_CAN500 || proto == DN_P_CAN250) return canobd::request(req, rl, resp, maxLen, tmo ? tmo : 120);
-  if (proto >= DN_P_ISO9141) return kline::request(req, rl, resp, maxLen, tmo ? tmo : 150, multi);
+  if (proto >= DN_P_ISO9141) return kline::request(req, rl, resp, maxLen, tmo ? tmo : 150, multi, expect);
   return -1;
 }
 
@@ -80,9 +80,15 @@ static bool readMasks() {
   return true;
 }
 
+// จำนวนไบต์ข้อมูลของแต่ละ PID (ให้ K-line รู้ว่าคำตอบจบเมื่อไหร่)
+static int pidBytes(uint8_t p) {
+  if (p == 0x0C || p == 0x10 || p == 0x42 || p == 0x44 || p == 0x14) return 2;
+  if ((p >= 0x24 && p <= 0x2B) || (p >= 0x34 && p <= 0x3B)) return 4;
+  return 1;
+}
 static bool pid(uint8_t p) {
   uint8_t q[2] = {0x01, p}, r[8];
-  int n = ask(q, 2, r, sizeof(r));
+  int n = ask(q, 2, r, sizeof(r), 0, false, 2 + pidBytes(p));
   if (n < 3) { fails++; return false; }
   const uint8_t* b = r + 2;
   int m = n - 2;
@@ -365,7 +371,10 @@ void loop() {
   led();
   if (pendCmd == DN_CMD_MODE_DEMO || pendCmd == DN_CMD_MODE_AUTO || (demo && pendCmd)) handleCmd();
   if (demo) { float dt = lastSim ? (now - lastSim) / 1000.f : 0; lastSim = now; sim(fminf(dt, .1f)); }
-  if (now - rateT >= 1000) { rate = demo ? 0 : answers; answers = 0; rateT = now; }
+  if (now - rateT >= 1000) {
+    rate = demo ? 0 : answers; answers = 0; rateT = now;
+    if (carLink == DN_LINK_OK && proto >= DN_P_ISO9141) Serial.printf("[obd] %u/s  P3 %u ms\n", rate, kline::p3);
+  }
   if (now - lastSend >= 33) { lastSend = now; sendData(); }   // ~30 ครั้ง/วินาที
   static uint32_t lastInfo = 0;
   if (!demo && carLink != DN_LINK_OK && now - lastInfo >= 700) { lastInfo = now; sendInfo(); }   // ผลตรวจสายขึ้นจอ
