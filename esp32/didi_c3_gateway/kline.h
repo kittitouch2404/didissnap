@@ -2,6 +2,7 @@
 //  สาย K-line เส้นเดียว: ส่งอะไรออกไป ขา RX จะได้ยินตัวเองด้วย (echo) → ตัดทิ้งก่อนอ่านคำตอบ
 #pragma once
 #include <Arduino.h>
+#include "driver/uart.h"
 
 namespace kline {
 
@@ -11,11 +12,47 @@ static int pinRx = -1, pinTx = -1;
 static HardwareSerial& K = Serial1;
 static uint32_t lastRx = 0;          // เวลาจบคำตอบล่าสุด (เว้น P3 ≥ 55 ms ก่อนถามต่อ)
 static char info[48] = "";
+static char probeMsg[48] = "";
+// โมดูลแบบออปโต (PC817) มักกลับขั้วสัญญาณ: ตรวจเองจากระดับขา RX ตอนสายว่าง + ลองดึงสายลงดูว่า RX ตามไหม
+static bool rxInv = false, txInv = false;
 
 inline void begin(int rx, int tx) { pinRx = rx; pinTx = tx; }
 
-static void uartOn() { K.begin(10400, SERIAL_8N1, pinRx, pinTx); K.setTimeout(5); }
-static void uartOff() { K.end(); pinMode(pinTx, OUTPUT); digitalWrite(pinTx, HIGH); }
+static void txLevel(bool high) { digitalWrite(pinTx, (high ^ txInv) ? HIGH : LOW); }
+static void uartOn() {
+  K.begin(10400, SERIAL_8N1, pinRx, pinTx);
+  K.setTimeout(5);
+  uart_set_line_inverse(UART_NUM_1, (rxInv ? UART_SIGNAL_RXD_INV : 0) | (txInv ? UART_SIGNAL_TXD_INV : 0));
+}
+static void uartOff() { K.end(); pinMode(pinRx, INPUT); pinMode(pinTx, OUTPUT); txLevel(true); }
+static int rxRaw() { int h = 0; for (int i = 0; i < 9; i++) { h += digitalRead(pinRx); delayMicroseconds(50); } return h >= 5; }
+
+// ตรวจสาย: คืน false ถ้าใช้ไม่ได้ (ข้อความใน probeMsg)
+inline bool probe() {
+  K.end();
+  pinMode(pinRx, INPUT);
+  pinMode(pinTx, OUTPUT);
+  for (int t = 0; t < 2; t++) {                // ลอง TX ปกติ แล้วกลับขั้ว
+    txInv = t == 1;
+    txLevel(true);                             // ปล่อยสายว่าง (K = สูง)
+    delay(40);
+    int idle = rxRaw();
+    rxInv = idle == 0;                         // สายว่างต้องอ่านได้ "สูง" — ได้ต่ำ = RX กลับขั้ว
+    txLevel(false);                            // ดึง K ลงสั้น ๆ (2 ms)
+    delay(2);
+    int low = rxRaw();
+    txLevel(true);
+    delay(5);
+    if (low != idle) {
+      snprintf(probeMsg, sizeof(probeMsg), "K ok: RX %s TX %s", rxInv ? "inv" : "norm", txInv ? "inv" : "norm");
+      return true;
+    }
+  }
+  txInv = false;
+  txLevel(true);
+  snprintf(probeMsg, sizeof(probeMsg), "K: RX stuck %s - check 12V / swap RX-TX", digitalRead(pinRx) ? "HIGH" : "LOW");
+  return false;
+}
 static int readByte(uint32_t ms) {
   uint32_t t0 = millis();
   while (millis() - t0 < ms) { if (K.available()) return K.read(); delayMicroseconds(200); }
@@ -31,9 +68,9 @@ inline bool slowInit() {
   uartOff();
   delay(2600);                                   // สายต้องว่าง ≥ 2.6 วิ ก่อนเริ่มใหม่ (W0/W5)
   const uint8_t addr = 0x33;
-  digitalWrite(pinTx, LOW); delay(200);          // start bit
-  for (int i = 0; i < 8; i++) { digitalWrite(pinTx, (addr >> i) & 1); delay(200); }
-  digitalWrite(pinTx, HIGH);                     // stop bit
+  txLevel(false); delay(200);                    // start bit
+  for (int i = 0; i < 8; i++) { txLevel((addr >> i) & 1); delay(200); }
+  txLevel(true);                                 // stop bit
   uartOn();
   delay(200);
   flushRx();                                     // echo ของตอนส่ง 5 baud (ถ้ามี)
@@ -61,8 +98,8 @@ inline bool fastInit() {
   stop();
   uartOff();
   delay(350);                                    // สายว่างก่อน (W5 ≥ 300 ms)
-  digitalWrite(pinTx, LOW); delay(25);
-  digitalWrite(pinTx, HIGH); delay(25);
+  txLevel(false); delay(25);
+  txLevel(true); delay(25);
   uartOn();
   uint8_t m[5] = {0xC1, 0x33, 0xF1, 0x81, 0};
   m[4] = cks(m, 4);

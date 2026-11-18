@@ -7,7 +7,7 @@
 #define DIDINOW_MAGIC 0x31444944u   // "DID1"
 #define DIDINOW_CHANNEL 1           // ช่อง WiFi ของ S3 (SoftAP "Didissnap" ตั้งช่อง 1)
 
-enum : uint8_t { DN_DATA = 1, DN_CMD = 2, DN_DTC = 3, DN_GW = 4, DN_GWCMD = 5 };
+enum : uint8_t { DN_DATA = 1, DN_CMD = 2, DN_DTC = 3, DN_GW = 4, DN_GWCMD = 5, DN_GWINFO = 6 };
 enum : uint8_t { DN_LINK_DEMO = 0, DN_LINK_WAIT = 1, DN_LINK_OK = 2 };
 enum : uint8_t { DN_CMD_DTC_READ = 1, DN_CMD_DTC_CLEAR = 2, DN_CMD_MODE_AUTO = 3, DN_CMD_MODE_DEMO = 4 };
 // โปรโตคอลที่ C3 ใช้คุยกับรถ
@@ -56,3 +56,9 @@ struct __attribute__((packed)) DidiNowGw {
   float rpm, spd, ect, iat, volt, load, tps, map, maf, fuel, stft, afr;
 };
 // จอ -> C3 ใช้ DidiNowCmd โดย type = DN_GWCMD (คำตอบ DTC กลับมาเป็น DidiNowDtc เลข id เดียวกัน)
+// C3 -> จอ: ข้อความสถานะ/ผลตรวจสาย ตอนยังหารถไม่เจอ (โชว์ในเมนู OBD ไม่ต้องต่อคอมดู Serial)
+struct __attribute__((packed)) DidiNowInfo {
+  uint32_t magic;
+  uint8_t type;       // DN_GWINFO
+  char text[59];
+};

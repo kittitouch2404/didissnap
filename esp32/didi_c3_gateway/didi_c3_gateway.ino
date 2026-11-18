@@ -147,10 +147,20 @@ static bool tryCan(uint32_t br, uint8_t p) {
 #endif
   return false;
 }
+static char diag[59] = "starting";
+static void setDiag(const char* s) { strlcpy(diag, s, sizeof(diag)); Serial.printf("[diag] %s\n", s); }
 static bool tryK(bool fast) {
 #if USE_KLINE
+  if (fast) {                                           // ตรวจสายก่อนทุกรอบ (กลับขั้วอัตโนมัติ)
+    bool pr = kline::probe();
+    setDiag(kline::probeMsg);
+    if (!pr) return false;
+  }
   bool ok = fast ? kline::fastInit() : kline::slowInit();
   Serial.printf("[obd] K-line %s init: %s\n", fast ? "fast" : "slow", kline::info);
+  char m[59];
+  snprintf(m, sizeof(m), "%s | %s: %s", kline::probeMsg, fast ? "fast" : "slow", kline::info);
+  setDiag(m);
   if (!ok) return false;
   proto = fast ? DN_P_KWPFAST : (kline::proto == kline::KWP ? DN_P_KWPSLOW : DN_P_ISO9141);
   if (readMasks()) return true;
@@ -167,6 +177,7 @@ static void disconnect() {
 }
 static bool connect() {
   carLink = DN_LINK_WAIT;
+  setDiag("trying CAN 500k");
   if (tryCan(500000, DN_P_CAN500)) return true;
   if (tryCan(250000, DN_P_CAN250)) return true;
   if (tryK(true)) return true;
@@ -240,6 +251,12 @@ static void sendData() {
   m.afrMode = R.afrMode; m.rate = rate; m.rpmT = R.rpmT;
   m.rpm = R.rpm; m.spd = R.spd; m.ect = R.ect; m.iat = R.iat; m.volt = R.volt; m.load = R.load; m.tps = R.tps;
   m.map = R.map; m.maf = R.maf; m.fuel = R.fuel; m.stft = R.stft; m.afr = R.afr;
+  esp_now_send(BCAST, (const uint8_t*)&m, sizeof(m));
+}
+static void sendInfo() {
+  DidiNowInfo m = {};
+  m.magic = DIDINOW_MAGIC; m.type = DN_GWINFO;
+  strlcpy(m.text, diag, sizeof(m.text));
   esp_now_send(BCAST, (const uint8_t*)&m, sizeof(m));
 }
 static void sendDtc(uint8_t cmd, uint16_t id, bool ok, char codes[16][6], int n) {
@@ -350,5 +367,7 @@ void loop() {
   if (demo) { float dt = lastSim ? (now - lastSim) / 1000.f : 0; lastSim = now; sim(fminf(dt, .1f)); }
   if (now - rateT >= 1000) { rate = demo ? 0 : answers; answers = 0; rateT = now; }
   if (now - lastSend >= 33) { lastSend = now; sendData(); }   // ~30 ครั้ง/วินาที
+  static uint32_t lastInfo = 0;
+  if (!demo && carLink != DN_LINK_OK && now - lastInfo >= 700) { lastInfo = now; sendInfo(); }   // ผลตรวจสายขึ้นจอ
   delay(2);
 }

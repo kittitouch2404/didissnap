@@ -22,6 +22,7 @@ static DidiNowGw gwPkt = {};
 static volatile uint32_t gwLast = 0, gwSeq = 0;
 static DidiNowDtc gwDtc = {};
 static volatile uint16_t gwDtcId = 0;     // id ของคำตอบ DTC ล่าสุดที่ได้
+static char gwInfo[59] = "";              // ผลตรวจสายจาก C3 (ตอนยังหารถไม่เจอ)
 
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
 static void onRecv(const esp_now_recv_info_t*, const uint8_t* d, int n) {
@@ -33,6 +34,7 @@ static void onRecv(const uint8_t*, const uint8_t* d, int n) {
     uint8_t t = ((const DidiNowCmd*)d)->type;
     if (t == DN_GW && n >= (int)sizeof(DidiNowGw)) { memcpy(&gwPkt, d, sizeof(gwPkt)); gwLast = millis(); gwSeq++; return; }
     if (t == DN_DTC && n >= (int)sizeof(DidiNowDtc)) { memcpy(&gwDtc, d, sizeof(gwDtc)); gwDtcId = gwDtc.id; return; }
+    if (t == DN_GWINFO && n >= (int)sizeof(DidiNowInfo)) { memcpy(gwInfo, ((const DidiNowInfo*)d)->text, sizeof(gwInfo) - 1); gwInfo[sizeof(gwInfo) - 1] = 0; return; }
   }
   const DidiNowCmd* c = (const DidiNowCmd*)d;
   if (c->magic != DIDINOW_MAGIC || c->type != DN_CMD) return;
@@ -127,12 +129,16 @@ inline void gwLoop() {
   RAW.afr = m.afr; RAW.afrMode = m.afrMode;
 }
 inline const char* gwStatus() {
-  static char b[48];
+  static char b[72];
   static const char* const AM[] = {"", "  AFR wide", "  O2 narrow", "  AFR cmd"};
   if (!gwHeard()) return "no signal from C3";
   uint8_t p = gwPkt.proto < 7 ? gwPkt.proto : 0;
   if (gwPkt.link == DN_LINK_DEMO) return "C3 DEMO";
-  if (gwPkt.link != DN_LINK_OK) return "C3: searching car...";
+  if (gwPkt.link != DN_LINK_OK) {
+    if (!gwInfo[0]) return "C3: searching car...";
+    snprintf(b, sizeof(b), "C3: %s", gwInfo);
+    return b;
+  }
   snprintf(b, sizeof(b), "C3 %s %u/s%s", DN_P_NAME[p], (unsigned)gwPkt.rate, AM[gwPkt.afrMode & 3]);
   return b;
 }
