@@ -29,6 +29,7 @@
 #define PIN_K_TX 21     // ส่งไปรถ (ขาเข้าของโมดูล K-line)
 #define PIN_LED 8       // LED บนบอร์ด (ติดเมื่อ LOW)
 #define PIN_BOOT 9
+#define USE_VBAT 0      // 1 = ต่อสายวัดแบตที่ GPIO3 แล้ว (ดู README) · 0 = ไม่ต่อ
 #define PIN_VBAT 3      // วัดแบต: 12V ──[100k]──┬── GPIO3 ──[18k]── GND  (ไม่ต่อ = ใช้ค่าแบตจาก ECU ถ้ามี)
 #define VBAT_RATIO ((100.0f + 18.0f) / 18.0f)
 // ประหยัดแบตตอนดับรถ
@@ -46,7 +47,9 @@ static bool demo = false;
 
 // ---------------------------------------------------------------- แบต (ADC) + หลับ
 static float vbat = 0;                 // แรงดันแบตที่วัดได้ (0 = ไม่ได้ต่อสายวัด)
+RTC_DATA_ATTR static uint8_t rtcProto = 0;   // โปรโตคอลที่ต่อรถได้ล่าสุด (จำข้ามการหลับ → ตื่นมาลองตัวนั้นตัวเดียว เร็วกว่า)
 static float readVbat() {
+  if (!USE_VBAT) return 0;
   uint32_t mv = 0;
   for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(PIN_VBAT);
   float v = mv / 8.f / 1000.f * VBAT_RATIO;
@@ -207,14 +210,14 @@ static bool tryCan(uint32_t br, uint8_t p) {
 }
 static char diag[59] = "starting";
 static void setDiag(const char* s) { strlcpy(diag, s, sizeof(diag)); Serial.printf("[diag] %s\n", s); }
-static bool tryK(bool fast) {
+static bool tryK(bool fast, bool lineIdle = false) {
 #if USE_KLINE
-  if (fast) {                                           // ตรวจสายก่อนทุกรอบ (กลับขั้วอัตโนมัติ)
+  if (fast || lineIdle) {                                           // ตรวจสายก่อนทุกรอบ (กลับขั้วอัตโนมัติ)
     bool pr = kline::probe();
     setDiag(kline::probeMsg);
     if (!pr) return false;
   }
-  bool ok = fast ? kline::fastInit() : kline::slowInit();
+  bool ok = fast ? kline::fastInit() : kline::slowInit(lineIdle);
   Serial.printf("[obd] K-line %s init: %s\n", fast ? "fast" : "slow", kline::info);
   char m[59];
   snprintf(m, sizeof(m), "%s | %s: %s", kline::probeMsg, fast ? "fast" : "slow", kline::info);
@@ -379,7 +382,7 @@ static void obdTask(void*) {
   for (;;) {
     if (demo) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
     if (carLink != DN_LINK_OK) {
-      if (connect()) { carLink = DN_LINK_OK; fails = 0; lastOk = millis(); Serial.printf("[obd] connected: %s\n", DN_P_NAME[proto]); }
+      if (connect()) { carLink = DN_LINK_OK; fails = 0; lastOk = millis(); rtcProto = proto; Serial.printf("[obd] connected: %s\n", DN_P_NAME[proto]); }
       else { Serial.println("[obd] no car — retry"); vTaskDelay(pdMS_TO_TICKS(1500)); }
       continue;
     }
@@ -413,6 +416,18 @@ void setup() {
   kline::begin(PIN_K_RX, PIN_K_TX);
   analogSetPinAttenuation(PIN_VBAT, ADC_11db);
   vbat = readVbat();
+  // ตื่นจากหลับ (ไม่มีสายวัดแบต): ยังไม่เปิด WiFi — ลองเรียกรถรอบเดียวก่อน ไม่ตอบ = หลับต่อทันที
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER && !vbat && !demo) {
+    bool ok = false;
+    if (rtcProto == DN_P_ISO9141 || rtcProto == DN_P_KWPSLOW) ok = tryK(false, true);
+    else if (rtcProto == DN_P_KWPFAST) ok = tryK(true);
+    else if (rtcProto == DN_P_CAN500) ok = tryCan(500000, DN_P_CAN500);
+    else if (rtcProto == DN_P_CAN250) ok = tryCan(250000, DN_P_CAN250);
+    else ok = connect();
+    Serial.printf("[wake] car %s\n", ok ? "found" : "not found -> sleep");
+    if (!ok) deepSleep(WAKE_NOVBAT_S);
+    carLink = DN_LINK_OK; fails = 0; lastOk = millis();
+  }
   bool ok = nowBegin();
   Serial.printf("\n[didi_c3] ESP-NOW %s · mode %s · MAC %s\n", ok ? "ready" : "FAILED", demo ? "DEMO" : "CAR",
                 WiFi.macAddress().c_str());

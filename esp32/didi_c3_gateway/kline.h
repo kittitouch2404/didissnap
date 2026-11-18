@@ -63,10 +63,10 @@ static void flushRx() { while (K.available()) K.read(); }
 inline void stop() { if (proto != NONE) { K.end(); proto = NONE; } }
 
 // ---- เริ่มคุยแบบช้า (5 baud, ที่อยู่ 0x33) — ใช้ได้ทั้ง ISO 9141-2 และ KWP2000 แบบ slow init
-inline bool slowInit() {
+inline bool slowInit(bool lineIdle = false) {
   stop();
   uartOff();
-  delay(2600);                                   // สายต้องว่าง ≥ 2.6 วิ ก่อนเริ่มใหม่ (W0/W5)
+  delay(lineIdle ? 300 : 2600);                  // สายต้องว่าง ≥ 2.6 วิ ก่อนเริ่มใหม่ (W0/W5) — เพิ่งตื่นจากหลับ สายว่างอยู่แล้ว
   const uint8_t addr = 0x33;
   txLevel(false); delay(200);                    // start bit
   for (int i = 0; i < 8; i++) { txLevel((addr >> i) & 1); delay(200); }
