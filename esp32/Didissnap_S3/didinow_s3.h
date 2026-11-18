@@ -131,7 +131,7 @@ inline void gwLoop() {
 inline const char* gwStatus() {
   static char b[72];
   static const char* const AM[] = {"", "  AFR wide", "  O2 narrow", "  AFR cmd"};
-  if (!gwHeard()) return "no signal from C3";
+  if (!gwHeard()) return strncmp(gwInfo, "sleep", 5) ? "no signal from C3" : "C3 asleep - start engine to wake";
   uint8_t p = gwPkt.proto < 7 ? gwPkt.proto : 0;
   if (gwPkt.link == DN_LINK_DEMO) return "C3 DEMO";
   if (gwPkt.link != DN_LINK_OK) {

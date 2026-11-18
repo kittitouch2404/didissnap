@@ -19,6 +19,8 @@
 #include "didinow.h"
 #include "canobd.h"
 #include "kline.h"
+#include "esp_sleep.h"
+#include "driver/gpio.h"
 
 // ---------------------------------------------------------------- ขา (แก้ตรงนี้ถ้าต่อต่างจากรูป)
 #define PIN_CAN_TX 4
@@ -27,11 +29,61 @@
 #define PIN_K_TX 21     // ส่งไปรถ (ขาเข้าของโมดูล K-line)
 #define PIN_LED 8       // LED บนบอร์ด (ติดเมื่อ LOW)
 #define PIN_BOOT 9
+#define PIN_VBAT 3      // วัดแบต: 12V ──[100k]──┬── GPIO3 ──[18k]── GND  (ไม่ต่อ = ใช้ค่าแบตจาก ECU ถ้ามี)
+#define VBAT_RATIO ((100.0f + 18.0f) / 18.0f)
+// ประหยัดแบตตอนดับรถ
+#define RUN_V 13.0f         // แบต ≥ นี้ = เครื่องติด (ไดชาร์จทำงาน) → ตื่นทำงาน
+#define LOWBAT_V 12.0f      // แบต < นี้ ตอนดับรถ = หลับยาว (กันแบตหมด)
+#define IDLE_SLEEP_S 180    // ไม่ได้ยินรถ + เครื่องไม่ติด นานเท่านี้ → หลับ
+#define WAKE_S 20           // หลับแล้วตื่นมาเช็กแบตทุก ๆ (วินาที)
+#define WAKE_LOWBAT_S 300   // แบตต่ำ: ตื่นเช็กห่างขึ้น
+#define WAKE_NOVBAT_S 60    // ไม่ได้ต่อสายวัดแบต: ตื่นมาลองเรียกรถทุก ๆ (วินาที)
 #define USE_CAN 1
 #define USE_KLINE 1
 
 static Preferences prefs;
 static bool demo = false;
+
+// ---------------------------------------------------------------- แบต (ADC) + หลับ
+static float vbat = 0;                 // แรงดันแบตที่วัดได้ (0 = ไม่ได้ต่อสายวัด)
+static float readVbat() {
+  uint32_t mv = 0;
+  for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(PIN_VBAT);
+  float v = mv / 8.f / 1000.f * VBAT_RATIO;
+  return v > 5.f ? v : 0;              // ต่ำกว่า 5V = ไม่ได้ต่อสาย
+}
+static void deepSleep(uint32_t sec) {
+  Serial.printf("[sleep] %u s (vbat %.2f)\n", (unsigned)sec, vbat);
+  Serial.flush();
+  esp_now_deinit();
+  esp_wifi_stop();
+  kline::stop();
+  canobd::stop();
+  pinMode(PIN_K_TX, OUTPUT);
+  kline::txLevel(true);                // สาย K ว่างไว้ระหว่างหลับ
+  gpio_hold_en((gpio_num_t)PIN_K_TX);
+  digitalWrite(PIN_LED, HIGH);         // ไฟ LED ดับ
+  gpio_hold_en((gpio_num_t)PIN_LED);
+  gpio_deep_sleep_hold_en();
+  esp_sleep_enable_timer_wakeup((uint64_t)sec * 1000000ULL);
+  esp_deep_sleep_start();
+}
+// ตื่นจากหลับ: เช็กแบตก่อน (ไม่เปิด WiFi) ถ้าเครื่องยังไม่ติด → หลับต่อเลย (กินไฟน้อยมาก)
+static void wakeCheck() {
+  gpio_hold_dis((gpio_num_t)PIN_K_TX);
+  gpio_hold_dis((gpio_num_t)PIN_LED);
+  if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) return;
+  vbat = readVbat();
+  if (!vbat) return;                   // ไม่ได้ต่อสายวัดแบต → ตื่นมาลองเรียกรถ
+  if (vbat < RUN_V) {
+    pinMode(PIN_LED, OUTPUT);
+    digitalWrite(PIN_LED, HIGH);
+    esp_sleep_enable_timer_wakeup((uint64_t)(vbat < LOWBAT_V ? WAKE_LOWBAT_S : WAKE_S) * 1000000ULL);
+    gpio_hold_en((gpio_num_t)PIN_LED);
+    gpio_deep_sleep_hold_en();
+    esp_deep_sleep_start();
+  }
+}
 
 // ---------------------------------------------------------------- ค่าจากรถ
 struct Raw {
@@ -103,7 +155,7 @@ static bool pid(uint8_t p) {
     case 0x10: if (m >= 2) R.maf = ((b[0] << 8) | b[1]) / 100.f; break;
     case 0x2F: R.fuel = b[0] * 100.f / 255; break;
     case 0x06: R.stft = (b[0] - 128) * 100.f / 128; break;
-    case 0x42: if (m >= 2) R.volt = ((b[0] << 8) | b[1]) / 1000.f; break;
+    case 0x42: if (m >= 2 && !vbat) R.volt = ((b[0] << 8) | b[1]) / 1000.f; break;   // มีสายวัดแบตเอง = ใช้ค่านั้นแทน
     case 0x14: R.afr = b[0] / 200.f; break;
     default:
       if (((p >= 0x24 && p <= 0x2B) || (p >= 0x34 && p <= 0x3B) || p == 0x44) && m >= 2)
@@ -351,6 +403,7 @@ static void obdTask(void*) {
 }
 
 void setup() {
+  wakeCheck();
   Serial.begin(115200);
   delay(300);
   pinMode(PIN_LED, OUTPUT);
@@ -358,6 +411,8 @@ void setup() {
   prefs.begin("didic3", false);
   demo = prefs.getBool("demo", false);
   kline::begin(PIN_K_RX, PIN_K_TX);
+  analogSetPinAttenuation(PIN_VBAT, ADC_11db);
+  vbat = readVbat();
   bool ok = nowBegin();
   Serial.printf("\n[didi_c3] ESP-NOW %s · mode %s · MAC %s\n", ok ? "ready" : "FAILED", demo ? "DEMO" : "CAR",
                 WiFi.macAddress().c_str());
@@ -374,6 +429,24 @@ void loop() {
   if (now - rateT >= 1000) {
     rate = demo ? 0 : answers; answers = 0; rateT = now;
     if (carLink == DN_LINK_OK && proto >= DN_P_ISO9141) Serial.printf("[obd] %u/s  P3 %u ms\n", rate, kline::p3);
+  }
+  // แบต + หลับเมื่อดับรถ
+  static uint32_t lastV = 0, lastCar = 0;
+  if (now - lastV >= 250) {
+    lastV = now;
+    float v = readVbat();
+    vbat = v ? (vbat ? vbat + (v - vbat) * .3f : v) : 0;
+    if (vbat && !demo) R.volt = vbat;
+  }
+  if (!lastCar || carLink == DN_LINK_OK || demo) lastCar = now;
+  bool engineOn = vbat >= RUN_V;
+  if (!demo && !engineOn && now - lastCar > (vbat && vbat < LOWBAT_V ? 30000UL : IDLE_SLEEP_S * 1000UL)) {
+    char m[59];
+    if (vbat) snprintf(m, sizeof(m), "sleep: engine off, batt %.1fV", vbat);
+    else snprintf(m, sizeof(m), "sleep: no car (check every %ds)", WAKE_NOVBAT_S);
+    setDiag(m);
+    for (int i = 0; i < 3; i++) { sendInfo(); delay(30); }
+    deepSleep(!vbat ? WAKE_NOVBAT_S : vbat < LOWBAT_V ? WAKE_LOWBAT_S : WAKE_S);
   }
   if (now - lastSend >= 33) { lastSend = now; sendData(); }   // ~30 ครั้ง/วินาที
   static uint32_t lastInfo = 0;
