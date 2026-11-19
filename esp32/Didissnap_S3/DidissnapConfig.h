@@ -39,7 +39,7 @@ struct Config {
   int picLay = 0;                                 // หน้า 14-16 แบบหน้า 13 (บิต 0 = หน้า 14, 1 = 15, 2 = 16)
   int needle = 0;                                 // แบบเข็ม (pages::NEEDLE_NAMES)
   int anim = 1;                                   // อนิเมชันเกจ (กวาดเข็มตอนเปิด สปริง ค้างค่าสูงสุด สี ไฟ shift)
-  int pgMask = 0xFFFF;                            // หน้าที่เปิดใช้ (บิต 0 = หน้า 1) ปิดแล้วกดปุ่ม/สลับอัตโนมัติจะข้าม                                 // หน้า 13: โชว์ความเร็วมุมขวาบน (1 = เปิด)   // หน้ารูป (13): ค่าที่โชว์ในแถวล่าง 4 ช่อง (ลำดับใน SLOT_NAMES)
+  int pgMask = 0x1FFFF;                            // หน้าที่เปิดใช้ (บิต 0 = หน้า 1) ปิดแล้วกดปุ่ม/สลับอัตโนมัติจะข้าม                                 // หน้า 13: โชว์ความเร็วมุมขวาบน (1 = เปิด)   // หน้ารูป (13): ค่าที่โชว์ในแถวล่าง 4 ช่อง (ลำดับใน SLOT_NAMES)
 };
 // ค่าที่เลือกโชว์ในช่องล่างของหน้า 13 ได้
 static const char* const SLOT_NAMES[] = {"COOLANT", "IAT", "BATT", "BOOST", "LOAD", "TPS", "MAF", "FUEL", "SPEED", "TRIP", "STFT", "AFR"};
@@ -91,8 +91,9 @@ inline void load() {
   cfg.anim = prefs->getInt("anim", cfg.anim) ? 1 : 0;
   cfg.picLay = prefs->getInt("picLay", 0) & 7;
   cfg.needle = constrain(prefs->getInt("needle", cfg.needle), 0, 5);
-  cfg.pgMask = prefs->getInt("pgMask", cfg.pgMask) & 0xFFFF;
-  if (!cfg.pgMask) cfg.pgMask = 0xFFFF;
+  cfg.pgMask = prefs->getInt("pgMask", cfg.pgMask) & 0x1FFFF;
+  if (prefs->getInt("pgV", 1) < 3) cfg.pgMask |= 0x10000;   // ตั้งค่าเก่า (16 หน้า) → เปิดหน้าใหม่ 17 ให้
+  if (!cfg.pgMask) cfg.pgMask = 0x1FFFF;
   cfg.p13b = constrain(prefs->getInt("p13b", cfg.p13b), 0, N_SLOTS - 1);
   cfg.p13c = constrain(prefs->getInt("p13c", cfg.p13c), 0, N_SLOTS - 1);
   cfg.p13d = constrain(prefs->getInt("p13d", cfg.p13d), 0, N_SLOTS - 1);
@@ -120,6 +121,7 @@ inline void save() {
   prefs->putInt("picLay", cfg.picLay);
   prefs->putInt("needle", cfg.needle);
   prefs->putInt("pgMask", cfg.pgMask);
+  prefs->putInt("pgV", 3);
   prefs->putInt("p13b", cfg.p13b);
   prefs->putInt("p13c", cfg.p13c);
   prefs->putInt("p13d", cfg.p13d);

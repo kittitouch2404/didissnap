@@ -441,6 +441,7 @@ void loop() {
   if (bri != lastBri) { lcd::brightness(bri); lastBri = bri; }
 
   chooseBackground(menu::open ? -1 : c.page);
+  pages::animePrep(menu::open ? -1 : c.page);      // หน้า 17: ถอดเฟรม GIF + ทำตัวเลขอนิเมะ (คอร์เดียว ก่อนวาด)
   uint32_t tr0 = micros();
   renderFrame(lcd::back(), c.page, menu::open, c.flip);
   uint32_t tr1 = micros();

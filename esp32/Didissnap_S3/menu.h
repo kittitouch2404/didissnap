@@ -82,7 +82,7 @@ static const Item L_CAL[] = {
 // เปิด/ปิดแต่ละหน้า (หมวดย่อยของ PAGES — ไม่อยู่ในช่องไอคอน)
 #define PGI(n) {"", "pg" #n, 0, 1, 1, "ON = page in use   OFF = skipped by buttons / auto cycle"}
 static const Item L_PGON[] = {PGI(0), PGI(1), PGI(2), PGI(3), PGI(4), PGI(5), PGI(6), PGI(7),
-                              PGI(8), PGI(9), PGI(10), PGI(11), PGI(12), PGI(13), PGI(14), PGI(15),
+                              PGI(8), PGI(9), PGI(10), PGI(11), PGI(12), PGI(13), PGI(14), PGI(15), PGI(16),
                               {"BACK", nullptr, 0, 0, 0, "Back to PAGES"}};
 enum { IC_SUN, IC_PAGES, IC_BT, IC_CAR, IC_RESET, IC_GEAR };
 struct Cat { const char* name; const Item* it; int n; int icon; };

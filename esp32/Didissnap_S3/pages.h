@@ -12,11 +12,12 @@
 namespace pages {
 using namespace gfx;
 
-static const int N = 16;
+static const int N = 17;
 static const char* const NAMES[N] = {"Bar graph", "Yellow box", "Race bar", "Half gauge", "Round gauge", "Strip",
                                      "Race dash", "Gear big", "Red stripe", "ECU", "Record", "OBD2 table",
-                                     "Character", "Car run", "Photo", "Pic by rpm"};
+                                     "Character", "Car run", "Photo", "Pic by rpm", "Anime GIF"};
 // หน้ารูป (ใช้ slot 0-2 ของรูปที่ส่งจากแอป) และหน้ารูปตามรอบ
+static const int PG_ANIME = 16;
 static const int PG_PIC = 12, PG_RUN = 13, PG_PHOTO = 14, PG_RPM = 15, PG_RECORD = 10;
 
 constexpr uint16_t ORG = rgb(0xFF7A00), YEL = rgb(0xFFC400), RD = rgb(0xFF2A2A), GR = rgb(0x00E05A),
@@ -694,6 +695,8 @@ inline void pTop() {          // 14, 15, 16
 }
 inline void p12() { pTop(); }
 
+#include "page_anime.h"
+
 inline void draw(int p) {
   switch (p) {
     case 0: p1(); break;
@@ -710,6 +713,7 @@ inline void draw(int p) {
     case 11: pages2::pids(); dots(); break;
     case 12: p9(); break;
     case 13: case 14: pTop(); break;
+    case 16: pAnime(); break;
     default: p12(); break;
   }
 }
