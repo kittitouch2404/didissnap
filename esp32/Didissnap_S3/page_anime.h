@@ -171,7 +171,7 @@ static bool aHot(int i) { return i == 0 ? hot() : false; }
 // เรียกจาก loop ก่อนวาดเฟรม (คอร์เดียว)
 inline void animePrep(int page) {
   if (page != PG_ANIME) { if (aFrames[0] || aCur) animeRelease(); return; }
-  float rpm = rpmF() * kMax() * 1000.f;
+  float rpm = D.rpm;                              // เฟรมตามรอบจริง (ไม่กวาดตามอนิเมชันเกจตอนเปิดเครื่อง)
   int idx = (int)lroundf(clamp01((rpm - ANIME_RPM_LO) / (float)(ANIME_RPM_HI - ANIME_RPM_LO)) * (ABOX_N - 1));
   aCur = aFrame(idx);
   atMake(aSpd, f0(D.spd), 50, false);
