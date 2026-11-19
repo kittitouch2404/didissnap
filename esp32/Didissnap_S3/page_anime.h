@@ -1,5 +1,5 @@
 // page_anime.h — หน้า 17: GIF ในกรอบ (เฟรมตามรอบ) + ตัวเลขแบบไตเติลอนิเมะ (ย้ายมาจากหน้า 9 ของจอ CYD)
-//  ซ้าย: กรอบภาพ / แถบรอบช่องเฉียง / ความเร็ว / รอบ    ขวา: COOLANT / IAT / VOLT + แถบเฉียง + ขีดค่าสูงสุด
+//  ซ้าย: กรอบภาพ / แถบรอบช่องเฉียง / ความเร็ว / รอบ    ขวา: COOLANT / IAT / TPS + แถบเฉียง + ขีดค่าสูงสุด
 //  ส่วนที่หนัก (ถอด JPEG, ทำตัวเลขขอบ/เงา) ทำใน animePrep() ครั้งเดียวต่อเฟรมก่อนวาด — ตอนวาดทีละแถบแค่คัดลอก
 //  (ไฟล์นี้ include จากใน namespace pages ของ pages.h)
 #if __has_include("animebox.h")
@@ -161,11 +161,12 @@ static uint16_t aSegCol(float t) { return t < .55f ? aMix(Q_VIO, Q_PK, t / .55f)
 
 // ---- ค่าทางขวา
 struct ASlot { const char* lab; const char* unit; int dec; float lo, hi; };
-static const ASlot A_SL[3] = {{"COOLANT", "C", 0, 40, 130}, {"IAT", "C", 0, -10, 80}, {"VOLT", "V", 1, 11, 15}};
+static const ASlot A_SL[3] = {{"COOLANT", "C", 0, 40, 130}, {"IAT", "C", 0, -10, 80}, {"TPS", "%", 0, 0, 100}};
 static AText aSpd, aRpm, aVal[3];
-static float aVal1(int i) { return i == 0 ? D.ect : i == 1 ? D.iat : D.volt; }
-static float aPk1(int i) { return i == 0 ? D.pEct : i == 1 ? D.pIat : (D.pVmin < 90 ? D.pVmin : D.volt); }
-static bool aHot(int i) { return i == 0 ? hot() : i == 2 ? D.volt < 12.f : false; }
+static float aVal1(int i) { return i == 0 ? D.ect : i == 1 ? D.iat : D.tps; }
+static float aTpsMax = 0;
+static float aPk1(int i) { return i == 0 ? D.pEct : i == 1 ? D.pIat : (aTpsMax = fmaxf(aTpsMax, D.tps)); }
+static bool aHot(int i) { return i == 0 ? hot() : false; }
 
 // เรียกจาก loop ก่อนวาดเฟรม (คอร์เดียว)
 inline void animePrep(int page) {
