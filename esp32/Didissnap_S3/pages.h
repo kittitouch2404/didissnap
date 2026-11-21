@@ -606,7 +606,8 @@ inline int slotNeed(int i, int k) {
   return max(pxWidth(didicfg::SLOT_NAMES[i], PX_LAB), pxWidth(slotWidest(i), k) + 3 + pxWidth(slotVal(i).unit, 1));
 }
 // ---- หน้า 13: ตัวละครเปลี่ยนหน้าตามรอบ (จาก RpmFacePage) ----
-#define RF_REDLINE 7500        // รอบ redline ของหน้านี้
+#define RF_REDLINE maxRpm()     // รอบ redline (ตามเมนู CAR > REDLINE)
+#define RF_FROM(i) (RF_RANGES[i].from * maxRpm() / 7500)   // ช่วงหน้าตัวละครออกแบบไว้ที่ 7500 → ย่อตาม redline
 #define RF_REDLINE_FACE 13     // หน้าตอนถึง/เกิน redline
 #define RF_HYST 80             // กันหน้ากะพริบตรงรอยต่อ (รอบ)
 struct RfRange { uint16_t from; uint8_t face; };
@@ -631,9 +632,9 @@ inline void rfTick(int rpm) {
   if (rfRange == -2 ? rpm >= RF_REDLINE - RF_HYST : rpm >= RF_REDLINE) r = -2;
   else {
     r = 0;
-    for (int i = 0; i < RF_N; i++) if (rpm >= RF_RANGES[i].from) r = i;
+    for (int i = 0; i < RF_N; i++) if (rpm >= RF_FROM(i)) r = i;
     // ขาลง: ต้องต่ำกว่าขอบช่วงปัจจุบันเกิน RF_HYST ถึงจะเปลี่ยน (ขาขึ้นเปลี่ยนทันที)
-    if (rfRange >= 0 && r < rfRange && rpm >= RF_RANGES[rfRange].from - RF_HYST) r = rfRange;
+    if (rfRange >= 0 && r < rfRange && rpm >= RF_FROM(rfRange) - RF_HYST) r = rfRange;
   }
   rfRange = r;
   rfFace = r == -2 ? RF_REDLINE_FACE : RF_RANGES[r].face;
