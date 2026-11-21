@@ -230,6 +230,48 @@ class ElmSource implements CarSource {
   ElmSession? _ses;
   bool _isCan = true;
   bool _oneResp = true;
+
+  /// คำสั่งขอหลายค่าในครั้งเดียว (เฉพาะรถ CAN) เช่น "010C0D11040B341"  null = อ่านทีละค่า
+  String? _multi;
+
+  /// จำนวนไบต์ข้อมูลของแต่ละ PID (ใช้แยกคำตอบแบบหลายค่า)
+  static const Map<int, int> _pidLen = {
+    0x04: 1, 0x05: 1, 0x06: 1, 0x0B: 1, 0x0C: 2, 0x0D: 1, 0x0F: 1,
+    0x10: 2, 0x11: 1, 0x24: 4, 0x2F: 1, 0x34: 4,
+  };
+
+  /// แยกคำตอบหลายค่า เช่น "0:410C1AF80D32\n1:11FF04CC0B9634..." -> {0x0C:[..], 0x0D:[..], ...}
+  static Map<int, List<int>> parseMulti(String r) {
+    final sb = StringBuffer();
+    for (var line in r.split('\n')) {
+      line = line.replaceAll(' ', '').trim();
+      final c = line.indexOf(':');
+      if (c >= 0 && c <= 2) line = line.substring(c + 1);          // "0:" "1:" ของเฟรมต่อเนื่อง
+      if (line.length == 3 && int.tryParse(line, radix: 16) != null) continue;   // บรรทัดบอกความยาว
+      sb.write(line);
+    }
+    final h = sb.toString();
+    final out = <int, List<int>>{};
+    var i = h.indexOf('41');
+    if (i < 0) return out;
+    int? hx(int at) => at + 2 <= h.length ? int.tryParse(h.substring(at, at + 2), radix: 16) : null;
+    while (i + 2 <= h.length) {
+      if (hx(i) == 0x41) {                                   // หัว 41 ของแต่ละคำตอบ (ECU ตอบแยกเป็นชุด ๆ)
+        i += 2;
+        continue;
+      }
+      final pid = hx(i);
+      final n = pid == null ? null : _pidLen[pid];
+      if (pid == null || n == null || i + 2 + n * 2 > h.length) break;
+      final b = <int>[];
+      for (var k = 0; k < n; k++) {
+        b.add(hx(i + 2 + k * 2)!);
+      }
+      out[pid] = b;
+      i += 2 + n * 2;
+    }
+    return out;
+  }
   Future<void> _lock = Future<void>.value();
 
   /// ให้คำสั่งวิ่งทีละคำสั่ง (การอ่านค่ากับการอ่าน DTC จะไม่ชนกัน)
@@ -325,12 +367,47 @@ class ElmSource implements CarSource {
     final t = await _x(() => ses.cmd('010C1'));
     _oneResp = t.replaceAll(' ', '').contains('410C');
 
+    // ---- ทดสอบขอหลายค่าในคำสั่งเดียว (CAN เท่านั้น สูงสุด 6 PID) ----
+    _multi = null;
+    if (_isCan) {
+      final want = <int>[0x0C, 0x0D, 0x11, 0x04, 0x0B];
+      if (sup.contains(0x34)) {
+        want.add(0x34);
+      } else if (sup.contains(0x24)) {
+        want.add(0x24);
+      }
+      final pids = want.where((p) => p == 0x0C || p == 0x0D || sup.isEmpty || sup.contains(p)).toList();
+      final base = '01${pids.map(pidHex).join()}';
+      for (final c in ['${base}1', base]) {
+        try {
+          final rr = await _x(() => ses.cmd(c, timeout: const Duration(seconds: 2)));
+          if (parseMulti(rr).containsKey(0x0C)) {
+            _multi = c;
+            break;
+          }
+        } on TimeoutException {
+          // ลองแบบถัดไป
+        }
+      }
+    } else {
+      // K-line: ให้ ELM จับจังหวะ ECU แบบเร่ง (ตอบเร็วขึ้น)
+      try {
+        await _x(() => ses.cmd('ATAT2'));
+      } catch (_) {}
+    }
+
     _set(LinkState.connected,
-        'ELM327 $label · ${_isCan ? 'CAN' : 'K-Line/อื่น ๆ'}');
+        'ELM327 $label · ${_isCan ? (_multi != null ? 'CAN (หลายค่า/คำสั่ง)' : 'CAN') : 'K-Line/อื่น ๆ'}');
 
     // ---- วนอ่านค่า: รอบ+ความเร็วทุกรอบ, ค่าอื่นสลับกันทีละตัว ----
     final d = hub.data;
-    const slow = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F', '34', '06'];   // 34 = AFR (lambda), 06 = fuel trim (ส่งให้จอ CYD)
+    const slowAll = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F', '34', '06'];   // 34 = AFR (lambda), 06 = fuel trim (ส่งให้จอ CYD)
+    // ค่าที่มากับคำสั่งหลายค่าแล้ว ไม่ต้องอ่านแยก
+    final inMulti = _multi == null
+        ? const <String>{}
+        : {'11', '04', '0B', '34', '24'}.where((p) => _multi!.contains(p)).toSet();
+    final slow = slowAll.where((p) => !inMulti.contains(p)).toList();
+    var cyc = 0;
     final miss = <String, int>{};
     var si = 0;
     var timeouts = 0;
@@ -350,8 +427,14 @@ class ElmSource implements CarSource {
         order = ['0C', '0D', pidHex(all[ai]), pidHex(all[(ai + 1) % all.length])];
         ai += 2;
       } else {
-        order = <String>['0C', '0D'];
-        for (var k = 0; k < slow.length; k++) {
+        cyc++;
+        if (_multi != null) {
+          order = <String>['MULTI'];                         // รอบ+ความเร็ว+TPS+Load+MAP+AFR ในคำสั่งเดียว
+        } else {
+          order = <String>['0C', if (cyc.isEven) '0D'];       // K-line: รอบทุกครั้ง ความเร็วครั้งเว้นครั้ง
+        }
+        // ค่าที่เปลี่ยนช้า (น้ำ/แบต/IAT ...) แทรกทุก 3 รอบ ให้รอบเครื่องได้คิวมากที่สุด
+        for (var k = 0; k < slow.length && cyc % 3 == 0; k++) {
           final p = slow[si];
           si = (si + 1) % slow.length;
           if ((miss[p] ?? 0) < 4) {
@@ -379,6 +462,13 @@ class ElmSource implements CarSource {
   }
 
   Future<bool> _poll(ElmSession ses, String p, CarData d) async {
+    if (p == 'MULTI') {
+      final r = await _x(() => ses.cmd(_multi!, timeout: const Duration(seconds: 2)));
+      final m = parseMulti(r);
+      if (!m.containsKey(0x0C)) return false;
+      m.forEach((pid, b) => _apply(pidHex(pid), b, d));
+      return true;
+    }
     if (p == 'RV') {
       final r = await _x(() => ses.cmd('ATRV'));
       final m = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(r);
@@ -390,6 +480,10 @@ class ElmSource implements CarSource {
         timeout: const Duration(seconds: 2)));
     final b = parsePid(r, p);
     if (b == null || b.isEmpty) return false;
+    return _apply(p, b, d);
+  }
+
+  bool _apply(String p, List<int> b, CarData d) {
     d.pidBytes[int.parse(p, radix: 16)] = b;
     final a = b[0];
     final bb = b.length > 1 ? b[1] : 0;
