@@ -364,12 +364,19 @@ class ElmSource implements CarSource {
 
     final dpn = (await _x(() => ses.cmd('ATDPN'))).split('\n').last.trim();
     _isCan = dpn.isNotEmpty && '6789ABC'.contains(dpn[dpn.length - 1]);
+    if (!_isCan) {
+      // ตัว ELM เลียนแบบบางรุ่นตอบ ATDPN แปลก ๆ -> ดูชื่อโปรโตคอลแทน
+      try {
+        final dp = await _x(() => ses.cmd('ATDP'));
+        if (dp.contains('15765') || dp.contains('CAN')) _isCan = true;
+      } catch (_) {}
+    }
     final t = await _x(() => ses.cmd('010C1'));
     _oneResp = t.replaceAll(' ', '').contains('410C');
 
     // ---- ทดสอบขอหลายค่าในคำสั่งเดียว (CAN เท่านั้น สูงสุด 6 PID) ----
     _multi = null;
-    if (_isCan) {
+    {                                                        // ลองทุกคัน: ถ้ารถ/ตัว ELM รับได้ก็ใช้ (K-line จะไม่รับเอง)
       final want = <int>[0x0C, 0x0D, 0x11, 0x04, 0x0B];
       if (sup.contains(0x34)) {
         want.add(0x34);
@@ -381,16 +388,19 @@ class ElmSource implements CarSource {
       for (final c in ['${base}1', base]) {
         try {
           final rr = await _x(() => ses.cmd(c, timeout: const Duration(seconds: 2)));
-          if (parseMulti(rr).containsKey(0x0C)) {
+          final m = parseMulti(rr);
+          if (m.containsKey(0x0C) && m.length >= 3) {
             _multi = c;
+            _isCan = true;
             break;
           }
         } on TimeoutException {
           // ลองแบบถัดไป
         }
       }
-    } else {
-      // K-line: ให้ ELM จับจังหวะ ECU แบบเร่ง (ตอบเร็วขึ้น)
+    }
+    if (_multi == null) {
+      // อ่านทีละค่า: ให้ ELM จับจังหวะ ECU แบบเร่ง (ตอบเร็วขึ้น)
       try {
         await _x(() => ses.cmd('ATAT2'));
       } catch (_) {}
