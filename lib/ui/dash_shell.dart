@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/hub.dart';
 import '../settings.dart';
 import 'live.dart';
+import 'gif_pages.dart';
 import 'paint_utils.dart';
 import 'picture_dash.dart';
 import 'pro_pages.dart';
@@ -95,6 +96,8 @@ class _DashShellState extends State<DashShell> {
       'center' => paint((f) => CenterTachPainter(f)),
       'perf' => PerfPage(key: ValueKey(id), hub: hub),
       'pids' => PidsPage(key: ValueKey(id), hub: hub),
+      'gif1' || 'gif2' || 'gif3' || 'gif4' || 'gif5' =>
+        GifPage(key: ValueKey(id), index: int.parse(id.substring(3)) - 1, hub: hub),
       _ => LiveBuilder(
           key: ValueKey(id), hub: hub, builder: (_, f) => PictureDash(f: f)),
     };

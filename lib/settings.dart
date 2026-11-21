@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'data/gif_cfg.dart';
+
 /// แหล่งข้อมูลรถ
 enum SourceType { demo, btElm, wifiElm, esp32 }
 
@@ -20,6 +22,11 @@ const List<(String, String)> kPages = [
   ('perf', 'Record (จับเวลาออกตัว 0-100, 1/4 ไมล์)'),
   ('pids', 'ตารางค่า OBD2 ทั้งหมด'),
   ('picture', 'รูปพื้นหลังของคุณ'),
+  ('gif1', 'GIF 1 (แบบหน้า 9 จอ CYD)'),
+  ('gif2', 'GIF 2 (แบบหน้า 10 จอ CYD)'),
+  ('gif3', 'GIF 3 (แบบหน้า 11 จอ CYD)'),
+  ('gif4', 'GIF 4 (แบบหน้า 12 จอ CYD)'),
+  ('gif5', 'GIF 5 (แบบหน้า 13 จอ CYD)'),
 ];
 
 const List<double> kDefaultGears = [7.6, 13.4, 19.6, 25.9, 32.4];
@@ -123,6 +130,27 @@ class AppSettings extends ChangeNotifier {
 
   void resetGears() {
     _p.remove('gears');
+    notifyListeners();
+  }
+
+  // ---------- หน้า GIF 1-5 ----------
+  final Map<int, GifCfg> _gifCache = {};
+  GifCfg gifCfg(int i) {
+    final c = _gifCache[i];
+    if (c != null) return c;
+    GifCfg g;
+    try {
+      final j = jsonDecode(_s('gp$i', '{}'));
+      g = GifCfg(j is Map<String, dynamic> ? j : <String, dynamic>{});
+    } catch (_) {
+      g = GifCfg(<String, dynamic>{});
+    }
+    return _gifCache[i] = g;
+  }
+
+  void setGifCfg(int i, GifCfg c) {
+    _gifCache[i] = c;
+    _p.setString('gp$i', jsonEncode(c.toJson()));
     notifyListeners();
   }
 

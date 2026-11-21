@@ -1,0 +1,603 @@
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+
+import '../data/gif_cfg.dart';
+import '../data/hub.dart';
+import '../settings.dart';
+import 'live.dart';
+
+/// หน้า GIF 1-5 (พอร์ตจากหน้า 9-13 ของจอ CYD)
+///  แบบ A: กรอบ GIF + แถบรอบ + ความเร็ว/รอบ + ค่า 3 ช่องขวา (แตะช่องเพื่อสลับค่า)
+///  แบบ B: GIF ใหญ่ด้านบน + รอบซ้ายล่าง + ความเร็วขวาล่าง (ไม่มีแถบ)
+///  ตัวเลขแบบไตเติลอนิเมะ: ไล่สี -> ขาว, ขอบขาว + ขอบเข้ม, เงาเยื้อง  (กดค้างที่ตัวเลข = ตั้งค่าหน้า)
+///  โหมดภาพ: 1 = ภาพค้างตามรอบ, 2 = เล่นวนเร็วตามความเร็วรถ, 0 = เล่นวนเร็วตามรอบ
+
+/// ค่าที่เลือกใส่ช่องขวาได้
+const List<(String, String, int)> kGifMetrics = [
+  // (ชื่อ, หน่วย, ทศนิยม)
+  ('COOLANT', '°C', 0),
+  ('IAT', '°C', 0),
+  ('VOLT', 'V', 1),
+  ('LOAD', '%', 0),
+  ('TPS', '%', 0),
+  ('BOOST', 'bar', 2),
+  ('AIRFLOW', 'g/s', 1),
+  ('FUEL', '%', 0),
+];
+
+double? _metricVal(Frame f, int m) => switch (m) {
+      0 => f.ect,
+      1 => f.iat,
+      2 => f.volt,
+      3 => f.load,
+      4 => f.tps,
+      5 => f.boost,
+      6 => f.maf,
+      _ => f.fuel,
+    };
+
+(double, double) _metricRange(int m) => switch (m) {
+      0 => (40, 130),
+      1 => (-10, 80),
+      2 => (11, 15),
+      5 => (-1, 1),
+      6 => (0, 120),
+      _ => (0, 100),
+    };
+
+/// เฟรมของ GIF ที่ถอดไว้แล้ว
+class _Gif {
+  _Gif(this.frames, this.ms);
+  final List<ui.Image> frames;
+  final List<int> ms;
+  void dispose() {
+    for (final f in frames) {
+      f.dispose();
+    }
+  }
+}
+
+Future<_Gif?> _loadGif(String path, int targetW) async {
+  final file = File(path);
+  if (!await file.exists()) return null;
+  final bytes = await file.readAsBytes();
+  final probe = await ui.instantiateImageCodec(bytes);
+  final first = await probe.getNextFrame();
+  final w = first.image.width;
+  first.image.dispose();
+  final n = math.min(probe.frameCount, 150);
+  probe.dispose();
+  final codec = await ui.instantiateImageCodec(bytes,
+      targetWidth: w > targetW ? targetW : null);
+  final frames = <ui.Image>[];
+  final ms = <int>[];
+  for (var i = 0; i < n; i++) {
+    final fr = await codec.getNextFrame();
+    frames.add(fr.image);
+    final d = fr.duration.inMilliseconds;
+    ms.add(d <= 10 ? 80 : d);
+  }
+  codec.dispose();
+  return _Gif(frames, ms);
+}
+
+Color _hsv(double h, double s, double v) =>
+    HSVColor.fromAHSV(1, ((h % 360) + 360) % 360, s.clamp(0.0, 1.0), v.clamp(0.0, 1.0))
+        .toColor();
+
+class GifPage extends StatefulWidget {
+  const GifPage({super.key, required this.index, required this.hub});
+  final int index;
+  final DataHub hub;
+
+  @override
+  State<GifPage> createState() => _GifPageState();
+}
+
+class _GifPageState extends State<GifPage> {
+  _Gif? _gif;
+  String _loaded = '';
+  int _loadedW = 0;
+  bool _loading = false;
+
+  // สถานะเล่นภาพ
+  int _idx = 0;
+  double _acc = 0;
+  double _lastT = -1;
+
+  // MAX / MIN ของแต่ละค่า (ตั้งแต่เปิดหน้า)
+  final Map<int, double> _pk = {};
+
+  AppSettings get s => widget.hub.settings;
+  GifCfg get cfg => s.gifCfg(widget.index);
+
+  @override
+  void dispose() {
+    _gif?.dispose();
+    super.dispose();
+  }
+
+  void _ensureLoaded(GifCfg c) {
+    final tw = c.style == 1 ? 1100 : 760;
+    if (_loading || (c.path == _loaded && tw == _loadedW)) return;
+    _loading = true;
+    final path = c.path;
+    () async {
+      _Gif? g;
+      try {
+        if (path.isNotEmpty) g = await _loadGif(path, tw);
+      } catch (_) {
+        g = null;
+      }
+      if (!mounted) {
+        g?.dispose();
+        return;
+      }
+      setState(() {
+        _gif?.dispose();
+        _gif = g;
+        _idx = 0;
+        _loaded = path;
+        _loadedW = tw;
+        _loading = false;
+      });
+    }();
+  }
+
+  /// เลือกเฟรมที่จะแสดงตามโหมด
+  void _advance(Frame f, GifCfg c) {
+    final g = _gif;
+    if (g == null || g.frames.isEmpty) return;
+    final n = g.frames.length;
+    final t = f.time;
+    final dtMs = _lastT < 0 ? 0.0 : (t - _lastT) * 1000;
+    _lastT = t;
+    if (c.mode == 1) {
+      final hi = c.hi > 0 ? c.hi : f.redline;
+      final span = math.max(500, hi - c.lo);
+      final pos = ((f.rpm - c.lo) / span).clamp(0.0, 1.0) * (n - 1);
+      var tg = _idx;
+      if (pos > _idx + 0.6) tg = (pos + 0.4).floor();
+      if (pos < _idx - 0.6) tg = (pos - 0.4).ceil();
+      _idx = tg.clamp(0, n - 1);
+      return;
+    }
+    double rate;
+    if (c.mode == 2) {
+      rate = f.speed < 1 ? 0 : (f.speed / 60).clamp(0.0, 3.0);
+    } else {
+      final r = (f.rpm / math.max(1000, f.redline)).clamp(0.0, 1.2);
+      rate = 0.6 + 1.8 * r;
+    }
+    _acc += dtMs * rate;
+    var guard = 0;
+    while (_acc >= g.ms[_idx] && guard < n) {
+      _acc -= g.ms[_idx];
+      _idx = (_idx + 1) % n;
+      guard++;
+    }
+    if (guard >= n) _acc = 0;
+  }
+
+  void _trackPeaks(Frame f, GifCfg c) {
+    for (final m in c.slots) {
+      final v = _metricVal(f, m);
+      if (v == null) continue;
+      final isMin = m == 2;
+      final o = _pk[m];
+      if (o == null || (isMin ? v < o : v > o)) _pk[m] = v;
+    }
+  }
+
+  void _tapAt(Offset p, Size size) {
+    final c = cfg;
+    if (c.style != 0) return;
+    if (p.dx < size.width * 0.63) return;
+    final top = size.height * 0.09, h = size.height * 0.86 / 3;
+    final i = ((p.dy - top) / h).floor();
+    if (i < 0 || i > 2) return;
+    var m = c.slots[i];
+    for (var k = 0; k < kGifMetrics.length; k++) {
+      m = (m + 1) % kGifMetrics.length;
+      if (!c.slots.contains(m)) break;
+    }
+    c.slots[i] = m;
+    s.setGifCfg(widget.index, c);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, box) {
+      final size = Size(box.maxWidth, box.maxHeight);
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: (d) => _tapAt(d.localPosition, size),
+        onLongPressStart: (d) {
+          // กดค้างที่ตัวเลข (ครึ่งล่าง) = ตั้งค่าหน้านี้
+          if (d.localPosition.dy > size.height * 0.5) {
+            showGifSettings(context, s, widget.index);
+          }
+        },
+        child: LiveBuilder(
+          hub: widget.hub,
+          builder: (_, f) {
+            final c = cfg;
+            _ensureLoaded(c);
+            _advance(f, c);
+            _trackPeaks(f, c);
+            final g = _gif;
+            final img = (g != null && g.frames.isNotEmpty)
+                ? g.frames[_idx.clamp(0, g.frames.length - 1)]
+                : null;
+            return CustomPaint(
+              painter: _GifDashPainter(f, c, img, Map.of(_pk), _loading,
+                  widget.index),
+              child: const SizedBox.expand(),
+            );
+          },
+        ),
+      );
+    });
+  }
+}
+
+class _GifDashPainter extends CustomPainter {
+  _GifDashPainter(this.f, this.c, this.img, this.pk, this.loading, this.page);
+  final Frame f;
+  final GifCfg c;
+  final ui.Image? img;
+  final Map<int, double> pk;
+  final bool loading;
+  final int page;
+
+  static const pink = Color(0xFFFF5CC4);
+  static const vio = Color(0xFF8C46E6);
+  static const outC = Color(0xFF4A1670);
+  static const off = Color(0xFF22162F);
+  static const lab = Color(0xFFC4B0DC);
+  static const red = Color(0xFFFF3246);
+  static const white = Color(0xFFFFF4FC);
+
+  Color get top => _hsv(c.hue, c.sat, 1);
+  Color get edge => _hsv(c.hue - 47, 0.8, c.sat < 0.08 ? 0.3 : 0.44);
+  Color get shade => _hsv(c.hue - 47, 0.85, 0.17);
+
+  @override
+  void paint(Canvas cv, Size sz) {
+    cv.drawRect(Offset.zero & sz, Paint()..color = Colors.black);
+    final w = sz.width, h = sz.height;
+    if (c.style == 1) {
+      final fr = Rect.fromLTWH(w * 0.015, h * 0.09, w * 0.97, h * 0.66);
+      _frame(cv, fr);
+      _img(cv, fr.deflate(h * 0.012));
+      final fs = h * 0.19;
+      _anime(cv, _rpmTxt(), Offset(w * 0.40, h * 0.965), fs, f.atRedline, TextAlign.right);
+      _label(cv, 'RPM', Offset(w * 0.41, h * 0.90), h * 0.045);
+      _anime(cv, f.speed.round().toString(), Offset(w * 0.86, h * 0.965), fs, false, TextAlign.right);
+      _label(cv, 'km/h', Offset(w * 0.87, h * 0.90), h * 0.045);
+      return;
+    }
+    // ---- แบบ A ----
+    final fr = Rect.fromLTWH(w * 0.015, h * 0.09, w * 0.60, h * 0.60);
+    _frame(cv, fr);
+    _img(cv, fr.deflate(h * 0.012));
+    // แถบรอบเฉียง
+    final barR = Rect.fromLTWH(fr.left, fr.bottom + h * 0.025, fr.width, h * 0.045);
+    final maxR = (f.maxRpm).toDouble();
+    final lit = (f.rpm / maxR).clamp(0.0, 1.0);
+    final redAt = (f.redline / maxR).clamp(0.0, 1.0);
+    _segBar(cv, barR, 40, lit, redAt, flash: f.atRedline && (f.time * 9).floor().isEven);
+    // ความเร็ว + รอบ
+    final fs = h * 0.17;
+    _anime(cv, f.speed.round().toString(), Offset(w * 0.22, h * 0.965), fs, false, TextAlign.right);
+    _label(cv, 'km/h', Offset(w * 0.23, h * 0.90), h * 0.04);
+    _anime(cv, _rpmTxt(), Offset(w * 0.53, h * 0.965), fs, f.atRedline, TextAlign.right);
+    _label(cv, 'RPM', Offset(w * 0.54, h * 0.90), h * 0.04);
+    // ค่า 3 ช่องขวา
+    final x0 = w * 0.645, x1 = w * 0.985, top0 = h * 0.09, bh = h * 0.86 / 3;
+    for (var i = 0; i < 3; i++) {
+      final m = c.slots[i];
+      final y = top0 + bh * i;
+      final (name, unit, dec) = kGifMetrics[m];
+      _label(cv, name, Offset(x0, y), h * 0.045);
+      final v = _metricVal(f, m);
+      final isMin = m == 2;
+      final p = pk[m];
+      final pkTxt = '${isMin ? 'MIN' : 'MAX'} ${p == null ? '--' : p.toStringAsFixed(dec)}';
+      _label(cv, pkTxt, Offset(x1, y + h * 0.006), h * 0.032, color: top, right: true);
+      final warn = (m == 0 && v != null && v >= f.ectWarn && (f.time * 3).floor().isEven) ||
+          (m == 2 && v != null && v < 11.8);
+      _anime(cv, v == null ? '--' : v.toStringAsFixed(dec),
+          Offset(x1 - w * 0.045, y + bh * 0.70), h * 0.13, warn, TextAlign.right);
+      _label(cv, unit, Offset(x1 - w * 0.04, y + bh * 0.42), h * 0.035);
+      final (lo, hi) = _metricRange(m);
+      final t = v == null ? 0.0 : ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
+      final pt = p == null ? -1.0 : ((p - lo) / (hi - lo)).clamp(0.0, 1.0);
+      _segBar(cv, Rect.fromLTWH(x0, y + bh * 0.80, x1 - x0, h * 0.035), 18, t, 2, peak: pt);
+    }
+  }
+
+  String _rpmTxt() => ((f.rpm / 10).round() * 10).toString();
+
+  void _frame(Canvas cv, Rect r) {
+    final rr = RRect.fromRectAndRadius(r, const Radius.circular(14));
+    cv.drawRRect(rr, Paint()..color = const Color(0xFF12081C));
+    cv.drawRRect(rr, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..color = pink);
+    cv.drawRRect(rr.deflate(3), Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..color = vio);
+    final wp = Paint()
+      ..color = white
+      ..strokeWidth = 3;
+    cv.drawLine(r.topLeft + const Offset(18, 0), r.topLeft + const Offset(58, 0), wp);
+    cv.drawLine(r.topLeft + const Offset(0, 18), r.topLeft + const Offset(0, 48), wp);
+    cv.drawLine(r.bottomRight - const Offset(18, 0), r.bottomRight - const Offset(58, 0), wp);
+    cv.drawLine(r.bottomRight - const Offset(0, 18), r.bottomRight - const Offset(0, 48), wp);
+  }
+
+  void _img(Canvas cv, Rect r) {
+    final i = img;
+    if (i == null) {
+      _label(cv, loading ? 'กำลังโหลด GIF...' : 'กดค้างที่ตัวเลข -> เลือก GIF',
+          r.center - Offset(r.width * 0.25, 10), r.height * 0.07);
+      return;
+    }
+    // ครอปให้เต็มกรอบ (cover)
+    final iw = i.width.toDouble(), ih = i.height.toDouble();
+    final sc = math.max(r.width / iw, r.height / ih);
+    final cw = r.width / sc, ch = r.height / sc;
+    final src = Rect.fromLTWH((iw - cw) / 2, (ih - ch) / 2, cw, ch);
+    cv.save();
+    cv.clipRRect(RRect.fromRectAndRadius(r, const Radius.circular(10)));
+    cv.drawImageRect(i, src, r, Paint()..filterQuality = FilterQuality.medium);
+    cv.restore();
+  }
+
+  Color _segCol(double t) => t < 0.55
+      ? Color.lerp(vio, top, t / 0.55)!
+      : Color.lerp(top, white, (t - 0.55) / 0.45)!;
+
+  void _segBar(Canvas cv, Rect r, int n, double lit, double redAt,
+      {bool flash = false, double peak = -1}) {
+    final pitch = r.width / n, sk = r.height * 0.5;
+    final litN = (lit * n).round();
+    final pkN = peak < 0 ? -1 : (peak * n).round() - 1;
+    for (var k = 0; k < n; k++) {
+      final x = r.left + k * pitch;
+      final on = k < litN;
+      final isRed = k / n >= redAt;
+      final col = on
+          ? (flash || isRed ? red : _segCol(k / (n - 1)))
+          : (k == pkN ? lab : (isRed ? const Color(0xFF3C0E16) : off));
+      final p = Path()
+        ..moveTo(x + sk, r.top)
+        ..lineTo(x + pitch * 0.82 + sk, r.top)
+        ..lineTo(x + pitch * 0.82, r.bottom)
+        ..lineTo(x, r.bottom)
+        ..close();
+      cv.drawPath(p, Paint()..color = col);
+    }
+  }
+
+  void _label(Canvas cv, String t, Offset at, double fs,
+      {Color color = lab, bool right = false}) {
+    final tp = TextPainter(
+      text: TextSpan(
+          text: t,
+          style: TextStyle(color: color, fontSize: fs, fontWeight: FontWeight.w600)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(cv, right ? at - Offset(tp.width, 0) : at);
+  }
+
+  /// ตัวเลขไตเติลอนิเมะ: เงาเยื้อง -> ขอบเข้ม -> ขอบขาว -> เนื้อไล่สี   (at = จุดเส้นฐาน)
+  void _anime(Canvas cv, String t, Offset at, double fs, bool hot, TextAlign align) {
+    TextPainter mk(Paint p) => TextPainter(
+          text: TextSpan(
+            text: t,
+            style: TextStyle(
+                fontSize: fs,
+                fontWeight: FontWeight.w900,
+                fontStyle: FontStyle.italic,
+                letterSpacing: -fs * 0.02,
+                foreground: p),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+    final probe = mk(Paint());
+    final base = probe.computeDistanceToActualBaseline(TextBaseline.alphabetic);
+    final x = align == TextAlign.right ? at.dx - probe.width : at.dx;
+    final o = Offset(x, at.dy - base);
+    final c0 = hot ? red : top;
+    final c1 = hot ? const Color(0xFFFFDCC8) : white;
+    final sh = Offset(fs * 0.06, fs * 0.06);
+    mk(Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = fs * 0.16
+          ..strokeJoin = StrokeJoin.round
+          ..color = shade)
+        .paint(cv, o + sh);
+    mk(Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = fs * 0.16
+          ..strokeJoin = StrokeJoin.round
+          ..color = edge)
+        .paint(cv, o);
+    mk(Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = fs * 0.07
+          ..strokeJoin = StrokeJoin.round
+          ..color = white)
+        .paint(cv, o);
+    final grad = ui.Gradient.linear(Offset(0, o.dy + fs * 0.25),
+        Offset(0, o.dy + base), [c0, c1]);
+    mk(Paint()..shader = grad).paint(cv, o);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+// ======================================================================
+//  แผงตั้งค่าของหน้า GIF (กดค้างที่ตัวเลข)
+// ======================================================================
+Future<void> showGifSettings(BuildContext context, AppSettings s, int index) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFF14101C),
+    builder: (ctx) => StatefulBuilder(builder: (ctx, setSt) {
+      final c = s.gifCfg(index);
+      void save() {
+        s.setGifCfg(index, c);
+        setSt(() {});
+      }
+
+      Future<void> pick() async {
+        final x = await ImagePicker().pickImage(source: ImageSource.gallery);
+        if (x == null) return;
+        final docs = await getApplicationDocumentsDirectory();
+        final dir = Directory('${docs.path}/gifpages');
+        await dir.create(recursive: true);
+        final dot = x.name.lastIndexOf('.');
+        final ext = dot >= 0 ? x.name.substring(dot).toLowerCase() : '.gif';
+        final dst = '${dir.path}/gif${index}_${DateTime.now().millisecondsSinceEpoch}$ext';
+        await File(x.path).copy(dst);
+        final old = c.path;
+        c.path = dst;
+        save();
+        if (old.isNotEmpty && old != dst) {
+          try {
+            File(old).deleteSync();
+          } catch (_) {}
+        }
+      }
+
+      final red = s.redline.toDouble();
+      final hi = c.hi > 0 ? c.hi.toDouble() : red;
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('ตั้งค่าหน้า GIF ${index + 1}',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Row(children: [
+                  FilledButton.icon(
+                    onPressed: pick,
+                    icon: const Icon(Icons.gif_box),
+                    label: Text(c.path.isEmpty ? 'เลือก GIF' : 'เปลี่ยน GIF'),
+                  ),
+                  const SizedBox(width: 16),
+                  SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 0, label: Text('แบบ A')),
+                      ButtonSegment(value: 1, label: Text('แบบ B (ภาพใหญ่)')),
+                    ],
+                    selected: {c.style},
+                    onSelectionChanged: (v) {
+                      c.style = v.first;
+                      save();
+                    },
+                  ),
+                ]),
+                const SizedBox(height: 12),
+                const Text('การเล่นภาพ'),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 1, label: Text('ค้างตามรอบ')),
+                    ButtonSegment(value: 2, label: Text('วนเร็วตามความเร็วรถ')),
+                    ButtonSegment(value: 0, label: Text('วนเร็วตามรอบ')),
+                  ],
+                  selected: {c.mode},
+                  onSelectionChanged: (v) {
+                    c.mode = v.first;
+                    save();
+                  },
+                ),
+                if (c.mode == 1) ...[
+                  const SizedBox(height: 8),
+                  Text('ช่วงรอบ: ${c.lo} → ${hi.round()} rpm (ต่ำกว่า = เฟรมแรก, สูงกว่า = เฟรมสุดท้าย)'),
+                  RangeSlider(
+                    min: 0,
+                    max: red,
+                    divisions: math.max(1, (red / 100).round()),
+                    values: RangeValues(math.min(c.lo.toDouble(), hi).clamp(0.0, red), hi.clamp(0.0, red)),
+                    onChanged: (v) {
+                      c.lo = v.start.round();
+                      c.hi = v.end.round() >= red ? 0 : v.end.round();
+                      save();
+                    },
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Row(children: [
+                  const Text('สีตัวเลข'),
+                  const SizedBox(width: 12),
+                  Container(
+                    width: 60,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [_hsv(c.hue, c.sat, 1), Colors.white]),
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                      onPressed: () {
+                        c.hue = 322;
+                        c.sat = 0.64;
+                        save();
+                      },
+                      child: const Text('ค่าเริ่มต้น (ชมพู)')),
+                ]),
+                Slider(
+                  min: 0,
+                  max: 359,
+                  value: c.hue.clamp(0, 359),
+                  activeColor: _hsv(c.hue, 0.9, 1),
+                  onChanged: (v) {
+                    c.hue = v;
+                    save();
+                  },
+                ),
+                const Text('ความสด (ซ้าย = ขาว)'),
+                Slider(
+                  min: 0,
+                  max: 1,
+                  value: c.sat.clamp(0, 1),
+                  activeColor: _hsv(c.hue, c.sat, 1),
+                  onChanged: (v) {
+                    c.sat = v;
+                    save();
+                  },
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton(
+                      onPressed: () => Navigator.pop(ctx), child: const Text('เสร็จ')),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }),
+  );
+}
