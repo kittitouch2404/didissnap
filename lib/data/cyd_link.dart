@@ -34,7 +34,7 @@ class CydLink extends ChangeNotifier {
         DateTime.now().difference(_lastBeacon) < const Duration(seconds: 5);
     final sending = hub.state == LinkState.connected &&
         settings.source != SourceType.esp32;
-    final who = found ? 'เจอจอ CYD ที่ ${_cyd!.address}' : 'ยังไม่เจอจอ CYD (ส่งแบบ broadcast)';
+    final who = found ? 'เจอจอ CYD ที่ ${_cyd!.address}' : 'ยังไม่เจอจอ CYD (ส่งแบบ broadcast ${_bcast.length} วง)';
     return sending ? '$who · กำลังส่งค่า' : '$who · รอค่าจากรถ';
   }
 
@@ -84,17 +84,47 @@ class CydLink extends ChangeNotifier {
         '${_f(lam, 3)},${_f(stft, 1)}';
   }
 
+  /// ที่อยู่ broadcast ของทุกวง WiFi ที่เครื่องนี้อยู่ (เช่น ฮอตสปอตที่มือถือปล่อยเอง 192.168.43.255)
+  /// มือถือที่เป็นตัวปล่อยฮอตสปอต ส่งไป 255.255.255.255 แล้วมักไปไม่ถึงวงฮอตสปอต จึงต้องส่งไปทีละวง
+  List<InternetAddress> _bcast = [InternetAddress('255.255.255.255')];
+  DateTime _bcastAt = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _bcastBusy = false;
+
+  Future<void> _refreshBcast() async {
+    if (_bcastBusy) return;
+    _bcastBusy = true;
+    try {
+      final out = <InternetAddress>[InternetAddress('255.255.255.255')];
+      final ifs = await NetworkInterface.list(
+          includeLoopback: false, type: InternetAddressType.IPv4);
+      for (final i in ifs) {
+        for (final a in i.addresses) {
+          final p = a.address.split('.');
+          if (p.length == 4) out.add(InternetAddress('${p[0]}.${p[1]}.${p[2]}.255'));
+        }
+      }
+      _bcast = out;
+    } catch (_) {}
+    _bcastAt = DateTime.now();
+    _bcastBusy = false;
+  }
+
   void _tick() {
     final s = _sock;
     if (s == null || !settings.cydLink) return;
     // โหมด ESP32: จอ CYD เป็นคนอ่านรถเอง ไม่ต้องส่งกลับไป
     if (hub.state != LinkState.connected || settings.source == SourceType.esp32) return;
-    final to = (_cyd != null &&
-            DateTime.now().difference(_lastBeacon) < const Duration(seconds: 5))
-        ? _cyd!
-        : InternetAddress('255.255.255.255');
+    final now = DateTime.now();
+    if (now.difference(_bcastAt) > const Duration(seconds: 5)) _refreshBcast();
+    final data = utf8.encode(_line());
     try {
-      s.send(utf8.encode(_line()), to, dataPort);
+      if (_cyd != null && now.difference(_lastBeacon) < const Duration(seconds: 5)) {
+        s.send(data, _cyd!, dataPort);                     // รู้ IP จอแล้ว: ส่งตรง
+      } else {
+        for (final a in _bcast) {
+          s.send(data, a, dataPort);                       // ยังไม่รู้: ส่ง broadcast ทุกวง
+        }
+      }
       sent++;
     } catch (_) {}
   }
