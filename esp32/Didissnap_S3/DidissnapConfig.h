@@ -23,7 +23,7 @@
 namespace didicfg {
 
 struct Config {
-  int maxRpm = 5000;      // redline / ไฟ shift
+  int maxRpm = 7500;      // redline / ไฟ shift
   int tempAlert = 100;    // เตือนน้ำ (°C)
   int bri = 80;           // ความสว่าง 10-100 %
   int briAuto = 0;        // 1 = ปรับตามแสง (ถ้าบอร์ดมีเซ็นเซอร์)
@@ -74,7 +74,6 @@ static uint32_t saveAt = 0;     // บันทึกลงแฟลชทีห
 inline void load() {
   if (!prefs) return;
   cfg.maxRpm = constrain(prefs->getInt("maxRpm", cfg.maxRpm), 2000, 12000);
-  if (!prefs->getBool("rl5k", false)) { cfg.maxRpm = 5000; prefs->putBool("rl5k", true); prefs->putInt("maxRpm", 5000); }   // ตั้ง redline 5000 ครั้งเดียว (ปรับต่อได้ที่ CAR > REDLINE)
   cfg.tempAlert = constrain(prefs->getInt("tempAlert", cfg.tempAlert), 70, 130);
   cfg.bri = constrain(prefs->getInt("bri", cfg.bri), 10, 100);
   cfg.briAuto = prefs->getBool("briAuto", cfg.briAuto) ? 1 : 0;

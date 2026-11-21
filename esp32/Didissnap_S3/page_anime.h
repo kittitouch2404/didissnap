@@ -13,7 +13,7 @@
 #endif
 
 #define ANIME_RPM_LO 0       // ต่ำกว่านี้ = เฟรมแรก
-#define ANIME_RPM_HI maxRpm()   // ถึง redline = เฟรมสุดท้าย (เหยียบ = ภาพเดินหน้า ปล่อย = ถอยกลับ)
+#define ANIME_RPM_HI 5500    // ถึงนี้ = เฟรมสุดท้าย (เหยียบ = ภาพเดินหน้า ปล่อย = ถอยกลับ)
 
 constexpr uint16_t Q_PK = rgb(0xFF5CC4), Q_WH = rgb(0xFFF4FC), Q_OUT = rgb(0x4A1670), Q_SHD = rgb(0x1C062C),
                    Q_OFF = rgb(0x221630), Q_LAB = rgb(0xC4B0DC), Q_RD = rgb(0xFF3246), Q_RDOFF = rgb(0x3C0E16),
