@@ -55,10 +55,19 @@ object AutoStart {
         }
     }
 
-    /** เริ่ม/หยุด service เฝ้าการชาร์จ ตามค่าตั้ง */
+    /** ส่งค่าให้จอ CYD (ค่าเริ่มต้นเปิด) -> ต้องมี service ค้างไว้ ให้ Android ไม่ปิดแอปตอนอยู่เบื้องหลัง */
+    fun cydLink(ctx: Context): Boolean = try {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("flutter.cydLink", true)
+    } catch (e: Exception) {
+        true
+    }
+
+    fun needService(ctx: Context): Boolean = prefBool(ctx, "autoPower") || cydLink(ctx)
+
+    /** เริ่ม/หยุด service เฝ้าการชาร์จ / ทำงานเบื้องหลัง ตามค่าตั้ง */
     fun syncService(ctx: Context) {
         val i = Intent(ctx, PowerWatchService::class.java)
-        if (prefBool(ctx, "autoPower")) {
+        if (needService(ctx)) {
             try {
                 if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
             } catch (e: Exception) {
@@ -123,7 +132,7 @@ class PowerWatchService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!AutoStart.prefBool(this, "autoPower")) {
+        if (!AutoStart.needService(this)) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -144,7 +153,7 @@ class PowerWatchService : Service() {
         )
         val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, chId) else Notification.Builder(this)
         val n = b.setContentTitle("Didissnap")
-            .setContentText("รอไฟจากรถ (บิดกุญแจ) เพื่อเปิดหน้าปัด")
+            .setContentText(if (AutoStart.cydLink(this)) "กำลังทำงาน · ส่งค่าให้จอ CYD" else "รอไฟจากรถ (บิดกุญแจ) เพื่อเปิดหน้าปัด")
             .setSmallIcon(applicationInfo.icon)
             .setContentIntent(pi)
             .setOngoing(true)

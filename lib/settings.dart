@@ -126,6 +126,10 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------- ส่งค่าให้จอ ESP32 CYD ทาง WiFi (โค้ด Kotlin อ่านค่านี้ด้วย: เปิด service ให้แอปทำงานเบื้องหลัง) ----------
+  bool get cydLink => _b('cydLink', true);
+  set cydLink(bool v) => _setB('cydLink', v);
+
   // ---------- เปิดแอปอัตโนมัติ (โค้ด Kotlin อ่านค่าเหล่านี้โดยตรง) ----------
   bool get autoBoot => _b('autoBoot', false);
   set autoBoot(bool v) => _setB('autoBoot', v);

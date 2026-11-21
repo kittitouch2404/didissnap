@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'data/hub.dart';
+import 'data/native.dart';
 import 'settings.dart';
 import 'ui/boot_video.dart';
 import 'ui/dash_shell.dart';
@@ -35,6 +36,7 @@ class _DashAppState extends State<DashApp> {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _applySystem();
     widget.hub.start();
+    Native.syncAutoStart();   // เปิด service เบื้องหลัง (ถ้าเปิดส่งค่าให้จอ CYD หรือเปิดแอปอัตโนมัติไว้)
   }
 
   void _applySystem() {

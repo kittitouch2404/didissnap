@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../settings.dart';
 import 'car_data.dart';
+import 'cyd_link.dart';
 import 'demo_source.dart';
 import 'elm_source.dart';
 import 'esp32_source.dart';
@@ -34,7 +35,11 @@ class DataHub extends ChangeNotifier {
     _tripTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
       if (state == LinkState.connected) data.trip += data.speed * 0.25 / 3600;
     });
+    cyd = CydLink(settings, this)..start();
   }
+
+  /// ส่งค่าต่อให้จอ ESP32 CYD ทาง WiFi
+  late final CydLink cyd;
 
   Timer? _tripTimer;
 
@@ -116,6 +121,7 @@ class DataHub extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _tripTimer?.cancel();
+    cyd.dispose();
     perf.dispose();
     settings.removeListener(_onSettings);
     _src?.stop();

@@ -330,7 +330,7 @@ class ElmSource implements CarSource {
 
     // ---- วนอ่านค่า: รอบ+ความเร็วทุกรอบ, ค่าอื่นสลับกันทีละตัว ----
     final d = hub.data;
-    const slow = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F'];
+    const slow = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F', '34', '06'];   // 34 = AFR (lambda), 06 = fuel trim (ส่งให้จอ CYD)
     final miss = <String, int>{};
     var si = 0;
     var timeouts = 0;

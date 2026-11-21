@@ -230,6 +230,23 @@ class _ConnectionTabState extends State<ConnectionTab> {
                 title: Text(_title(t)),
                 subtitle: Text(_sub(t)),
               ),
+            const _Header('ส่งค่าให้จอ ESP32 CYD (WiFi)'),
+            SwitchListTile(
+              dense: true,
+              title: const Text('ส่งค่าให้จอ CYD'),
+              subtitle: ListenableBuilder(
+                listenable: hub.cyd,
+                builder: (_, __) => Text(hub.cyd.status),
+              ),
+              value: s.cydLink,
+              onChanged: (v) async {
+                s.cydLink = v;
+                await Native.syncAutoStart();
+              },
+            ),
+            const _Hint(
+                'ให้จอแอนดรอยด์กับจอ CYD ต่อฮอตสปอตมือถือตัวเดียวกัน — แอปต่อ Vgate แล้วส่งค่าให้จอ CYD ราว 20 ครั้ง/วินาที\n'
+                'แอปทำงานเบื้องหลังต่อได้ (เปิดยูทูป/แผนที่ทับได้) — ปิด "ประหยัดแบตเตอรี่" ให้แอปนี้ในเมนู เปิดแอปอัตโนมัติ'),
             if (s.source == SourceType.btElm) ...[
               const _Header('อุปกรณ์ Bluetooth'),
               ListTile(
