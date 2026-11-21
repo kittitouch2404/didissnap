@@ -428,15 +428,24 @@ class ElmSource implements CarSource {
         ai += 2;
       } else {
         cyc++;
+        // ค่าที่หน้าจอใช้และเปลี่ยนตามเท้า (TPS/Load/MAP/AirFlow/AFR) = กลุ่มเร็ว
+        final fast = hub.focusPids
+            .where((p) => const {'11', '04', '0B', '10', '34'}.contains(p) &&
+                !inMulti.contains(p) && (miss[p] ?? 0) < 4)
+            .toList();
         if (_multi != null) {
           order = <String>['MULTI'];                         // รอบ+ความเร็ว+TPS+Load+MAP+AFR ในคำสั่งเดียว
+          if (fast.isNotEmpty && cyc.isEven) order.add(fast[(cyc ~/ 2) % fast.length]);
+        } else if (cyc.isEven || fast.isEmpty) {
+          order = <String>['0C', '0D'];                      // K-line: รอบทุกครั้ง สลับกับ ความเร็ว / ค่ากลุ่มเร็ว
         } else {
-          order = <String>['0C', if (cyc.isEven) '0D'];       // K-line: รอบทุกครั้ง ความเร็วครั้งเว้นครั้ง
+          order = <String>['0C', fast[(cyc ~/ 2) % fast.length]];
         }
-        // ค่าที่เปลี่ยนช้า (น้ำ/แบต/IAT ...) แทรกทุก 3 รอบ ให้รอบเครื่องได้คิวมากที่สุด
-        for (var k = 0; k < slow.length && cyc % 3 == 0; k++) {
+        // ค่าที่เปลี่ยนช้า (น้ำ/แบต/IAT ...) แทรกทุก 4 รอบ ให้รอบเครื่องได้คิวมากที่สุด
+        for (var k = 0; k < slow.length && cyc % 4 == 0; k++) {
           final p = slow[si];
           si = (si + 1) % slow.length;
+          if (fast.contains(p)) continue;                    // อยู่กลุ่มเร็วแล้ว
           if ((miss[p] ?? 0) < 4) {
             order.add(p);
             break;
@@ -486,6 +495,11 @@ class ElmSource implements CarSource {
   bool _apply(String p, List<int> b, CarData d) {
     d.pidBytes[int.parse(p, radix: 16)] = b;
     final a = b[0];
+    if ((p == '34' || p == '24') && b.length >= 2) {
+      final lam = (a * 256 + b[1]) * 2 / 65536;
+      if (lam > 0.5 && lam < 8) d.lambda = lam;              // ตัดค่าเพี้ยน/ตอนตัดน้ำมัน
+      return true;
+    }
     final bb = b.length > 1 ? b[1] : 0;
     switch (p) {
       case '0C':

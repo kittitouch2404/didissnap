@@ -100,6 +100,10 @@ class AppSettings extends ChangeNotifier {
   int get maxSpeed => _i('maxSpeed', 240);
   set maxSpeed(int v) => _setI('maxSpeed', v);
 
+  /// AFR = lambda x stoich (14.7 เบนซิน, E20 13.8, E85 9.8, ดีเซล 14.5) เก็บ x10
+  int get afrStoich10 => _i('afrStoich10', 147);
+  set afrStoich10(int v) => _setI('afrStoich10', v);
+
   int get ectWarn => _i('ectWarn', 105);
   set ectWarn(int v) => _setI('ectWarn', v);
 

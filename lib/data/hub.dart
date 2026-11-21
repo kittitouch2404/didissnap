@@ -46,6 +46,9 @@ class DataHub extends ChangeNotifier {
   /// หน้าที่กำลังแสดงอยู่บอกว่าควรอ่านค่าแบบไหน
   PollMode pollMode = PollMode.normal;
 
+  /// PID ที่หน้าจอปัจจุบันโชว์อยู่ (ให้ K-line อ่านถี่กว่าค่าอื่น)  หน้า GIF ตั้งตามช่องที่เลือก
+  List<String> focusPids = const ['11', '04'];
+
   /// ตัวจับเวลาออกตัว
   late final PerfRecorder perf = PerfRecorder(this);
 

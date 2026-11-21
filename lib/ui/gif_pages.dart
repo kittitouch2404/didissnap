@@ -28,7 +28,11 @@ const List<(String, String, int)> kGifMetrics = [
   ('BOOST', 'bar', 2),
   ('AIRFLOW', 'g/s', 1),
   ('FUEL', '%', 0),
+  ('AFR', '', 1),
 ];
+
+/// PID ที่ต้องอ่านสำหรับแต่ละค่า (ให้ K-line อ่านค่าที่โชว์อยู่ถี่ขึ้น)
+const List<String> kGifMetricPid = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F', '34'];
 
 double? _metricVal(Frame f, int m) => switch (m) {
       0 => f.ect,
@@ -38,7 +42,8 @@ double? _metricVal(Frame f, int m) => switch (m) {
       4 => f.tps,
       5 => f.boost,
       6 => f.maf,
-      _ => f.fuel,
+      7 => f.fuel,
+      _ => f.afr,
     };
 
 (double, double) _metricRange(int m) => switch (m) {
@@ -47,6 +52,7 @@ double? _metricVal(Frame f, int m) => switch (m) {
       2 => (11, 15),
       5 => (-1, 1),
       6 => (0, 120),
+      8 => (10, 20),
       _ => (0, 100),
     };
 
@@ -228,6 +234,10 @@ class _GifPageState extends State<GifPage> {
           builder: (_, f) {
             final c = cfg;
             _ensureLoaded(c);
+            // ให้ ELM อ่านค่าที่โชว์ในหน้านี้ถี่ขึ้น (แบบ B ไม่มีช่องค่า)
+            widget.hub.focusPids = c.style == 1
+                ? const <String>[]
+                : [for (final m in c.slots) kGifMetricPid[m]];
             _advance(f, c);
             _trackPeaks(f, c);
             final g = _gif;

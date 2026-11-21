@@ -48,6 +48,7 @@ class Frame {
     this.map,
     this.maf,
     this.fuel,
+    this.afr,
     this.trip = 0,
   });
 
@@ -55,7 +56,7 @@ class Frame {
   final LinkState link;
   final double time, rpm, speed;
   final String gear;
-  final double? ect, iat, volt, load, tps, map, maf, fuel;
+  final double? ect, iat, volt, load, tps, map, maf, fuel, afr;
   final double trip;
 
   /// บูสต์ (bar) คำนวณจาก MAP − ความดันบรรยากาศ
@@ -74,7 +75,7 @@ class _LiveValues {
   final rpm = Smooth(), speed = Smooth();
   final ect = Smooth(), iat = Smooth(), volt = Smooth();
   final load = Smooth(), tps = Smooth(), map = Smooth(), maf = Smooth();
-  final fuel = Smooth();
+  final fuel = Smooth(), afr = Smooth();
   double time = 0;
 
   void _n(Smooth sm, double? v, double dt, double w) {
@@ -93,11 +94,15 @@ class _LiveValues {
     _n(map, d.map, dt, 10);
     _n(maf, d.maf, dt, 10);
     _n(fuel, d.fuel, dt, 3);
+    _n(afr, d.lambda == null ? null : d.lambda! * _stoich, dt, 10);
   }
+
+  double _stoich = 14.7;
 
   Frame frame(DataHub hub) {
     final d = hub.data;
     final s = hub.settings;
+    _stoich = s.afrStoich10 / 10.0;
     return Frame(
       s: s,
       link: hub.state,
@@ -113,6 +118,7 @@ class _LiveValues {
       map: d.map == null ? null : map.x,
       maf: d.maf == null ? null : maf.x,
       fuel: d.fuel == null ? null : fuel.x,
+      afr: d.lambda == null ? null : afr.x,
       trip: d.trip,
     );
   }

@@ -43,6 +43,7 @@ class _DashShellState extends State<DashShell> {
   /// บอกฝั่งอ่านค่าว่าหน้าที่แสดงอยู่ต้องการข้อมูลแบบไหน
   void _updateMode() {
     final id = _page < _ids.length ? _ids[_page] : '';
+    if (!id.startsWith('gif')) widget.hub.focusPids = const ['11', '04'];   // หน้า GIF ตั้งเองตามช่องที่เลือก
     widget.hub.pollMode = switch (id) {
       'perf' => PollMode.perf,
       'pids' => PollMode.allPids,

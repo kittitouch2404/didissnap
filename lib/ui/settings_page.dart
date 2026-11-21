@@ -349,6 +349,9 @@ class DisplayTab extends StatelessWidget {
           _StepRow('เตือนความร้อนน้ำที่', s.ectWarn, 85, 125, 1,
               (v) => s.ectWarn = v,
               unit: ' °C'),
+          _StepRow('AFR stoich (เบนซิน 14.7 / E20 13.8 / E85 9.8)', s.afrStoich10, 50, 200, 1,
+              (v) => s.afrStoich10 = v,
+              fmt: (v) => (v / 10).toStringAsFixed(1)),
           SwitchListTile(
             dense: true,
             title: const Text('เปิดหน้าจอค้างไว้ตลอด'),
