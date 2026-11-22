@@ -54,6 +54,7 @@ class Frame {
     this.timing,
     this.fuelLph,
     this.fuelAvg,
+    this.cust = const [null, null, null, null],
     this.trip = 0,
   });
 
@@ -62,6 +63,7 @@ class Frame {
   final double time, rpm, speed;
   final String gear;
   final double? ect, iat, volt, load, tps, map, maf, fuel, afr, cvtTemp, oil, timing, fuelLph, fuelAvg;
+  final List<double?> cust;
 
   /// อัตราสิ้นเปลืองตอนนี้ km/L (จอดนิ่ง = ไม่แสดง)
   double? get fuelNow => fuelLph == null || speed < 3 ? null : math.min(99.9, speed / math.max(0.2, fuelLph!));
@@ -136,6 +138,7 @@ class _LiveValues {
       fuel: d.fuel == null ? null : fuel.x,
       afr: d.lambda == null ? null : afr.x,
       oil: d.oil,
+      cust: [for (var k = 0; k < 4; k++) d.custNow(k)],
       timing: d.timing,
       fuelLph: d.fuelLph == null || DateTime.now().difference(d.mafAt).inSeconds > 5 ? null : d.fuelLph,
       fuelAvg: d.fuelUsedL > 0.01 && d.fuelKm > 0.1 ? math.min(99.9, d.fuelKm / d.fuelUsedL) : null,

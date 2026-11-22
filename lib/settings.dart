@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'data/custom_pid.dart';
 import 'data/gif_cfg.dart';
 
 /// แหล่งข้อมูลรถ
@@ -161,6 +162,28 @@ class AppSettings extends ChangeNotifier {
   // ---------- ส่งค่าให้จอ ESP32 CYD ทาง WiFi (โค้ด Kotlin อ่านค่านี้ด้วย: เปิด service ให้แอปทำงานเบื้องหลัง) ----------
   bool get cydLink => _b('cydLink', true);
   set cydLink(bool v) => _setB('cydLink', v);
+
+  // ---------- Custom PID 4 ช่อง (แบบ Torque) ----------
+  static const int nCustom = 4;
+  final Map<int, CustomPid> _cpCache = {};
+  CustomPid customPid(int i) {
+    final c = _cpCache[i];
+    if (c != null) return c;
+    CustomPid g;
+    try {
+      final j = jsonDecode(_s('cp$i', '{}'));
+      g = CustomPid(j is Map<String, dynamic> ? j : <String, dynamic>{});
+    } catch (_) {
+      g = CustomPid(<String, dynamic>{});
+    }
+    return _cpCache[i] = g;
+  }
+
+  void setCustomPid(int i, CustomPid c) {
+    _cpCache[i] = c;
+    _p.setString('cp$i', jsonEncode(c.toJson()));
+    notifyListeners();
+  }
 
   // ---------- อุณหภูมิน้ำมันเกียร์ CVT (ทดลอง: PID เฉพาะยี่ห้อ ส่งไปที่กล่องเกียร์) ----------
   bool get cvtTempOn => _b('cvtTempOn', false);

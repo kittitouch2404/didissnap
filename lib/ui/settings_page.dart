@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../data/car_data.dart';
+import '../data/custom_pid.dart';
 import '../data/elm_source.dart';
 import '../data/hub.dart';
 import '../data/native.dart';
@@ -248,6 +249,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
                 'ให้จอแอนดรอยด์กับจอ CYD ต่อฮอตสปอตมือถือตัวเดียวกัน — แอปต่อ Vgate แล้วส่งค่าให้จอ CYD ราว 20 ครั้ง/วินาที\n'
                 'แอปทำงานเบื้องหลังต่อได้ (เปิดยูทูป/แผนที่ทับได้) — ปิด "ประหยัดแบตเตอรี่" ให้แอปนี้ในเมนู เปิดแอปอัตโนมัติ'),
             _CvtTempSection(s: s, hub: hub),
+            _CustomPidSection(s: s, hub: hub),
             if (s.source == SourceType.btElm) ...[
               const _Header('อุปกรณ์ Bluetooth'),
               ListTile(
@@ -1569,4 +1571,191 @@ class _CvtTempSectionState extends State<_CvtTempSection> {
       ],
     ]);
   }
+}
+
+
+/// Custom PID 4 ช่อง (แบบ Torque): ตั้งชื่อ/คำสั่ง/สูตรเอง แล้วเลือกโชว์ในช่องขวาของหน้า GIF (ส่งให้จอ CYD ด้วย)
+class _CustomPidSection extends StatefulWidget {
+  const _CustomPidSection({required this.s, required this.hub});
+  final AppSettings s;
+  final DataHub hub;
+  @override
+  State<_CustomPidSection> createState() => _CustomPidSectionState();
+}
+
+class _CustomPidSectionState extends State<_CustomPidSection> {
+  Timer? _t;
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(milliseconds: 700), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  String _now(int k) {
+    final v = widget.hub.data.custNow(k);
+    final c = widget.s.customPid(k);
+    return v == null ? '--' : '${v.toStringAsFixed(c.dec.clamp(0, 2))} ${c.unit}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.s;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const _Header('Custom PID (ตั้งค่าเอง แบบ Torque)'),
+      for (var k = 0; k < AppSettings.nCustom; k++)
+        Builder(builder: (_) {
+          final c = s.customPid(k);
+          return ListTile(
+            dense: true,
+            leading: Icon(c.valid ? Icons.tune : Icons.add_circle_outline),
+            title: Text(c.name.trim().isEmpty ? 'ช่อง ${k + 1}: ยังไม่ได้ตั้ง' : 'ช่อง ${k + 1}: ${c.label}'),
+            subtitle: Text(c.cmd.isEmpty
+                ? 'แตะเพื่อตั้งค่า'
+                : '${c.hdr.isEmpty ? '7DF' : c.hdr} · ${c.cmd} · ${c.formula}${c.on ? '' : ' (ปิด)'}'),
+            trailing: Text(c.valid ? _now(k) : '',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            onTap: () => _edit(k),
+          );
+        }),
+      const _Hint('เลือกโชว์ได้ในช่องขวาของหน้า GIF (CUSTOM 1-4) และส่งต่อให้จอ CYD ด้วย\n'
+          'ตัวอย่าง: น้ำมันเครื่อง 015C สูตร A-40 · องศาไฟ 010E สูตร A/2-64 · แรงดันเซนเซอร์ A/F 0134 สูตร (C*256+D)/256-128'),
+    ]);
+  }
+
+  Future<void> _edit(int k) async {
+    final s = widget.s;
+    final o = s.customPid(k);
+    final c = CustomPid(o.toJson());
+    final name = TextEditingController(text: c.name);
+    final unit = TextEditingController(text: c.unit);
+    final hdr = TextEditingController(text: c.hdr);
+    final cmd = TextEditingController(text: c.cmd);
+    final fml = TextEditingController(text: c.formula);
+    final lo = TextEditingController(text: _num(c.lo));
+    final hi = TextEditingController(text: _num(c.hi));
+    var on = c.on || c.cmd.isEmpty;
+    var dec = c.dec.clamp(0, 2);
+    Timer? live;
+    void save() {
+      c
+        ..on = on
+        ..name = name.text.trim()
+        ..unit = unit.text.trim()
+        ..hdr = CustomPid.cleanHex(hdr.text)
+        ..cmd = CustomPid.cleanHex(cmd.text)
+        ..formula = fml.text.trim().isEmpty ? 'A' : fml.text.trim()
+        ..lo = double.tryParse(lo.text) ?? 0
+        ..hi = double.tryParse(hi.text) ?? 100
+        ..dec = dec;
+      if (c.hi <= c.lo) c.hi = c.lo + 1;
+      s.setCustomPid(k, CustomPid(c.toJson()));
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
+        live ??= Timer.periodic(const Duration(milliseconds: 600), (_) {
+          if (ctx.mounted) set(() {});
+        });
+        final d = widget.hub.data;
+        final raw = d.custRaw[k];
+        String test = '';
+        final b = ElmSource.parseUds(raw, CustomPid.cleanHex(cmd.text));
+        if (b != null) {
+          final v = evalFormula(fml.text.trim().isEmpty ? 'A' : fml.text, b);
+          final abc = [for (var i = 0; i < b.length && i < 8; i++) '${String.fromCharCode(65 + i)}=${b[i]}'].join(' ');
+          test = '$abc\n= ${v == null ? 'สูตรผิด / ไบต์ไม่พอ' : v.toStringAsFixed(dec)}';
+        }
+        Widget tf(TextEditingController t, String label, {String? hint, bool caps = false, double? w}) {
+          final f = TextField(
+            controller: t,
+            decoration: InputDecoration(labelText: label, hintText: hint, isDense: true),
+            textCapitalization: caps ? TextCapitalization.characters : TextCapitalization.none,
+          );
+          return w == null ? f : SizedBox(width: w, child: f);
+        }
+
+        return AlertDialog(
+          title: Text('Custom PID ช่อง ${k + 1}'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('เปิดใช้'),
+                value: on,
+                onChanged: (v) => set(() => on = v),
+              ),
+              Row(children: [
+                Expanded(child: tf(name, 'ชื่อ', hint: 'OIL TEMP')),
+                const SizedBox(width: 12),
+                tf(unit, 'หน่วย', hint: '°C', w: 70),
+              ]),
+              Row(children: [
+                tf(hdr, 'Header', hint: '7DF', caps: true, w: 80),
+                const SizedBox(width: 12),
+                Expanded(child: tf(cmd, 'คำสั่ง (hex)', hint: '015C / 221234 / 2101', caps: true)),
+              ]),
+              tf(fml, 'สูตร', hint: 'A-40   (A*256+B)/4   {A:7}', caps: true),
+              Row(children: [
+                Expanded(child: tf(lo, 'แถบต่ำสุด')),
+                const SizedBox(width: 12),
+                Expanded(child: tf(hi, 'แถบสูงสุด')),
+                const SizedBox(width: 12),
+                DropdownButton<int>(
+                  value: dec,
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('0')),
+                    DropdownMenuItem(value: 1, child: Text('0.0')),
+                    DropdownMenuItem(value: 2, child: Text('0.00')),
+                  ],
+                  onChanged: (v) => set(() => dec = v ?? 1),
+                ),
+              ]),
+              const SizedBox(height: 12),
+              const Text('คำตอบดิบล่าสุด (กดบันทึกก่อน แล้วรอสักครู่)', style: TextStyle(fontSize: 12)),
+              SelectableText(raw.isEmpty ? '(ยังไม่มี)' : raw,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+              if (test.isNotEmpty)
+                Text(test, style: const TextStyle(fontFamily: 'monospace', fontSize: 12, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              const Text(
+                  'A B C D = ไบต์ข้อมูลหลังหัวคำตอบ (เช่น คำสั่ง 015C ตอบ 41 5C 7B -> A = 0x7B)\n'
+                  'Header อื่นที่ไม่ใช่ 7DF (เช่น 7E1 กล่องเกียร์) ใช้ได้เฉพาะรถ CAN\n'
+                  '7F ... = กล่องไม่รองรับคำสั่ง · NO DATA = ไม่มีใครตอบ',
+                  style: TextStyle(fontSize: 11)),
+            ]),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                s.setCustomPid(k, CustomPid(<String, dynamic>{}));
+                Navigator.pop(ctx);
+              },
+              child: const Text('ลบ'),
+            ),
+            TextButton(onPressed: () => save(), child: const Text('บันทึก + ทดสอบ')),
+            FilledButton(
+              onPressed: () {
+                save();
+                Navigator.pop(ctx);
+              },
+              child: const Text('เสร็จ'),
+            ),
+          ],
+        );
+      }),
+    );
+    live?.cancel();
+  }
+
+  static String _num(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
 }

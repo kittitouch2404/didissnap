@@ -35,10 +35,26 @@ const List<(String, String, int)> kGifMetrics = [
   ('TIMING', '°', 0),
   ('FUEL NOW', 'km/L', 1),
   ('FUEL AVG', 'km/L', 1),
+  ('CUSTOM 1', '', 1),
+  ('CUSTOM 2', '', 1),
+  ('CUSTOM 3', '', 1),
+  ('CUSTOM 4', '', 1),
 ];
 
+/// ช่อง Custom PID เริ่มที่ index นี้
+const int kGifCustom0 = 15;
+
+/// ชื่อ/หน่วย/ทศนิยม (ช่อง Custom ใช้ที่ตั้งไว้ในหน้าตั้งค่า)
+(String, String, int) gifMetricInfo(AppSettings s, int m) {
+  if (m >= kGifCustom0) {
+    final c = s.customPid(m - kGifCustom0);
+    return (c.label, c.unit, c.dec.clamp(0, 2));
+  }
+  return kGifMetrics[m];
+}
+
 /// PID ที่ต้องอ่านสำหรับแต่ละค่า (ให้ K-line อ่านค่าที่โชว์อยู่ถี่ขึ้น)
-const List<String> kGifMetricPid = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F', '34', '0D', 'CT', '5C', '0E', '10', '10'];
+const List<String> kGifMetricPid = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F', '34', '0D', 'CT', '5C', '0E', '10', '10', 'X', 'X', 'X', 'X'];
 
 double? _metricVal(Frame f, int m) => switch (m) {
       0 => f.ect,
@@ -55,10 +71,11 @@ double? _metricVal(Frame f, int m) => switch (m) {
       12 => f.timing,
       13 => f.fuelNow,
       14 => f.fuelAvg,
+      >= 15 && <= 18 => f.cust[m - 15],
       _ => f.afr,
     };
 
-(double, double) _metricRange(int m) => switch (m) {
+(double, double) _metricRange(Frame f, int m) => switch (m) {
       0 => (40, 130),
       1 => (-10, 80),
       2 => (11, 15),
@@ -70,6 +87,7 @@ double? _metricVal(Frame f, int m) => switch (m) {
       11 => (40, 140),
       12 => (-10, 50),
       13 || 14 => (0, 30),
+      >= 15 && <= 18 => (f.s.customPid(m - 15).lo, f.s.customPid(m - 15).hi),
       _ => (0, 100),
     };
 
@@ -227,6 +245,7 @@ class _GifPageState extends State<GifPage> {
     var m = c.slots[i];
     for (var k = 0; k < kGifMetrics.length; k++) {
       m = (m + 1) % kGifMetrics.length;
+      if (m >= kGifCustom0 && !s.customPid(m - kGifCustom0).valid) continue;   // ช่อง Custom ที่ยังไม่ได้ตั้ง = ข้าม
       if (!c.slots.contains(m)) break;
     }
     c.slots[i] = m;
@@ -330,7 +349,7 @@ class _GifDashPainter extends CustomPainter {
     for (var i = 0; i < 3; i++) {
       final m = c.slots[i];
       final y = top0 + bh * i;
-      final (name, unit, dec) = kGifMetrics[m];
+      final (name, unit, dec) = gifMetricInfo(f.s, m);
       _label(cv, name, Offset(x0, y), h * 0.045);
       final v = _metricVal(f, m);
       final isMin = m == 2 || m == 9;
@@ -342,7 +361,7 @@ class _GifDashPainter extends CustomPainter {
       _anime(cv, v == null ? '--' : v.toStringAsFixed(dec),
           Offset(x1 - w * 0.045, y + bh * 0.70), h * 0.13, warn, TextAlign.right);
       _label(cv, unit, Offset(x1 - w * 0.04, y + bh * 0.42), h * 0.035);
-      final (lo, hi) = _metricRange(m);
+      final (lo, hi) = _metricRange(f, m);
       final t = v == null ? 0.0 : ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
       final pt = p == null ? -1.0 : ((p - lo) / (hi - lo)).clamp(0.0, 1.0);
       _segBar(cv, Rect.fromLTWH(x0, y + bh * 0.80, x1 - x0, h * 0.035), 18, t, 2, peak: pt);

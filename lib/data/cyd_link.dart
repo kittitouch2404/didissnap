@@ -11,7 +11,7 @@ import 'hub.dart';
 /// ส่งค่ารถต่อให้จอ ESP32 CYD ทาง WiFi (UDP)
 ///  - จอ CYD ประกาศตัว "CYD-OBD" ทาง broadcast พอร์ต 35001 ทุก 1 วินาที -> แอปจำ IP ไว้ส่งตรง
 ///  - ยังไม่เจอจอ = ส่งแบบ broadcast (255.255.255.255) ไปก่อน
-///  - ข้อความ: OBD,rpm,kmh,coolant,iat,batt,load,tps,map,maf,lambda,stft,cvtTemp,oil,timing  (ช่องว่าง = ไม่มีค่า) ~20 ครั้ง/วินาที
+///  - ข้อความ: OBD,rpm,kmh,coolant,iat,batt,load,tps,map,maf,lambda,stft,cvtTemp,oil,timing,c1..c4  (ช่องว่าง = ไม่มีค่า) ~20 ครั้ง/วินาที
 class CydLink extends ChangeNotifier {
   CydLink(this.settings, this.hub);
 
@@ -85,7 +85,8 @@ class CydLink extends ChangeNotifier {
     if (s != null && s.isNotEmpty) stft = (s[0] - 128) * 100 / 128;
     return 'OBD,${d.rpm.round()},${d.speed.round()},${_f(d.ect, 0)},${_f(d.iat, 0)},'
         '${_f(d.volt, 1)},${_f(d.load, 1)},${_f(d.tps, 1)},${_f(d.map, 0)},${_f(d.maf, 1)},'
-        '${_f(lam, 3)},${_f(stft, 1)},${_f(_cvtT(d), 0)},${_f(d.oil, 0)},${_f(d.timing, 1)}';
+        '${_f(lam, 3)},${_f(stft, 1)},${_f(_cvtT(d), 0)},${_f(d.oil, 0)},${_f(d.timing, 1)},'
+        '${[for (var k = 0; k < 4; k++) _f(d.custNow(k), settings.customPid(k).dec.clamp(0, 2))].join(',')}';
   }
 
   /// ที่อยู่ broadcast ของทุกวง WiFi ที่เครื่องนี้อยู่ (เช่น ฮอตสปอตที่มือถือปล่อยเอง 192.168.43.255)
@@ -113,6 +114,22 @@ class CydLink extends ChangeNotifier {
     _bcastBusy = false;
   }
 
+  int _cpnTick = 0;
+  String _cpnLine() {
+    String cl(String v, int n) {
+      final t = v.replaceAll(RegExp(r'[,;]'), ' ').trim();
+      return t.length > n ? t.substring(0, n) : t;
+    }
+    final parts = <String>[];
+    for (var k = 0; k < 4; k++) {
+      final c = settings.customPid(k);
+      parts.add(c.valid
+          ? '${cl(c.label, 11)};${cl(c.unit, 5)};${c.lo};${c.hi};${c.dec.clamp(0, 2)}'
+          : '');
+    }
+    return 'CPN,${parts.join(',')}';
+  }
+
   void _tick() {
     final s = _sock;
     if (s == null || !settings.cydLink) return;
@@ -121,7 +138,18 @@ class CydLink extends ChangeNotifier {
     final now = DateTime.now();
     if (now.difference(_bcastAt) > const Duration(seconds: 5)) _refreshBcast();
     final data = utf8.encode(_line());
+    // ทุก ~2 วินาที ส่งชื่อ/หน่วย/ช่วงของ Custom PID ให้จอ CYD
+    final extra = (++_cpnTick % 40 == 0) ? utf8.encode(_cpnLine()) : null;
     try {
+      if (extra != null) {
+        if (_cyd != null && now.difference(_lastBeacon) < const Duration(seconds: 5)) {
+          s.send(extra, _cyd!, dataPort);
+        } else {
+          for (final a in _bcast) {
+            s.send(extra, a, dataPort);
+          }
+        }
+      }
       if (_cyd != null && now.difference(_lastBeacon) < const Duration(seconds: 5)) {
         s.send(data, _cyd!, dataPort);                     // รู้ IP จอแล้ว: ส่งตรง
       } else {

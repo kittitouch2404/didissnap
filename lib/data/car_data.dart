@@ -30,6 +30,12 @@ class CarData {
   double? fuel; // น้ำมัน %
   double? lambda; // lambda จากเซนเซอร์ A/F (PID 34/24) -> AFR = lambda x stoich
   double? cvtTemp; // อุณหภูมิน้ำมันเกียร์ CVT °C (ทดลอง)
+  /// Custom PID 4 ช่อง: ค่าล่าสุด / เวลาที่ได้ / คำตอบดิบ
+  final List<double?> cust = List<double?>.filled(4, null);
+  final List<DateTime> custAt = List<DateTime>.filled(4, DateTime.fromMillisecondsSinceEpoch(0));
+  final List<String> custRaw = List<String>.filled(4, '');
+  double? custNow(int k) =>
+      cust[k] != null && DateTime.now().difference(custAt[k]).inSeconds < 5 ? cust[k] : null;
   double? oil; // อุณหภูมิน้ำมันเครื่อง °C (PID 5C บางรุ่นมี)
   double? timing; // องศาจุดระเบิด ° ก่อนศูนย์ตายบน (PID 0E)
   /// อัตราสิ้นเปลือง: ลิตร/ชม. จาก MAF ล่าสุด + ตัวนับสำหรับค่าเฉลี่ย (นับเฉพาะช่วงที่อ่าน MAF ได้ต่อเนื่อง)
@@ -69,6 +75,9 @@ class CarData {
     lambda = null;
     cvtTemp = null;
     oil = null;
+    for (var k = 0; k < 4; k++) {
+      cust[k] = null;
+    }
     timing = null;
     fuelLph = null;
     supportedPids.clear();

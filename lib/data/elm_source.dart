@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 
 import 'car_data.dart';
+import 'custom_pid.dart';
 import 'hub.dart';
 import 'native.dart';
 import 'pids.dart';
@@ -423,6 +424,7 @@ class ElmSource implements CarSource {
     var timeouts = 0;
     var ai = 0;
     var ct = 0;
+    var cpi = 0, cpc = 0;
     while (_running && !ses.dead) {
       final mode = hub.pollMode;
       final List<String> order;
@@ -457,6 +459,19 @@ class ElmSource implements CarSource {
         if (cs.cvtTempOn && _isCan && cs.cvtReq.length >= 4 && cs.cvtHdr.length == 3 && ++ct >= 24) {
           ct = 0;
           order.add('CT');
+        }
+        // Custom PID: วนทีละช่องทุก ~8 รอบ (ช่องที่ใช้ header อื่น = CAN เท่านั้น)
+        if (++cpc >= 8) {
+          cpc = 0;
+          for (var k = 0; k < 4; k++) {
+            final idx = (cpi + k) % 4;
+            final c = cs.customPid(idx);
+            final h = CustomPid.cleanHex(c.hdr);
+            if (!c.valid || (h.isNotEmpty && h != '7DF' && !_isCan)) continue;
+            order.add('C$idx');
+            cpi = idx + 1;
+            break;
+          }
         }
         // ค่าที่เปลี่ยนช้า (น้ำ/แบต/IAT ...) แทรกทุก 4 รอบ ให้รอบเครื่องได้คิวมากที่สุด
         for (var k = 0; k < slow.length && cyc % 4 == 0; k++) {
@@ -496,6 +511,7 @@ class ElmSource implements CarSource {
       return true;
     }
     if (p == 'CT') return _pollCvt(ses, d);
+    if (p.length == 2 && p[0] == 'C') return _pollCustom(ses, d, int.parse(p[1]));
     if (p == 'RV') {
       final r = await _x(() => ses.cmd('ATRV'));
       final m = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(r);
@@ -534,6 +550,35 @@ class ElmSource implements CarSource {
     if (v < -40 || v > 200) return false;
     d.cvtTemp = v;
     d.cvtAt = DateTime.now();
+    return true;
+  }
+
+  /// Custom PID: (ATSH header) -> คำสั่ง -> (ATSH7DF) แล้วคิดสูตร
+  Future<bool> _pollCustom(ElmSession ses, CarData d, int k) async {
+    final c = _hub!.settings.customPid(k);
+    final cmd = CustomPid.cleanHex(c.cmd);
+    final h = CustomPid.cleanHex(c.hdr);
+    final sw = h.length == 3 && h != '7DF';
+    String r = '';
+    try {
+      if (sw) await _x(() => ses.cmd('ATSH$h'));
+      r = await _x(() => ses.cmd(cmd, timeout: const Duration(seconds: 2)));
+    } on TimeoutException {
+      r = 'TIMEOUT';
+    } finally {
+      if (sw) {
+        try {
+          await _x(() => ses.cmd('ATSH7DF'));
+        } catch (_) {}
+      }
+    }
+    d.custRaw[k] = r.replaceAll('\r', ' ').replaceAll('\n', ' ').trim();
+    final b = parseUds(r, cmd);
+    if (b == null) return false;
+    final v = evalFormula(c.formula, b);
+    if (v == null) return false;
+    d.cust[k] = v;
+    d.custAt[k] = DateTime.now();
     return true;
   }
 
