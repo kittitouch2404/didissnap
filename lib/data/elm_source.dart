@@ -512,7 +512,7 @@ class ElmSource implements CarSource {
 
   /// อ่านอุณหภูมิน้ำมันเกียร์ CVT: ATSH<กล่องเกียร์> -> คำสั่ง Mode 22/21 -> ATSH7DF (กลับมาคุยกับเครื่องยนต์)
   Future<bool> _pollCvt(ElmSession ses, CarData d) async {
-    final s = hub.settings;
+    final s = _hub!.settings;
     final req = s.cvtReq;
     String r = '';
     try {
