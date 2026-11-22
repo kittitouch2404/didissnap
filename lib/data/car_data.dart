@@ -30,6 +30,27 @@ class CarData {
   double? fuel; // น้ำมัน %
   double? lambda; // lambda จากเซนเซอร์ A/F (PID 34/24) -> AFR = lambda x stoich
   double? cvtTemp; // อุณหภูมิน้ำมันเกียร์ CVT °C (ทดลอง)
+  double? oil; // อุณหภูมิน้ำมันเครื่อง °C (PID 5C บางรุ่นมี)
+  double? timing; // องศาจุดระเบิด ° ก่อนศูนย์ตายบน (PID 0E)
+  /// อัตราสิ้นเปลือง: ลิตร/ชม. จาก MAF ล่าสุด + ตัวนับสำหรับค่าเฉลี่ย (นับเฉพาะช่วงที่อ่าน MAF ได้ต่อเนื่อง)
+  double? fuelLph;
+  double fuelUsedL = 0, fuelKm = 0;
+  DateTime mafAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// เรียกทุกครั้งที่ได้ MAF ใหม่  stoich = AFR ของน้ำมัน, dens = ความหนาแน่น g/L
+  void mafSample(double stoich, double dens) {
+    final m = maf;
+    if (m == null) return;
+    final now = DateTime.now();
+    final lph = m * 3600 / (stoich * dens);
+    final dt = now.difference(mafAt).inMilliseconds / 1000.0;
+    if (dt > 0 && dt < 10) {
+      fuelUsedL += lph * dt / 3600;
+      fuelKm += speed * dt / 3600;
+    }
+    fuelLph = lph;
+    mafAt = now;
+  }
   String cvtRaw = ''; // คำตอบดิบล่าสุดจากกล่องเกียร์ (ไว้ทดสอบ PID)
   DateTime cvtAt = DateTime.fromMillisecondsSinceEpoch(0);
   double trip = 0; // km (คำนวณจากความเร็ว ไม่ถูกล้างตอนต่อใหม่)
@@ -47,6 +68,9 @@ class CarData {
     fuel = null;
     lambda = null;
     cvtTemp = null;
+    oil = null;
+    timing = null;
+    fuelLph = null;
     supportedPids.clear();
     pidBytes.clear();
   }

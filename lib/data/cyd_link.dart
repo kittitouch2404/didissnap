@@ -11,7 +11,7 @@ import 'hub.dart';
 /// ส่งค่ารถต่อให้จอ ESP32 CYD ทาง WiFi (UDP)
 ///  - จอ CYD ประกาศตัว "CYD-OBD" ทาง broadcast พอร์ต 35001 ทุก 1 วินาที -> แอปจำ IP ไว้ส่งตรง
 ///  - ยังไม่เจอจอ = ส่งแบบ broadcast (255.255.255.255) ไปก่อน
-///  - ข้อความ: OBD,rpm,kmh,coolant,iat,batt,load,tps,map,maf,lambda,stft,cvtTemp  (ช่องว่าง = ไม่มีค่า) ~20 ครั้ง/วินาที
+///  - ข้อความ: OBD,rpm,kmh,coolant,iat,batt,load,tps,map,maf,lambda,stft,cvtTemp,oil,timing  (ช่องว่าง = ไม่มีค่า) ~20 ครั้ง/วินาที
 class CydLink extends ChangeNotifier {
   CydLink(this.settings, this.hub);
 
@@ -85,7 +85,7 @@ class CydLink extends ChangeNotifier {
     if (s != null && s.isNotEmpty) stft = (s[0] - 128) * 100 / 128;
     return 'OBD,${d.rpm.round()},${d.speed.round()},${_f(d.ect, 0)},${_f(d.iat, 0)},'
         '${_f(d.volt, 1)},${_f(d.load, 1)},${_f(d.tps, 1)},${_f(d.map, 0)},${_f(d.maf, 1)},'
-        '${_f(lam, 3)},${_f(stft, 1)},${_f(_cvtT(d), 0)}';
+        '${_f(lam, 3)},${_f(stft, 1)},${_f(_cvtT(d), 0)},${_f(d.oil, 0)},${_f(d.timing, 1)}';
   }
 
   /// ที่อยู่ broadcast ของทุกวง WiFi ที่เครื่องนี้อยู่ (เช่น ฮอตสปอตที่มือถือปล่อยเอง 192.168.43.255)

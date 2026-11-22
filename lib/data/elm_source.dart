@@ -411,7 +411,7 @@ class ElmSource implements CarSource {
 
     // ---- วนอ่านค่า: รอบ+ความเร็วทุกรอบ, ค่าอื่นสลับกันทีละตัว ----
     final d = hub.data;
-    const slowAll = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F', '34', '06'];   // 34 = AFR (lambda), 06 = fuel trim (ส่งให้จอ CYD)
+    const slowAll = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F', '34', '06', '5C', '0E'];   // 5C = น้ำมันเครื่อง, 0E = องศาจุดระเบิด   // 34 = AFR (lambda), 06 = fuel trim (ส่งให้จอ CYD)
     // ค่าที่มากับคำสั่งหลายค่าแล้ว ไม่ต้องอ่านแยก
     final inMulti = _multi == null
         ? const <String>{}
@@ -597,8 +597,13 @@ class ElmSource implements CarSource {
       case '10':
         if (b.length < 2) return false;
         d.maf = (a * 256 + bb) / 100.0;
+        d.mafSample(_hub!.settings.afrStoich10 / 10.0, 745);
       case '2F':
         d.fuel = a * 100 / 255;
+      case '5C':
+        d.oil = a - 40.0;
+      case '0E':
+        d.timing = a / 2 - 64;
       default:
         break;
     }

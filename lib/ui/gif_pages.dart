@@ -31,10 +31,14 @@ const List<(String, String, int)> kGifMetrics = [
   ('AFR', '', 1),
   ('CVT RATIO', '', 2),
   ('CVT TEMP', '°C', 0),
+  ('OIL TEMP', '°C', 0),
+  ('TIMING', '°', 0),
+  ('FUEL NOW', 'km/L', 1),
+  ('FUEL AVG', 'km/L', 1),
 ];
 
 /// PID ที่ต้องอ่านสำหรับแต่ละค่า (ให้ K-line อ่านค่าที่โชว์อยู่ถี่ขึ้น)
-const List<String> kGifMetricPid = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F', '34', '0D', 'CT'];
+const List<String> kGifMetricPid = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F', '34', '0D', 'CT', '5C', '0E', '10', '10'];
 
 double? _metricVal(Frame f, int m) => switch (m) {
       0 => f.ect,
@@ -47,6 +51,10 @@ double? _metricVal(Frame f, int m) => switch (m) {
       7 => f.fuel,
       9 => f.cvtRatio,
       10 => f.cvtTemp,
+      11 => f.oil,
+      12 => f.timing,
+      13 => f.fuelNow,
+      14 => f.fuelAvg,
       _ => f.afr,
     };
 
@@ -59,6 +67,9 @@ double? _metricVal(Frame f, int m) => switch (m) {
       8 => (10, 20),
       9 => (0.4, 2.6),
       10 => (40, 120),
+      11 => (40, 140),
+      12 => (-10, 50),
+      13 || 14 => (0, 30),
       _ => (0, 100),
     };
 

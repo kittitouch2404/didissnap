@@ -12,7 +12,7 @@ class GifCfg {
 
   static List<int> _slots(Object? v) {
     final l = (v is List) ? v.whereType<num>().map((e) => e.toInt()).toList() : <int>[];
-    return l.length == 3 && l.every((e) => e >= 0 && e < 11) ? l : [0, 1, 2];
+    return l.length == 3 && l.every((e) => e >= 0 && e < 15) ? l : [0, 1, 2];
   }
 
   /// ไฟล์ GIF (ก๊อปไว้ในโฟลเดอร์แอป)

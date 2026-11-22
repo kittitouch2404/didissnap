@@ -50,6 +50,10 @@ class Frame {
     this.fuel,
     this.afr,
     this.cvtTemp,
+    this.oil,
+    this.timing,
+    this.fuelLph,
+    this.fuelAvg,
     this.trip = 0,
   });
 
@@ -57,7 +61,10 @@ class Frame {
   final LinkState link;
   final double time, rpm, speed;
   final String gear;
-  final double? ect, iat, volt, load, tps, map, maf, fuel, afr, cvtTemp;
+  final double? ect, iat, volt, load, tps, map, maf, fuel, afr, cvtTemp, oil, timing, fuelLph, fuelAvg;
+
+  /// อัตราสิ้นเปลืองตอนนี้ km/L (จอดนิ่ง = ไม่แสดง)
+  double? get fuelNow => fuelLph == null || speed < 3 ? null : math.min(99.9, speed / math.max(0.2, fuelLph!));
 
   /// อัตราทดพูลเลย์ CVT (Jazz/Fit GK: ทดคงที่ 1.266 x 3.941, ล้อรอบละ 1.91 m)  ต่ำกว่า 8 km/h ทอร์คคอนเวอร์เตอร์ยังลื่น = ไม่แสดง
   double? get cvtRatio {
@@ -128,6 +135,10 @@ class _LiveValues {
       maf: d.maf == null ? null : maf.x,
       fuel: d.fuel == null ? null : fuel.x,
       afr: d.lambda == null ? null : afr.x,
+      oil: d.oil,
+      timing: d.timing,
+      fuelLph: d.fuelLph == null || DateTime.now().difference(d.mafAt).inSeconds > 5 ? null : d.fuelLph,
+      fuelAvg: d.fuelUsedL > 0.01 && d.fuelKm > 0.1 ? math.min(99.9, d.fuelKm / d.fuelUsedL) : null,
       cvtTemp: d.cvtTemp != null && DateTime.now().difference(d.cvtAt).inSeconds < 5 ? d.cvtTemp : null,
       trip: d.trip,
     );
