@@ -422,6 +422,7 @@ class ElmSource implements CarSource {
     var si = 0;
     var timeouts = 0;
     var ai = 0;
+    var ct = 0;
     while (_running && !ses.dead) {
       final mode = hub.pollMode;
       final List<String> order;
@@ -450,6 +451,12 @@ class ElmSource implements CarSource {
           order = <String>['0C', '0D'];                      // K-line: รอบทุกครั้ง สลับกับ ความเร็ว / ค่ากลุ่มเร็ว
         } else {
           order = <String>['0C', fast[(cyc ~/ 2) % fast.length]];
+        }
+        // อุณหภูมิเกียร์ CVT (ทดลอง): ต้องเปลี่ยน header ไปกล่องเกียร์ จึงขอแค่ราว 1-2 วินาทีครั้ง (CAN เท่านั้น)
+        final cs = hub.settings;
+        if (cs.cvtTempOn && _isCan && cs.cvtReq.length >= 4 && cs.cvtHdr.length == 3 && ++ct >= 24) {
+          ct = 0;
+          order.add('CT');
         }
         // ค่าที่เปลี่ยนช้า (น้ำ/แบต/IAT ...) แทรกทุก 4 รอบ ให้รอบเครื่องได้คิวมากที่สุด
         for (var k = 0; k < slow.length && cyc % 4 == 0; k++) {
@@ -488,6 +495,7 @@ class ElmSource implements CarSource {
       m.forEach((pid, b) => _apply(pidHex(pid), b, d));
       return true;
     }
+    if (p == 'CT') return _pollCvt(ses, d);
     if (p == 'RV') {
       final r = await _x(() => ses.cmd('ATRV'));
       final m = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(r);
@@ -500,6 +508,65 @@ class ElmSource implements CarSource {
     final b = parsePid(r, p);
     if (b == null || b.isEmpty) return false;
     return _apply(p, b, d);
+  }
+
+  /// อ่านอุณหภูมิน้ำมันเกียร์ CVT: ATSH<กล่องเกียร์> -> คำสั่ง Mode 22/21 -> ATSH7DF (กลับมาคุยกับเครื่องยนต์)
+  Future<bool> _pollCvt(ElmSession ses, CarData d) async {
+    final s = hub.settings;
+    final req = s.cvtReq;
+    String r = '';
+    try {
+      await _x(() => ses.cmd('ATSH${s.cvtHdr}'));
+      r = await _x(() => ses.cmd(req, timeout: const Duration(seconds: 2)));
+    } on TimeoutException {
+      r = 'TIMEOUT';
+    } finally {
+      try {
+        await _x(() => ses.cmd('ATSH7DF'));
+      } catch (_) {}
+    }
+    d.cvtRaw = r.replaceAll('\r', ' ').replaceAll('\n', ' ').trim();
+    final b = parseUds(r, req);
+    if (b == null || b.length <= s.cvtByte) return false;
+    final i = s.cvtByte;
+    final a = b[i], bb = i + 1 < b.length ? b[i + 1] : 0;
+    final v = cvtFormula(s.cvtFml, a, bb);
+    if (v < -40 || v > 200) return false;
+    d.cvtTemp = v;
+    d.cvtAt = DateTime.now();
+    return true;
+  }
+
+  /// สูตรที่เลือกได้ (A = ไบต์ที่เลือก, B = ไบต์ถัดไป)
+  static double cvtFormula(int f, int a, int b) => switch (f) {
+        1 => a.toDouble(),
+        2 => (a * 256 + b) / 10 - 40,
+        3 => ((a * 256 + b) - 2731) / 10,
+        4 => a - 50.0,
+        5 => (a * 9 / 5 - 58 - 32) * 5 / 9,
+        _ => a - 40.0,
+      };
+
+  /// คำตอบ Mode 22/21: SID+0x40 ตามด้วย echo ของคำสั่ง แล้วจึงเป็นข้อมูล (รองรับหลายเฟรม "0: 1: ...")
+  static List<int>? parseUds(String r, String req) {
+    if (req.length < 2) return null;
+    final sid = int.tryParse(req.substring(0, 2), radix: 16);
+    if (sid == null) return null;
+    final key = (sid + 0x40).toRadixString(16).toUpperCase().padLeft(2, '0') + req.substring(2);
+    final lines = r.split(RegExp(r'[\r\n]')).map((l) => l.replaceAll(' ', '').trim()).where((l) => l.isNotEmpty);
+    final framed = RegExp(r'^[0-9A-F]:');
+    final fl = lines.where((l) => framed.hasMatch(l)).toList();
+    final all = fl.isNotEmpty ? fl.map((l) => l.substring(2)).join() : lines.join();
+    final i = all.indexOf(key);
+    if (i < 0) return null;
+    final hex = all.substring(i + key.length);
+    final out = <int>[];
+    for (var j = 0; j + 1 < hex.length; j += 2) {
+      final v = int.tryParse(hex.substring(j, j + 2), radix: 16);
+      if (v == null) break;
+      out.add(v);
+    }
+    return out.isEmpty ? null : out;
   }
 
   bool _apply(String p, List<int> b, CarData d) {

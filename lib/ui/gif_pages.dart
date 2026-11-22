@@ -29,10 +29,12 @@ const List<(String, String, int)> kGifMetrics = [
   ('AIRFLOW', 'g/s', 1),
   ('FUEL', '%', 0),
   ('AFR', '', 1),
+  ('CVT RATIO', '', 2),
+  ('CVT TEMP', '°C', 0),
 ];
 
 /// PID ที่ต้องอ่านสำหรับแต่ละค่า (ให้ K-line อ่านค่าที่โชว์อยู่ถี่ขึ้น)
-const List<String> kGifMetricPid = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F', '34'];
+const List<String> kGifMetricPid = ['05', '0F', 'RV', '04', '11', '0B', '10', '2F', '34', '0D', 'CT'];
 
 double? _metricVal(Frame f, int m) => switch (m) {
       0 => f.ect,
@@ -43,6 +45,8 @@ double? _metricVal(Frame f, int m) => switch (m) {
       5 => f.boost,
       6 => f.maf,
       7 => f.fuel,
+      9 => f.cvtRatio,
+      10 => f.cvtTemp,
       _ => f.afr,
     };
 
@@ -53,6 +57,8 @@ double? _metricVal(Frame f, int m) => switch (m) {
       5 => (-1, 1),
       6 => (0, 120),
       8 => (10, 20),
+      9 => (0.4, 2.6),
+      10 => (40, 120),
       _ => (0, 100),
     };
 
@@ -194,7 +200,7 @@ class _GifPageState extends State<GifPage> {
     for (final m in c.slots) {
       final v = _metricVal(f, m);
       if (v == null) continue;
-      final isMin = m == 2;
+      final isMin = m == 2 || m == 9;
       final o = _pk[m];
       if (o == null || (isMin ? v < o : v > o)) _pk[m] = v;
     }
@@ -316,7 +322,7 @@ class _GifDashPainter extends CustomPainter {
       final (name, unit, dec) = kGifMetrics[m];
       _label(cv, name, Offset(x0, y), h * 0.045);
       final v = _metricVal(f, m);
-      final isMin = m == 2;
+      final isMin = m == 2 || m == 9;
       final p = pk[m];
       final pkTxt = '${isMin ? 'MIN' : 'MAX'} ${p == null ? '--' : p.toStringAsFixed(dec)}';
       _label(cv, pkTxt, Offset(x1, y + h * 0.006), h * 0.032, color: top, right: true);

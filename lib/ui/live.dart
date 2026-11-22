@@ -49,6 +49,7 @@ class Frame {
     this.maf,
     this.fuel,
     this.afr,
+    this.cvtTemp,
     this.trip = 0,
   });
 
@@ -56,7 +57,15 @@ class Frame {
   final LinkState link;
   final double time, rpm, speed;
   final String gear;
-  final double? ect, iat, volt, load, tps, map, maf, fuel, afr;
+  final double? ect, iat, volt, load, tps, map, maf, fuel, afr, cvtTemp;
+
+  /// อัตราทดพูลเลย์ CVT (Jazz/Fit GK: ทดคงที่ 1.266 x 3.941, ล้อรอบละ 1.91 m)  ต่ำกว่า 8 km/h ทอร์คคอนเวอร์เตอร์ยังลื่น = ไม่แสดง
+  double? get cvtRatio {
+    if (speed < 8 || rpm < 500) return null;
+    final wheelRpm = speed * 1000 / 60 / 1.91;
+    final v = rpm / (wheelRpm * 4.989);
+    return v < 0.3 || v > 3.2 ? null : v;
+  }
   final double trip;
 
   /// บูสต์ (bar) คำนวณจาก MAP − ความดันบรรยากาศ
@@ -119,6 +128,7 @@ class _LiveValues {
       maf: d.maf == null ? null : maf.x,
       fuel: d.fuel == null ? null : fuel.x,
       afr: d.lambda == null ? null : afr.x,
+      cvtTemp: d.cvtTemp != null && DateTime.now().difference(d.cvtAt).inSeconds < 5 ? d.cvtTemp : null,
       trip: d.trip,
     );
   }

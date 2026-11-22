@@ -29,6 +29,9 @@ class CarData {
   double? maf; // g/s
   double? fuel; // น้ำมัน %
   double? lambda; // lambda จากเซนเซอร์ A/F (PID 34/24) -> AFR = lambda x stoich
+  double? cvtTemp; // อุณหภูมิน้ำมันเกียร์ CVT °C (ทดลอง)
+  String cvtRaw = ''; // คำตอบดิบล่าสุดจากกล่องเกียร์ (ไว้ทดสอบ PID)
+  DateTime cvtAt = DateTime.fromMillisecondsSinceEpoch(0);
   double trip = 0; // km (คำนวณจากความเร็ว ไม่ถูกล้างตอนต่อใหม่)
 
   void reset() {
@@ -43,6 +46,7 @@ class CarData {
     maf = null;
     fuel = null;
     lambda = null;
+    cvtTemp = null;
     supportedPids.clear();
     pidBytes.clear();
   }

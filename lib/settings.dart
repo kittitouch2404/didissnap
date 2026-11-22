@@ -162,6 +162,28 @@ class AppSettings extends ChangeNotifier {
   bool get cydLink => _b('cydLink', true);
   set cydLink(bool v) => _setB('cydLink', v);
 
+  // ---------- อุณหภูมิน้ำมันเกียร์ CVT (ทดลอง: PID เฉพาะยี่ห้อ ส่งไปที่กล่องเกียร์) ----------
+  bool get cvtTempOn => _b('cvtTempOn', false);
+  set cvtTempOn(bool v) => _setB('cvtTempOn', v);
+  /// header ของกล่องเกียร์ (CAN 11 บิต) ปกติ 7E1 -> ตอบกลับ 7E9
+  String get cvtHdr => _s('cvtHdr', '7E1');
+  set cvtHdr(String v) {
+    _p.setString('cvtHdr', v.toUpperCase().replaceAll(RegExp(r'[^0-9A-F]'), ''));
+    notifyListeners();
+  }
+  /// คำสั่งเต็ม เช่น 22xxxx (UDS) หรือ 21xx (KWP)
+  String get cvtReq => _s('cvtReq', '');
+  set cvtReq(String v) {
+    _p.setString('cvtReq', v.toUpperCase().replaceAll(RegExp(r'[^0-9A-F]'), ''));
+    notifyListeners();
+  }
+  /// ไบต์ที่เป็น A (นับจาก 0 หลัง echo ของคำสั่ง)
+  int get cvtByte => _i('cvtByte', 0);
+  set cvtByte(int v) => _setI('cvtByte', v);
+  /// สูตร (ดู kCvtFormulas)
+  int get cvtFml => _i('cvtFml', 0);
+  set cvtFml(int v) => _setI('cvtFml', v);
+
   // ---------- เปิดแอปอัตโนมัติ (โค้ด Kotlin อ่านค่าเหล่านี้โดยตรง) ----------
   bool get autoBoot => _b('autoBoot', false);
   set autoBoot(bool v) => _setB('autoBoot', v);

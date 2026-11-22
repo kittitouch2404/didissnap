@@ -247,6 +247,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
             const _Hint(
                 'ให้จอแอนดรอยด์กับจอ CYD ต่อฮอตสปอตมือถือตัวเดียวกัน — แอปต่อ Vgate แล้วส่งค่าให้จอ CYD ราว 20 ครั้ง/วินาที\n'
                 'แอปทำงานเบื้องหลังต่อได้ (เปิดยูทูป/แผนที่ทับได้) — ปิด "ประหยัดแบตเตอรี่" ให้แอปนี้ในเมนู เปิดแอปอัตโนมัติ'),
+            _CvtTempSection(s: s, hub: hub),
             if (s.source == SourceType.btElm) ...[
               const _Header('อุปกรณ์ Bluetooth'),
               ListTile(
@@ -1464,5 +1465,108 @@ class _Esp32TabState extends State<Esp32Tab> {
         ],
       ],
     );
+  }
+}
+
+
+/// อุณหภูมิน้ำมันเกียร์ CVT (ทดลอง): PID เฉพาะยี่ห้อ ตั้ง header/คำสั่ง/ไบต์/สูตรเองได้ + ดูคำตอบดิบสด ๆ
+const List<String> kCvtFormulas = [
+  'A - 40',
+  'A',
+  '(A*256+B)/10 - 40',
+  '((A*256+B) - 2731)/10',
+  'A - 50',
+  'A*9/5-58 (°F) -> °C',
+];
+
+class _CvtTempSection extends StatefulWidget {
+  const _CvtTempSection({required this.s, required this.hub});
+  final AppSettings s;
+  final DataHub hub;
+  @override
+  State<_CvtTempSection> createState() => _CvtTempSectionState();
+}
+
+class _CvtTempSectionState extends State<_CvtTempSection> {
+  Timer? _t;
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(milliseconds: 700), (_) {
+      if (mounted && widget.s.cvtTempOn) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.s, d = widget.hub.data;
+    final fresh = d.cvtTemp != null && DateTime.now().difference(d.cvtAt).inSeconds < 5;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const _Header('อุณหภูมิน้ำมันเกียร์ CVT (ทดลอง)'),
+      SwitchListTile(
+        dense: true,
+        title: const Text('อ่าน CVT TEMP จากกล่องเกียร์'),
+        subtitle: Text(!s.cvtTempOn
+            ? 'ปิดอยู่'
+            : fresh
+                ? 'ตอนนี้ ${d.cvtTemp!.toStringAsFixed(0)} °C'
+                : 'ยังไม่ได้ค่า'),
+        value: s.cvtTempOn,
+        onChanged: (v) => s.cvtTempOn = v,
+      ),
+      if (s.cvtTempOn) ...[
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Row(children: [
+            SizedBox(
+              width: 110,
+              child: TextFormField(
+                initialValue: s.cvtHdr,
+                decoration: const InputDecoration(labelText: 'Header', hintText: '7E1'),
+                textCapitalization: TextCapitalization.characters,
+                onChanged: (v) => s.cvtHdr = v,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: TextFormField(
+                initialValue: s.cvtReq,
+                decoration: const InputDecoration(labelText: 'คำสั่ง (Mode 22 / 21)', hintText: 'เช่น 22xxxx หรือ 21xx'),
+                textCapitalization: TextCapitalization.characters,
+                onChanged: (v) => s.cvtReq = v,
+              ),
+            ),
+          ]),
+        ),
+        _StepRow('ไบต์ A = ไบต์ที่ (หลัง echo คำสั่ง)', s.cvtByte, 0, 60, 1, (v) => s.cvtByte = v),
+        ListTile(
+          dense: true,
+          title: const Text('สูตร'),
+          trailing: DropdownButton<int>(
+            value: s.cvtFml.clamp(0, kCvtFormulas.length - 1),
+            items: [
+              for (var i = 0; i < kCvtFormulas.length; i++)
+                DropdownMenuItem(value: i, child: Text(kCvtFormulas[i])),
+            ],
+            onChanged: (v) => s.cvtFml = v ?? 0,
+          ),
+        ),
+        ListTile(
+          dense: true,
+          title: const Text('คำตอบดิบล่าสุด'),
+          subtitle: SelectableText(d.cvtRaw.isEmpty ? '(ยังไม่มี — ต่อ OBD ติดก่อน)' : d.cvtRaw,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+        ),
+        const _Hint('ทดลอง: ใช้ได้เฉพาะรถ CAN (Jazz GK) — แอปจะสลับไปถามกล่องเกียร์ราว 1-2 วินาทีครั้ง แล้วกลับมาถามเครื่องยนต์\n'
+            'Honda ไม่เปิดเผย PID นี้ ต้องลองเอง: ถ้าคำตอบขึ้น 7F ... = กล่องไม่รองรับคำสั่งนั้น, NO DATA = ไม่มีใครตอบ\n'
+            'ค่าที่ได้ส่งต่อให้จอ CYD ด้วย (เลือก CVT TEMP ในช่องขวาของหน้า GIF)'),
+      ],
+    ]);
   }
 }
