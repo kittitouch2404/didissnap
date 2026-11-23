@@ -50,6 +50,21 @@ class Text extends StatelessWidget {
 }
 
 const Map<String, String> _en = {
+  'หลายค่า': 'multi-PID',
+  'ดับ': 'off',
+  'ต่อแล้ว': 'connected',
+  'ยังไม่ต่อ': 'not connected',
+  'สุ่ม': 'random',
+  'คลิป': 'clip',
+  'ไม่มีโลโก้': 'no logo',
+  'ไทย': 'ไทย',
+  'เกินมา': 'over by',
+  'ใช้จริงเมื่อครบ': 'applied after',
+  'กำลังแสดง': 'showing',
+  'รหัสมาตรฐาน': 'standard code',
+  'รหัสเฉพาะยี่ห้อ': 'manufacturer code',
+  'สูตรผิด': 'formula error',
+  'ไบต์ไม่พอ': 'not enough bytes',
   'ภาษา': 'LANG',
   'ภาษาไทย': 'ภาษาไทย',
   'ไม่ยอมให้แอปเปิดตัวเองจากเบื้องหลังถ้าไม่มีสิทธิ์นี้': 'will not let the app open itself from the background without this permission',
