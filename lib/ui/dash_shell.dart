@@ -97,7 +97,7 @@ class _DashShellState extends State<DashShell> {
 
   void _openMenu() {
     Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => SettingsPage(settings: widget.settings, hub: widget.hub),
+      builder: (_) => HudMenuPage(settings: widget.settings, hub: widget.hub),
     ));
   }
 

@@ -18,6 +18,7 @@ import 'esp32_pics_ui.dart';
 import 'paint_utils.dart';
 
 part 'settings_more.dart';
+part 'menu_hud.dart';
 
 void _snack(BuildContext context, String msg) {
   ScaffoldMessenger.of(context)
@@ -90,8 +91,8 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
         child: Text(text,
-            style: const TextStyle(
-                fontSize: 13, color: kAccent, fontWeight: FontWeight.w700)),
+            style: TextStyle(
+                fontSize: 13, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w700)),
       );
 }
 

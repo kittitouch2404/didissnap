@@ -389,6 +389,10 @@ class AppSettings extends ChangeNotifier {
     super.notifyListeners();
   }
 
+  // ---------- สีเมนู (Racing HUD) ----------
+  int get menuColor => _i('menuColor', 0xFFFF7A00);
+  set menuColor(int v) => _setI('menuColor', v);
+
   // ---------- ความเร็ว: ชดเชยให้ตรงจริง (x1000 เช่น 1035 = +3.5%) ----------
   int get speedCal1000 => _i('speedCal', 1000);
   set speedCal1000(int v) => _setI('speedCal', v);
