@@ -5,6 +5,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'data/hub.dart';
 import 'data/native.dart';
 import 'settings.dart';
+import 'ui/boot_logo.dart';
 import 'ui/boot_video.dart';
 import 'ui/dash_shell.dart';
 import 'ui/paint_utils.dart';
@@ -74,12 +75,17 @@ class _DashAppState extends State<DashApp> {
         ),
         scaffoldBackgroundColor: const Color(0xFF0B0B0B),
       ),
-      home: widget.settings.bootClip
-          ? BootVideoPage(
-              settings: widget.settings,
-              next: () => DashShell(settings: widget.settings, hub: widget.hub),
-            )
-          : DashShell(settings: widget.settings, hub: widget.hub),
+      home: switch (widget.settings.bootMode) {
+        1 => BootVideoPage(
+            settings: widget.settings,
+            next: () => DashShell(settings: widget.settings, hub: widget.hub),
+          ),
+        2 => BootLogoPage(
+            settings: widget.settings,
+            next: () => DashShell(settings: widget.settings, hub: widget.hub),
+          ),
+        _ => DashShell(settings: widget.settings, hub: widget.hub),
+      },
     );
   }
 }

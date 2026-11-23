@@ -368,19 +368,25 @@ class DisplayTab extends StatelessWidget {
             value: s.flip,
             onChanged: (v) => s.flip = v,
           ),
-          const _Header('คลิปตอนเปิดแอป'),
-          SwitchListTile(
-            dense: true,
-            title: const Text('เล่นคลิปก่อนเข้าหน้าปัด'),
-            subtitle: const Text('เล่นจนจบ → จอดำ → เข้าหน้าปัด (แตะจอเพื่อข้าม)'),
-            value: s.bootClip,
-            onChanged: (v) => s.bootClip = v,
-          ),
+          const _Header('ตอนเปิดแอป'),
+          for (final (v, t, sub) in const [
+            (2, 'โลโก้สุ่ม OYT (แบบจอ ESP32-S3 4.3")', 'สุ่มสี 8 สี + ฟอนต์ 8/16/32-bit ทุกครั้ง ~6 วินาที (แตะจอเพื่อข้าม)'),
+            (1, 'คลิปวิดีโอ', 'เล่นจนจบ → จอดำ → เข้าหน้าปัด (แตะจอเพื่อข้าม)'),
+            (0, 'ไม่มี (เข้าหน้าปัดทันที)', ''),
+          ])
+            RadioListTile<int>(
+              dense: true,
+              title: Text(t),
+              subtitle: sub.isEmpty ? null : Text(sub),
+              value: v,
+              groupValue: s.bootMode,
+              onChanged: (x) => s.bootMode = x ?? 2,
+            ),
           SwitchListTile(
             dense: true,
             title: const Text('เปิดเสียงคลิป'),
             value: s.bootSound,
-            onChanged: s.bootClip ? (v) => s.bootSound = v : null,
+            onChanged: s.bootMode == 1 ? (v) => s.bootSound = v : null,
           ),
           ListTile(
             dense: true,

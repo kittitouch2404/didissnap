@@ -228,6 +228,11 @@ class AppSettings extends ChangeNotifier {
   set showOnLock(bool v) => _setB('showOnLock', v);
 
   // ---------- คลิปตอนเปิดแอป ----------
+  /// ตอนเปิดแอป: 0 = เข้าหน้าปัดเลย, 1 = คลิปวิดีโอ, 2 = โลโก้สุ่มแบบจอ ESP32-S3 (ค่าเริ่มต้น)
+  int get bootMode => _i('bootMode', 2);
+  set bootMode(int v) => _setI('bootMode', v);
+  int get bootLastColor => _i('bootLastColor', -1);
+  set bootLastColor(int v) => _p.setInt('bootLastColor', v);
   bool get bootClip => _b('bootClip', true);
   set bootClip(bool v) => _setB('bootClip', v);
   bool get bootSound => _b('bootSound', true);
