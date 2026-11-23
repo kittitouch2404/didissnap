@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../data/car_data.dart';
 import '../data/custom_pid.dart';
 import '../data/elm_source.dart';
+import '../data/key_sound.dart';
 import '../data/hub.dart';
 import '../data/native.dart';
 import '../settings.dart';
@@ -382,6 +383,60 @@ class DisplayTab extends StatelessWidget {
               groupValue: s.bootMode,
               onChanged: (x) => s.bootMode = x ?? 2,
             ),
+          const _Header('เสียงตอนบิดกุญแจ'),
+          ListTile(
+            dense: true,
+            title: const Text('เสียง'),
+            subtitle: Text(s.keySound == 4
+                ? (s.keySoundPath.isEmpty ? 'ยังไม่ได้เลือกไฟล์' : s.keySoundPath.split('/').last)
+                : 'เล่นตอนแอปเปิดเองเพราะรถติด/จอรถตื่น'),
+            trailing: DropdownButton<int>(
+              value: s.keySound.clamp(0, KeySound.builtIn.length - 1),
+              items: [
+                for (var i = 0; i < KeySound.builtIn.length; i++)
+                  DropdownMenuItem(value: i, child: Text(KeySound.builtIn[i].$1)),
+              ],
+              onChanged: (v) async {
+                if (v == 4) {
+                  final p = await Native.pickAudio();
+                  if (p == null) return;
+                  s.keySoundPath = p;
+                }
+                s.keySound = v ?? 0;
+                if ((v ?? 0) > 0) KeySound.play(s, force: true);
+              },
+            ),
+          ),
+          if (s.keySound > 0) ...[
+            _StepRow('ความดัง', s.keySoundVol, 0, 100, 10, (v) => s.keySoundVol = v, unit: '%'),
+            SwitchListTile(
+              dense: true,
+              title: const Text('เล่นทุกครั้งที่เปิดแอป'),
+              subtitle: const Text('ปิด = เล่นเฉพาะตอนรถติด (แอปเด้งขึ้นเอง หรือแอปเปิดค้างไว้แล้วจอรถตื่น)'),
+              value: s.keySoundAlways,
+              onChanged: (v) => s.keySoundAlways = v,
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(children: [
+                OutlinedButton.icon(
+                  onPressed: () => KeySound.play(s, force: true),
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('ลองฟัง'),
+                ),
+                const SizedBox(width: 12),
+                if (s.keySound == 4)
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final p = await Native.pickAudio();
+                      if (p != null) s.keySoundPath = p;
+                    },
+                    icon: const Icon(Icons.audio_file),
+                    label: const Text('เปลี่ยนไฟล์'),
+                  ),
+              ]),
+            ),
+          ],
           SwitchListTile(
             dense: true,
             title: const Text('เปิดเสียงคลิป'),

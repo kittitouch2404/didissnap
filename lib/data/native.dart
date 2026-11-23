@@ -29,6 +29,24 @@ class Native {
   /// ให้ฝั่ง Android เริ่ม/หยุด service และอัปเดตการแสดงบนหน้าล็อก
   static Future<void> syncAutoStart() => _call('syncAutoStart');
 
+  /// แอปถูกเปิดเองเพราะอะไร (boot / wake / acc / power / bluetooth) null = ผู้ใช้เปิดเอง
+  static Future<String?> launchReason() async {
+    try {
+      return await m.invokeMethod<String>('launchReason');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// เลือกไฟล์เสียงจากเครื่อง -> path ของไฟล์ที่ก๊อปไว้ในแอป (null = ยกเลิก)
+  static Future<String?> pickAudio() async {
+    try {
+      return await m.invokeMethod<String>('pickAudio');
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<void> bindWifi() async {
     try {
       await m.invokeMethod('bindWifi', {'on': true});

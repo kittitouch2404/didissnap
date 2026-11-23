@@ -231,6 +231,19 @@ class AppSettings extends ChangeNotifier {
   /// ตอนเปิดแอป: 0 = เข้าหน้าปัดเลย, 1 = คลิปวิดีโอ, 2 = โลโก้สุ่มแบบจอ ESP32-S3 (ค่าเริ่มต้น)
   int get bootMode => _i('bootMode', 2);
   set bootMode(int v) => _setI('bootMode', v);
+  /// เสียงตอนบิดกุญแจ: 0 ปิด, 1 8-bit, 2 Whoosh, 3 เครื่องยนต์, 4 ไฟล์ของฉัน
+  int get keySound => _i('keySound', 1);
+  set keySound(int v) => _setI('keySound', v);
+  String get keySoundPath => _s('keySoundPath', '');
+  set keySoundPath(String v) {
+    _p.setString('keySoundPath', v);
+    notifyListeners();
+  }
+  int get keySoundVol => _i('keySoundVol', 100);
+  set keySoundVol(int v) => _setI('keySoundVol', v);
+  /// เล่นทุกครั้งที่เปิดแอป (ปิด = เฉพาะตอนแอปเปิดเองเพราะรถติด/จอตื่น)
+  bool get keySoundAlways => _b('keySoundAlways', false);
+  set keySoundAlways(bool v) => _setB('keySoundAlways', v);
   int get bootLastColor => _i('bootLastColor', -1);
   set bootLastColor(int v) => _p.setInt('bootLastColor', v);
   bool get bootClip => _b('bootClip', true);

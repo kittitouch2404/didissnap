@@ -44,8 +44,25 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
-        MethodChannel(messenger, "didissnap/native").setMethodCallHandler { call, result ->
+        val ch = MethodChannel(messenger, "didissnap/native")
+        chan = ch
+        AutoStart.onWake = { r -> mainHandler.post { chan?.invokeMethod("carWake", r) } }
+        ch.setMethodCallHandler { call, result ->
             when (call.method) {
+                "launchReason" -> result.success(intent?.getStringExtra("autoStartReason"))
+                "pickAudio" -> {
+                    pendingAudio?.success(null)
+                    pendingAudio = result
+                    try {
+                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "audio/*"
+                        }, REQ_AUDIO)
+                    } catch (e: Exception) {
+                        pendingAudio = null
+                        result.success(null)
+                    }
+                }
                 "ensurePermission" -> ensurePermission(result)
                 "bonded" -> result.success(bondedDevices())
                 "connect" -> {
@@ -139,6 +156,36 @@ class MainActivity : FlutterActivity() {
                 sink = null
             }
         })
+    }
+
+    private var chan: MethodChannel? = null
+    private var pendingAudio: MethodChannel.Result? = null
+
+    /** เลือกไฟล์เสียงเอง: ก๊อปไว้ในโฟลเดอร์แอป (ไฟล์ต้นฉบับย้าย/ลบได้) */
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_AUDIO) return
+        val res = pendingAudio ?: return
+        pendingAudio = null
+        val uri = data?.data
+        if (resultCode != RESULT_OK || uri == null) { res.success(null); return }
+        io.execute {
+            val path = try {
+                val name = contentResolver.getType(uri)?.substringAfter('/')?.take(5) ?: "mp3"
+                val f = java.io.File(filesDir, "key_sound.$name")
+                contentResolver.openInputStream(uri)!!.use { inp -> f.outputStream().use { inp.copyTo(it) } }
+                f.absolutePath
+            } catch (e: Exception) { null }
+            mainHandler.post { res.success(path) }
+        }
+    }
+
+    /** แอปเปิดอยู่แล้ว แล้วถูกเรียกขึ้นมาใหม่ตอนรถติด */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra("autoStartReason")?.let { chan?.invokeMethod("carWake", it) }
     }
 
     // ---------------- เปิดอัตโนมัติ / หน้าล็อก ----------------
@@ -331,5 +378,6 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val REQ_BT = 4711
         private const val REQ_NOTIF = 4712
+        private const val REQ_AUDIO = 4713
     }
 }

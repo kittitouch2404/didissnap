@@ -25,3 +25,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/boot.mp4
+    - assets/boot_8bit.m4a
+    - assets/boot_whoosh.m4a
+    - assets/boot_engine.m4a

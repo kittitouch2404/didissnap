@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'data/hub.dart';
+import 'data/key_sound.dart';
 import 'data/native.dart';
 import 'settings.dart';
 import 'ui/boot_logo.dart';
@@ -38,6 +41,14 @@ class _DashAppState extends State<DashApp> {
     _applySystem();
     widget.hub.start();
     Native.syncAutoStart();   // เปิด service เบื้องหลัง (ถ้าเปิดส่งค่าให้จอ CYD หรือเปิดแอปอัตโนมัติไว้)
+    // เสียงบิดกุญแจ: แอปเปิดอยู่แล้วตอนรถติด / แอปถูกเปิดเองเพราะรถติด
+    Native.m.setMethodCallHandler((call) async {
+      if (call.method == 'carWake') unawaited(KeySound.play(widget.settings));
+      return null;
+    });
+    Native.launchReason().then((r) {
+      if (r != null || widget.settings.keySoundAlways) KeySound.play(widget.settings);
+    });
   }
 
   void _applySystem() {

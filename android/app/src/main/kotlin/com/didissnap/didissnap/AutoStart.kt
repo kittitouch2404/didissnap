@@ -30,6 +30,8 @@ object AutoStart {
 
     /** หน้าจอแอปอยู่ด้านหน้าอยู่แล้วหรือยัง (MainActivity onResume/onPause) */
     @Volatile var inFront = false
+    /** แอปเปิดอยู่ด้านหน้าแล้วตอนรถติด: บอกฝั่ง Flutter (เล่นเสียงบิดกุญแจ) */
+    @Volatile var onWake: ((String) -> Unit)? = null
     private var lastAuto = 0L
     private val h = Handler(Looper.getMainLooper())
 
@@ -42,7 +44,7 @@ object AutoStart {
         if (now - lastAuto < 20000) return                 // กันเด้งซ้ำ ๆ (เช่น ACC + จอติดมาพร้อมกัน)
         lastAuto = now
         val app = ctx.applicationContext
-        h.postDelayed({ if (!inFront) launch(app, reason) }, 2500)
+        h.postDelayed({ if (!inFront) launch(app, reason) else onWake?.invoke(reason) }, 2500)
         h.postDelayed({ if (!inFront) launch(app, "$reason-retry") }, 8000)
     }
 
