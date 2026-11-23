@@ -628,6 +628,7 @@ class ElmSource implements CarSource {
         if (b.length < 2) return false;
         d.rpm = (a * 256 + bb) / 4.0;
       case '0D':
+        d.speedRaw = a.toDouble();
         d.speed = a * _hub!.settings.speedCal;   // ชดเชยให้ตรงความเร็วจริง
       case '05':
         d.ect = a - 40.0;

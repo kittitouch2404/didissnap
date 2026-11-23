@@ -39,10 +39,7 @@ class TripAlertTab extends StatelessWidget {
           ),
         const _Hint('น้ำมันคำนวณจาก MAF + ค่า stoich (AFR SCALE) — เป็นค่าประมาณ ลองเทียบกับการเติมเต็มถังแล้วปรับ stoich ได้'),
         const _Header('ความเร็วให้ตรงจริง'),
-        _StepRow('ชดเชยความเร็ว', s.speedCal1000, 850, 1150, 5, (v) => s.speedCal1000 = v,
-            fmt: (v) => '${v >= 1000 ? '+' : ''}${((v - 1000) / 10).toStringAsFixed(1)}%'),
-        const _Hint('เทียบกับ GPS (แอปแผนที่) ที่ 80-100 km/h เช่น OBD ขึ้น 100 แต่ GPS 96 -> ตั้ง -4.0%\n'
-            'มีผลกับ ความเร็ว / TRIP / km/L / CVT RATIO / เกียร์ และส่งให้จอ CYD ด้วย'),
+        _SpeedCalSection(s: s, hub: hub),
         const _Header('เปลี่ยนถ่ายน้ำมันเครื่อง'),
         _Live(
           builder: () {
@@ -169,6 +166,40 @@ class _LogTabState extends State<LogTab> {
     if (mounted) setState(() => _files = l);
   }
 
+  /// ลบไฟล์เก่า: กดเองเมื่ออยากล้าง (ไฟล์ที่กำลังบันทึกไม่ถูกลบ)
+  Future<void> _clean(BuildContext context) async {
+    final keep = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('ลบไฟล์เก่า'),
+        children: [
+          for (final k in [1, 5, 10, 20])
+            SimpleDialogOption(onPressed: () => Navigator.pop(ctx, k), child: Text('เก็บไว้ $k ไฟล์ล่าสุด ลบที่เหลือ')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(ctx, -7), child: const Text('ลบไฟล์ที่เก่ากว่า 7 วัน')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(ctx, 0), child: const Text('ลบทั้งหมด', style: TextStyle(color: kRed))),
+        ],
+      ),
+    );
+    if (keep == null) return;
+    final cur = widget.hub.logger.file;
+    var n = 0;
+    for (var i = 0; i < _files.length; i++) {
+      final f = _files[i];
+      if (f.path == cur) continue;
+      final old = keep < 0
+          ? DateTime.now().difference(f.lastModifiedSync()).inDays >= -keep
+          : i >= keep;
+      if (old) {
+        try {
+          f.deleteSync();
+          n++;
+        } catch (_) {}
+      }
+    }
+    await _load();
+    if (context.mounted) _snack(context, 'ลบแล้ว $n ไฟล์');
+  }
+
   String _size(int b) => b > 1 << 20 ? '${(b / (1 << 20)).toStringAsFixed(1)} MB' : '${(b / 1024).toStringAsFixed(0)} KB';
 
   @override
@@ -189,7 +220,19 @@ class _LogTabState extends State<LogTab> {
         const _Hint('เปิด/ปิดแอปหรือต่อรถใหม่ = ไฟล์ใหม่ · ค่าที่บันทึก: รอบ ความเร็ว TPS LOAD AFR BOOST MAF น้ำ IAT แบต องศาไฟ fuel trim '
             'น้ำมันเครื่อง ลิตร/ชม. CVT TEMP + Custom PID\n'
             'กด "บันทึกลง Download" แล้วเปิดด้วย Excel / Google Sheets ได้ (โฟลเดอร์ Download/Didissnap)'),
-        const _Header('ไฟล์ที่บันทึกไว้'),
+        Row(children: [
+          const _Header('ไฟล์ที่บันทึกไว้'),
+          const Spacer(),
+          if (_files.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(right: 12, top: 8),
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.cleaning_services_outlined),
+                label: Text('ลบไฟล์เก่า (${_files.length} ไฟล์ · ${_size(_files.fold<int>(0, (a, f) => a + f.lengthSync()))})'),
+                onPressed: () => _clean(context),
+              ),
+            ),
+        ]),
         if (_files.isEmpty) const _Hint('ยังไม่มีไฟล์'),
         for (final f in _files)
           ListTile(
@@ -295,32 +338,193 @@ class ProfileTab extends StatelessWidget {
           const _Header('สำรอง / คืนค่าตั้ง'),
           ListTile(
             leading: const Icon(Icons.save_alt),
-            title: const Text('สำรองค่าตั้งทั้งหมด'),
-            subtitle: const Text('ได้ไฟล์ .json ใน Download/Didissnap (รวมทุกคัน)'),
+            title: const Text('สำรองทั้งหมด (ค่าตั้ง + รูป GIF / รูปพื้นหลัง / โลโก้ / เสียง)'),
+            subtitle: const Text('ได้ไฟล์ .zip ใน Download/Didissnap (รวมทุกคัน)'),
             onTap: () async {
-              final d = await getTemporaryDirectory();
-              final n = DateTime.now();
-              final name = 'didissnap_backup_${n.year}${n.month.toString().padLeft(2, '0')}${n.day.toString().padLeft(2, '0')}.json';
-              final f = File('${d.path}/$name');
-              await f.writeAsString(s.exportAll());
-              final ok = await Native.saveToDownloads(f.path, name, 'application/json');
-              if (context.mounted) _snack(context, ok ? 'สำรองไว้ที่ Download/Didissnap/$name' : 'สำรองไม่สำเร็จ');
+              _snack(context, 'กำลังสำรอง...');
+              final r = await _backupZip(s);
+              if (context.mounted) _snack(context, r ?? 'สำรองไม่สำเร็จ');
             },
           ),
           ListTile(
             leading: const Icon(Icons.restore),
             title: const Text('คืนค่าจากไฟล์สำรอง'),
-            subtitle: const Text('เลือกไฟล์ didissnap_backup_....json'),
+            subtitle: const Text('เลือกไฟล์ didissnap_backup_....zip (หรือ .json แบบเก่า)'),
             onTap: () async {
-              final t = await Native.pickText();
-              if (t == null) return;
-              final ok = await s.importAll(t);
-              if (context.mounted) _snack(context, ok ? 'คืนค่าเรียบร้อย' : 'ไฟล์ไม่ถูกต้อง');
+              final p = await Native.pickFile();
+              if (p == null) return;
+              final r = await _restore(s, p);
+              if (context.mounted) _snack(context, r);
             },
           ),
-          const _Hint('รูป GIF / รูปพื้นหลัง / โลโก้ / เสียงที่เลือกไว้ ไม่ได้อยู่ในไฟล์สำรอง — ลงแอปใหม่แล้วต้องเลือกไฟล์ใหม่'),
+          const _Hint('ไฟล์สำรองอาจใหญ่ตามขนาดรูป GIF · คืนค่าแล้วรูปทุกหน้ากลับมาครบ ไม่ต้องเลือกใหม่'),
         ]);
       },
     );
+  }
+}
+
+
+String _pct(int v1000) => '${v1000 >= 1000 ? '+' : ''}${((v1000 - 1000) / 10).toStringAsFixed(1)}%';
+
+/// ชดเชยความเร็ว: ตั้งเอง หรือ อัตโนมัติด้วย GPS (+ ดูค่าเทียบสด ๆ)
+class _SpeedCalSection extends StatefulWidget {
+  const _SpeedCalSection({required this.s, required this.hub});
+  final AppSettings s;
+  final DataHub hub;
+  @override
+  State<_SpeedCalSection> createState() => _SpeedCalSectionState();
+}
+
+class _SpeedCalSectionState extends State<_SpeedCalSection> {
+  @override
+  void initState() {
+    super.initState();
+    Native.gpsPermission().then((_) => widget.hub.gps.view(true));
+  }
+
+  @override
+  void dispose() {
+    widget.hub.gps.view(false);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.s, g = widget.hub.gps;
+    return ListenableBuilder(
+      listenable: g,
+      builder: (context, _) {
+        final est = g.est;
+        final gk = g.gpsKmh;
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(value: 0, label: Text('ตั้งเอง'), icon: Icon(Icons.tune)),
+                ButtonSegment(value: 1, label: Text('อัตโนมัติด้วย GPS'), icon: Icon(Icons.satellite_alt)),
+              ],
+              selected: {s.speedCalMode},
+              onSelectionChanged: (v) async {
+                if (v.first == 1) await Native.gpsPermission();
+                s.speedCalMode = v.first;
+              },
+            ),
+          ),
+          if (s.speedCalMode == 0)
+            _StepRow('ชดเชยความเร็ว', s.speedCal1000, 850, 1150, 5, (v) => s.speedCal1000 = v, fmt: _pct),
+          ListTile(
+            dense: true,
+            leading: Icon(Icons.gps_fixed, color: gk != null ? kGreen : Colors.white38),
+            title: Text('GPS ${gk == null ? '--' : gk.toStringAsFixed(0)} km/h   ·   OBD (ดิบ) ${widget.hub.data.speedRaw.toStringAsFixed(0)} km/h'
+                '   ·   ใช้อยู่ ${_pct((s.speedCal * 1000).round())}'),
+            subtitle: Text(g.err.isNotEmpty
+                ? g.err
+                : (est == null
+                    ? 'ยังไม่มีข้อมูล — ขับนิ่ง ๆ 40 km/h ขึ้นไปสักพัก (ทางตรง ฟ้าเปิด)'
+                    : 'GPS วัดได้ ${_pct((est * 1000).round())}  จาก ${g.n} ครั้ง${s.speedCalMode == 1 && g.n < 20 ? ' (ใช้จริงเมื่อครบ 20 ครั้ง)' : ''}')),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(spacing: 8, children: [
+              if (est != null && s.speedCalMode == 0)
+                FilledButton.tonal(
+                  onPressed: () => s.speedCal1000 = (est * 1000).round(),
+                  child: Text('ใช้ค่าที่ GPS วัดได้ (${_pct((est * 1000).round())})'),
+                ),
+              OutlinedButton(onPressed: g.reset, child: const Text('เริ่มเรียนรู้ใหม่')),
+            ]),
+          ),
+          const _Hint('อัตโนมัติ: เก็บเฉพาะตอนวิ่ง 40+ km/h ความเร็วนิ่ง และ GPS แม่น แล้วเฉลี่ยไปเรื่อย ๆ\n'
+              'มีผลกับ ความเร็ว / TRIP / km/L / CVT RATIO / เกียร์ และส่งให้จอ CYD ด้วย'),
+        ]);
+      },
+    );
+  }
+}
+
+
+// ---------- สำรอง/คืนค่าแบบ zip (รวมไฟล์รูป/เสียงที่ค่าตั้งอ้างถึง) ----------
+final _pathRe = RegExp(r'/(?:data|storage)/[^"\\\s]+');
+
+Future<String?> _backupZip(AppSettings s) async {
+  try {
+    final text = s.exportAll();
+    final a = Archive();
+    final map = <String, String>{};
+    var i = 0;
+    for (final m in _pathRe.allMatches(text)) {
+      final p = m.group(0)!;
+      if (map.containsKey(p)) continue;
+      final f = File(p);
+      if (!f.existsSync()) continue;
+      final entry = 'media/${i++}_${p.split('/').last}';
+      map[p] = entry;
+      final b = f.readAsBytesSync();
+      a.addFile(ArchiveFile(entry, b.length, b));
+    }
+    final tb = utf8.encode(text), mb = utf8.encode(jsonEncode(map));
+    a.addFile(ArchiveFile('backup.json', tb.length, tb));
+    a.addFile(ArchiveFile('media.json', mb.length, mb));
+    final out = ZipEncoder().encode(a);
+    final d = await getTemporaryDirectory();
+    final n = DateTime.now();
+    String two(int x) => x.toString().padLeft(2, '0');
+    final name = 'didissnap_backup_${n.year}${two(n.month)}${two(n.day)}_${two(n.hour)}${two(n.minute)}.zip';
+    final f = File('${d.path}/$name');
+    await f.writeAsBytes(out);
+    final ok = await Native.saveToDownloads(f.path, name, 'application/zip');
+    try {
+      f.deleteSync();
+    } catch (_) {}
+    return ok ? 'สำรองไว้ที่ Download/Didissnap/$name (${map.length} ไฟล์รูป/เสียง)' : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+Future<String> _restore(AppSettings s, String path) async {
+  try {
+    final bytes = File(path).readAsBytesSync();
+    String text;
+    var nMedia = 0;
+    if (bytes.length > 2 && bytes[0] == 0x50 && bytes[1] == 0x4B) {
+      final a = ZipDecoder().decodeBytes(bytes);
+      ArchiveFile? find(String n) {
+        for (final f in a.files) {
+          if (f.name == n) return f;
+        }
+        return null;
+      }
+      final bj = find('backup.json');
+      if (bj == null) return 'ไฟล์ zip ไม่ใช่ไฟล์สำรองของแอปนี้';
+      text = utf8.decode(bj.content as List<int>);
+      final mj = find('media.json');
+      if (mj != null) {
+        final map = (jsonDecode(utf8.decode(mj.content as List<int>)) as Map).cast<String, dynamic>();
+        final docs = await getApplicationDocumentsDirectory();
+        final dir = Directory('${docs.path}/restored');
+        await dir.create(recursive: true);
+        for (final e in map.entries) {
+          final f = find('${e.value}');
+          if (f == null) continue;
+          final np = '${dir.path}/${'${e.value}'.split('/').last}';
+          File(np).writeAsBytesSync(f.content as List<int>);
+          text = text.replaceAll(e.key, np);
+          nMedia++;
+        }
+      }
+    } else {
+      text = utf8.decode(bytes);
+    }
+    final ok = await s.importAll(text);
+    return ok ? 'คืนค่าเรียบร้อย${nMedia > 0 ? ' (รูป/เสียง $nMedia ไฟล์)' : ''}' : 'ไฟล์ไม่ถูกต้อง';
+  } catch (e) {
+    return 'คืนค่าไม่สำเร็จ';
+  } finally {
+    try {
+      File(path).deleteSync();
+    } catch (_) {}
   }
 }

@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:archive/archive.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -13,6 +15,7 @@ import 'custom_logo.dart';
 import '../data/hub.dart';
 import '../data/native.dart';
 import '../data/services.dart';
+import '../data/updater.dart';
 import '../settings.dart';
 import 'esp32_pics_ui.dart';
 import 'paint_utils.dart';

@@ -440,6 +440,18 @@ class AppSettings extends ChangeNotifier {
     super.notifyListeners();
   }
 
+  // ---------- เช็กอัปเดตแอป ----------
+  bool get updateAuto => _b('updateAuto', true);
+  set updateAuto(bool v) => _setB('updateAuto', v);
+  int get updateLast => _i('updateLast', 0);
+  int get updateSeen => _i('updateSeen', 0);
+  String get updateUrl => _s('updateUrl', '');
+  void setUpdateSeen(int b, String url) {
+    _p.setInt('updateLast', DateTime.now().millisecondsSinceEpoch);
+    _p.setInt('updateSeen', b);
+    _p.setString('updateUrl', url);
+  }
+
   // ---------- สีเมนู (Racing HUD) ----------
   int get menuColor => _i('menuColor', 0xFFFF7A00);
   set menuColor(int v) => _setI('menuColor', v);
@@ -447,7 +459,20 @@ class AppSettings extends ChangeNotifier {
   // ---------- ความเร็ว: ชดเชยให้ตรงจริง (x1000 เช่น 1035 = +3.5%) ----------
   int get speedCal1000 => _i('speedCal', 1000);
   set speedCal1000(int v) => _setI('speedCal', v);
-  double get speedCal => speedCal1000 / 1000.0;
+  /// 0 = ตั้งเอง, 1 = อัตโนมัติด้วย GPS
+  int get speedCalMode => _i('speedCalMode', 0);
+  set speedCalMode(int v) => _setI('speedCalMode', v);
+  int get speedCalAuto1000 => _i('speedCalAuto', 1000);
+  int get speedCalAutoN => _i('speedCalAutoN', 0);
+  void setSpeedCalAuto(int v1000, int n) {
+    _p.setInt('speedCalAuto', v1000);
+    _p.setInt('speedCalAutoN', n);
+    notifyListeners();
+  }
+
+  /// ค่าที่ใช้จริง: โหมด GPS ใช้ค่าที่เรียนรู้ได้ (เมื่อมีตัวอย่างพอ) ไม่งั้นใช้ค่าตั้งเอง
+  double get speedCal =>
+      (speedCalMode == 1 && speedCalAutoN >= 20 ? speedCalAuto1000 : speedCal1000) / 1000.0;
 
   // ---------- ทริป A / B + น้ำมัน (เก็บถาวร ไม่หายตอนปิดแอป) ----------
   double _d(String k) => _p.getDouble(k) ?? 0;
@@ -537,7 +562,7 @@ class AppSettings extends ChangeNotifier {
   List<int> get graphSel {
     final l = _p.getStringList('graphSel');
     final v = l?.map((e) => int.tryParse(e) ?? 0).toList() ?? [0, 2, 4];
-    return v.length == 3 ? v : [0, 2, 4];
+    return v.length >= 1 && v.length <= 6 ? v : [0, 2, 4];
   }
 
   set graphSel(List<int> v) {

@@ -121,7 +121,10 @@ class Esp32Source implements CarSource {
     double? n(String k) => (m[k] is num) ? (m[k] as num).toDouble() : null;
     d.rpm = n('rpm') ?? d.rpm;
     final sp = n('spd');
-    if (sp != null) d.speed = sp * _cal;
+    if (sp != null) {
+      d.speedRaw = sp;
+      d.speed = sp * _cal;
+    }
     d.ect = n('ect') ?? d.ect;
     d.iat = n('iat') ?? d.iat;
     d.volt = n('volt') ?? d.volt;

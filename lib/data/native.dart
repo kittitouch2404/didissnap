@@ -77,6 +77,34 @@ class Native {
     }
   }
 
+  static const EventChannel gps = EventChannel('didissnap/gps');
+
+  static Future<bool> openUrl(String url) async {
+    try {
+      return (await m.invokeMethod<bool>('openUrl', {'url': url})) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// ขอสิทธิ์ GPS (true = มีสิทธิ์แล้ว)
+  static Future<bool> gpsPermission() async {
+    try {
+      return (await m.invokeMethod<bool>('gpsPermission')) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// เลือกไฟล์ใดก็ได้ -> path ไฟล์ที่ก๊อปไว้ใน cache
+  static Future<String?> pickFile({String mime = '*/*'}) async {
+    try {
+      return await m.invokeMethod<String>('pickFile', {'mime': mime});
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<void> bindWifi() async {
     try {
       await m.invokeMethod('bindWifi', {'on': true});

@@ -148,6 +148,36 @@ class _DashShellState extends State<DashShell> {
             children: [for (final id in _ids) _pageFor(id)],
           ),
           Positioned(top: 6, left: 8, child: StatusChip(hub: hub)),
+          // มีแอปเวอร์ชันใหม่
+          Positioned(
+            bottom: 14,
+            right: 10,
+            child: ListenableBuilder(
+              listenable: hub.updater,
+              builder: (context, _) {
+                final u = hub.updater;
+                if (!u.hasNew || u.dismissed) return const SizedBox();
+                return Material(
+                  color: const Color(0xE6151515),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.system_update, color: kGreen, size: 20),
+                      const SizedBox(width: 8),
+                      Text('มีแอปใหม่ build-${u.latest}', style: const TextStyle(fontSize: 14)),
+                      TextButton(onPressed: () => Native.openUrl(u.url), child: const Text('อัปเดต')),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: u.dismiss,
+                      ),
+                    ]),
+                  ),
+                );
+              },
+            ),
+          ),
           // แถบเตือน (น้ำร้อน / แบตต่ำ / เร็วเกิน / เปลี่ยนน้ำมันเครื่อง)
           Positioned(
             top: 6,

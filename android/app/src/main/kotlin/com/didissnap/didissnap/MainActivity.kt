@@ -50,6 +50,35 @@ class MainActivity : FlutterActivity() {
         ch.setMethodCallHandler { call, result ->
             when (call.method) {
                 "launchReason" -> result.success(intent?.getStringExtra("autoStartReason"))
+                "openUrl" -> {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(call.argument<String>("url") ?: "")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                "gpsPermission" -> {
+                    if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                        result.success(true)
+                    } else {
+                        requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), REQ_GPS)
+                        result.success(false)
+                    }
+                }
+                "pickFile" -> {
+                    pendingFile?.success(null)
+                    pendingFile = result
+                    try {
+                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = call.argument<String>("mime") ?: "*/*"
+                        }, REQ_FILE)
+                    } catch (e: Exception) {
+                        pendingFile = null
+                        result.success(null)
+                    }
+                }
                 "tone" -> {
                     // เสียงเตือน: ToneGenerator ออกลำโพงเพลง (ลำโพงรถ) ไม่มีดีเลย์
                     val kind = call.argument<Int>("kind") ?: 0
@@ -199,6 +228,19 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // GPS: ความเร็ว (m/s) + ความแม่นยำ ส่งให้ Flutter ทุก ~1 วินาที
+        EventChannel(messenger, "didissnap/gps").setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                gpsSink = events
+                startGps()
+            }
+
+            override fun onCancel(arguments: Any?) {
+                stopGps()
+                gpsSink = null
+            }
+        })
+
         EventChannel(messenger, "didissnap/bt/stream").setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                 sink = events
@@ -213,6 +255,43 @@ class MainActivity : FlutterActivity() {
     private var chan: MethodChannel? = null
     private var pendingAudio: MethodChannel.Result? = null
     private var pendingText: MethodChannel.Result? = null
+    private var pendingFile: MethodChannel.Result? = null
+    private var gpsSink: EventChannel.EventSink? = null
+    private var gpsListener: android.location.LocationListener? = null
+
+    @SuppressLint("MissingPermission")
+    private fun startGps() {
+        if (gpsListener != null) return
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            gpsSink?.success(mapOf("err" to "perm"))
+            return
+        }
+        val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        val l = android.location.LocationListener { loc ->
+            val acc = if (Build.VERSION.SDK_INT >= 26 && loc.hasSpeedAccuracy()) loc.speedAccuracyMetersPerSecond.toDouble() else -1.0
+            gpsSink?.success(mapOf(
+                "spd" to (if (loc.hasSpeed()) loc.speed.toDouble() else -1.0),
+                "sacc" to acc,
+                "hacc" to (if (loc.hasAccuracy()) loc.accuracy.toDouble() else -1.0),
+                "t" to loc.time
+            ))
+        }
+        try {
+            lm.requestLocationUpdates(android.location.LocationManager.GPS_PROVIDER, 1000L, 0f, l, Looper.getMainLooper())
+            gpsListener = l
+        } catch (e: Exception) {
+            gpsSink?.success(mapOf("err" to (e.message ?: "gps")))
+        }
+    }
+
+    private fun stopGps() {
+        val l = gpsListener ?: return
+        gpsListener = null
+        try {
+            (getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager).removeUpdates(l)
+        } catch (e: Exception) {
+        }
+    }
 
     /** ก๊อปไฟล์ไปไว้ในโฟลเดอร์ Download ของเครื่อง (เปิดด้วยแอปไฟล์ได้) */
     private fun saveToDownloads(src: java.io.File, name: String, mime: String): Boolean = try {
@@ -240,6 +319,21 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_FILE) {
+            val r = pendingFile ?: return
+            pendingFile = null
+            val u = data?.data
+            if (resultCode != RESULT_OK || u == null) { r.success(null); return }
+            io.execute {
+                val p = try {
+                    val f = java.io.File(cacheDir, "picked_${System.currentTimeMillis()}")
+                    contentResolver.openInputStream(u)!!.use { inp -> f.outputStream().use { inp.copyTo(it) } }
+                    f.absolutePath
+                } catch (e: Exception) { null }
+                mainHandler.post { r.success(p) }
+            }
+            return
+        }
         if (requestCode == REQ_TEXT) {
             val r = pendingText ?: return
             pendingText = null
@@ -466,5 +560,7 @@ class MainActivity : FlutterActivity() {
         private const val REQ_NOTIF = 4712
         private const val REQ_AUDIO = 4713
         private const val REQ_TEXT = 4714
+        private const val REQ_FILE = 4715
+        private const val REQ_GPS = 4716
     }
 }

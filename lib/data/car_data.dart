@@ -36,6 +36,7 @@ class CarData {
   final List<String> custRaw = List<String>.filled(4, '');
   double? custNow(int k) =>
       cust[k] != null && DateTime.now().difference(custAt[k]).inSeconds < 5 ? cust[k] : null;
+  double speedRaw = 0; // ความเร็วดิบจาก OBD (ก่อนชดเชย) ใช้เทียบกับ GPS
   double? oil; // อุณหภูมิน้ำมันเครื่อง °C (PID 5C บางรุ่นมี)
   double? timing; // องศาจุดระเบิด ° ก่อนศูนย์ตายบน (PID 0E)
   /// อัตราสิ้นเปลือง: ลิตร/ชม. จาก MAF ล่าสุด + ตัวนับสำหรับค่าเฉลี่ย (นับเฉพาะช่วงที่อ่าน MAF ได้ต่อเนื่อง)

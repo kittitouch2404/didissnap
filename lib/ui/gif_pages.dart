@@ -357,7 +357,7 @@ class _GifDashPainter extends CustomPainter {
     // ---- แบบ A ----
     final fr = Rect.fromLTWH(w * 0.015, h * 0.09, w * 0.60, h * 0.60);
     _frame(cv, fr);
-    _img(cv, fr.deflate(h * 0.012));
+    _img(cv, fr.deflate(h * 0.012), big: true);   // แบบ A ก็ซูม/เลื่อนภาพได้
     // แถบรอบเฉียง
     final barR = Rect.fromLTWH(fr.left, fr.bottom + h * 0.025, fr.width, h * 0.045);
     final maxR = (f.maxRpm).toDouble();
@@ -616,10 +616,10 @@ Future<void> showGifSettings(BuildContext context, AppSettings s, int index) {
                     ),
                   ]),
                 ],
-                if (c.style == 1) ...[
+                ...[
                   const SizedBox(height: 8),
                   Row(children: [
-                    const Text('ตำแหน่งภาพ (แบบ B)'),
+                    const Text('ตำแหน่งภาพ (ซูม / เลื่อน)'),
                     const Spacer(),
                     TextButton(
                         onPressed: () {

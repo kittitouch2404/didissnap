@@ -12,8 +12,9 @@ import 'native.dart';
 //  ค่าที่เลือกได้ในกราฟ / บันทึก CSV
 // ======================================================================
 class GMetric {
-  const GMetric(this.name, this.unit, this.lo, this.hi, this.dec, this.get);
+  const GMetric(this.name, this.unit, this.lo, this.hi, this.dec, this.get, {this.custom});
   final String name, unit;
+  final int? custom;
   final double lo, hi;
   final int dec;
   final double? Function(CarData d, AppSettings s) get;
@@ -37,7 +38,29 @@ final List<GMetric> kGMetrics = [
   }),
   GMetric('OIL', '°C', 40, 140, 0, (d, s) => d.oil),
   GMetric('FUEL L/h', 'L/h', 0, 20, 1, (d, s) => d.fuelLph),
+  GMetric('FUEL km/L', 'km/L', 0, 30, 1, (d, s) {
+    final l = d.fuelLph;
+    return l == null || d.speed < 3 ? null : (d.speed / (l < 0.2 ? 0.2 : l)).clamp(0, 99.9).toDouble();
+  }),
+  GMetric('LAMBDA', '', 0.7, 1.3, 2, (d, s) => d.lambda),
+  GMetric('CVT RATIO', '', 0.4, 2.6, 2, (d, s) {
+    if (d.speed < 8 || d.rpm < 500) return null;
+    final v = d.rpm / (d.speed * 1000 / 60 / 1.91 * 4.989);
+    return v < 0.3 || v > 3.2 ? null : v;
+  }),
+  GMetric('CVT TEMP', '°C', 40, 120, 0, (d, s) =>
+      d.cvtTemp != null && DateTime.now().difference(d.cvtAt).inSeconds < 5 ? d.cvtTemp : null),
+  for (var k = 0; k < 4; k++)
+    GMetric('CUSTOM ${k + 1}', '', 0, 100, 1, (d, s) => d.custNow(k), custom: k),
 ];
+
+/// ชื่อที่โชว์ (ช่อง Custom ใช้ชื่อ/หน่วย/ช่วงที่ตั้งไว้)
+(String, String, double, double) gInfo(GMetric m, AppSettings s) {
+  final k = m.custom;
+  if (k == null) return (m.name, m.unit, m.lo, m.hi);
+  final c = s.customPid(k);
+  return c.valid ? (c.label, c.unit, c.lo, c.hi) : (m.name, '', m.lo, m.hi);
+}
 
 // ======================================================================
 //  ประวัติค่าย้อนหลัง (หน้ากราฟ) 10 ครั้ง/วินาที เก็บ 120 วินาที
@@ -179,13 +202,14 @@ class DataLogger {
     _out = File(file!).openWrite();
     _t0 = n;
     rows = 0;
-    final cust = [for (var k = 0; k < AppSettings.nCustom; k++) s.customPid(k)];
-    _out!.writeln([
-      'time_s', 'clock',
-      for (final m in kGMetrics) m.unit.isEmpty ? m.name : '${m.name} (${m.unit})',
-      'CVT TEMP',
-      for (var k = 0; k < cust.length; k++) cust[k].valid ? cust[k].label : 'CUSTOM ${k + 1}',
-    ].join(','));
+    String head(GMetric m) {
+      if (m.custom != null) {
+        final c = s.customPid(m.custom!);
+        return c.valid ? '${m.name} (${c.label.replaceAll(',', ' ')}${c.unit.isEmpty ? '' : ' ${c.unit}'})' : m.name;
+      }
+      return m.unit.isEmpty ? m.name : '${m.name} (${m.unit})';
+    }
+    _out!.writeln(['time_s', 'clock', for (final m in kGMetrics) head(m)].join(','));
   }
 
   Future<void> close() async {
@@ -216,9 +240,101 @@ class DataLogger {
       (now.difference(_t0!).inMilliseconds / 1000).toStringAsFixed(1),
       '${two(now.hour)}:${two(now.minute)}:${two(now.second)}',
       for (final m in kGMetrics) f(m.get(d, s), m.dec + 1),
-      f(d.cvtTemp, 0),
-      for (var k = 0; k < AppSettings.nCustom; k++) f(d.custNow(k), 2),
     ].join(','));
     rows++;
+  }
+}
+
+
+// ======================================================================
+//  ปรับความเร็วอัตโนมัติด้วย GPS: เทียบความเร็ว GPS กับ OBD ตอนวิ่งนิ่ง ๆ
+// ======================================================================
+class GpsCal extends ChangeNotifier {
+  GpsCal(this.s, this.d) {
+    s.addListener(_sync);
+    _sync();
+  }
+  final AppSettings s;
+  final CarData d;
+  StreamSubscription<dynamic>? _sub;
+  int _views = 0; // หน้าตั้งค่าเปิดดูอยู่ = เปิด GPS แม้โหมดตั้งเอง
+  double? gpsKmh, sacc;
+  String err = '';
+  double? _prev;
+  double? est; // อัตราส่วนที่เรียนรู้ได้ (GPS / OBD)
+  int n = 0;
+  DateTime last = DateTime.fromMillisecondsSinceEpoch(0);
+
+  bool get on => s.speedCalMode == 1 || _views > 0;
+
+  void view(bool open) {
+    _views += open ? 1 : -1;
+    if (_views < 0) _views = 0;
+    _sync();
+  }
+
+  void _sync() {
+    if (on && _sub == null) {
+      est = s.speedCalAutoN > 0 ? s.speedCalAuto1000 / 1000 : null;
+      n = s.speedCalAutoN;
+      _sub = Native.gps.receiveBroadcastStream().listen(_onFix, onError: (Object e) {
+        err = '$e';
+        notifyListeners();
+      });
+    } else if (!on && _sub != null) {
+      _sub?.cancel();
+      _sub = null;
+      gpsKmh = null;
+    }
+  }
+
+  void reset() {
+    est = null;
+    n = 0;
+    s.setSpeedCalAuto(1000, 0);
+    notifyListeners();
+  }
+
+  void _onFix(dynamic e) {
+    if (e is! Map) return;
+    if (e['err'] != null) {
+      err = e['err'] == 'perm' ? 'ยังไม่ได้อนุญาตตำแหน่ง (GPS)' : '${e['err']}';
+      _sub?.cancel();
+      _sub = null;
+      notifyListeners();
+      return;
+    }
+    err = '';
+    last = DateTime.now();
+    final spd = (e['spd'] as num?)?.toDouble() ?? -1;
+    final sa = (e['sacc'] as num?)?.toDouble() ?? -1;
+    sacc = sa;
+    if (spd < 0) {
+      gpsKmh = null;
+      notifyListeners();
+      return;
+    }
+    final g = spd * 3.6;
+    gpsKmh = g;
+    final obd = d.speedRaw;
+    final steady = _prev != null && (g - _prev!).abs() < 1.5;
+    _prev = g;
+    // เก็บเฉพาะตอนวิ่ง 40+ km/h ความเร็วนิ่ง และ GPS แม่น
+    if (steady && g >= 40 && obd >= 35 && (sa < 0 || sa < 1.0)) {
+      final r = g / obd;
+      if (r > 0.85 && r < 1.15) {
+        n++;
+        est = est == null ? r : est! + (r - est!) * (n < 10 ? 1 / n : 0.05);
+        if (n % 5 == 0 || n == 20) s.setSpeedCalAuto((est! * 1000).round(), n);
+      }
+    }
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    s.removeListener(_sync);
+    super.dispose();
   }
 }

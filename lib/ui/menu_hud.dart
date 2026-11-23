@@ -186,6 +186,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
           ('เกียร์', () => _open('เกียร์', () => GearTab(settings: s, hub: hub))),
           ('โค้ดเครื่องยนต์', () => _open('โค้ดเครื่องยนต์ (DTC)', () => DtcTab(hub: hub))),
           ('จอ ESP32', () => _open('จอ ESP32', () => Esp32Tab(settings: s, hub: hub))),
+          (hub.updater.hasNew ? 'อัปเดต! build-${hub.updater.latest}' : 'อัปเดตแอป', _updateDialog),
         ];
         return Theme(
           data: _menuTheme(a),
@@ -208,7 +209,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
                     padding: EdgeInsets.symmetric(horizontal: 24),
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text('SETTINGS', style: TextStyle(fontSize: 34, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, letterSpacing: 2, height: 1)),
-                      Text('DIDISSNAP · OBD2 GAUGE', style: TextStyle(fontSize: 13, color: Color(0xFF8A8A8A), letterSpacing: 1)),
+                      Text('DIDISSNAP · OBD2 GAUGE · build-$kBuild', style: TextStyle(fontSize: 13, color: Color(0xFF8A8A8A), letterSpacing: 1)),
                     ]),
                   ),
                   const Spacer(),
@@ -273,6 +274,44 @@ class _HudMenuPageState extends State<HudMenuPage> {
           ),
         );
       },
+    );
+  }
+
+  void _updateDialog() {
+    final u = hub.updater;
+    if (!u.busy && u.status.isEmpty) u.check();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Theme(
+        data: _menuTheme(Color(s.menuColor)),
+        child: ListenableBuilder(
+          listenable: Listenable.merge([u, s]),
+          builder: (ctx, _) => AlertDialog(
+            title: const Text('อัปเดตแอป'),
+            content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('เวอร์ชันนี้: build-${kBuild > 0 ? kBuild : '?'}'),
+              Text(u.latest > 0 ? 'ล่าสุดบน GitHub: build-${u.latest}' : 'ล่าสุดบน GitHub: -'),
+              const SizedBox(height: 6),
+              Text(u.status, style: TextStyle(color: u.hasNew ? kGreen : Colors.white70, fontWeight: FontWeight.w700)),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('เช็กเองตอนเปิดแอป'),
+                value: s.updateAuto,
+                onChanged: (v) => s.updateAuto = v,
+              ),
+              const Text('กดดาวน์โหลด -> เบราว์เซอร์โหลด APK -> กดติดตั้งทับได้เลย (ค่าตั้งไม่หาย)',
+                  style: TextStyle(fontSize: 12, color: Colors.white54)),
+            ]),
+            actions: [
+              TextButton(onPressed: u.busy ? null : () => u.check(), child: const Text('เช็กอีกครั้ง')),
+              FilledButton(
+                onPressed: u.url.isEmpty ? null : () => Native.openUrl(u.url),
+                child: Text(u.hasNew ? 'ดาวน์โหลด build-${u.latest}' : 'ดาวน์โหลดล่าสุด'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

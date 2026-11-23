@@ -42,7 +42,7 @@ jobs:
 
       - name: Build APK
         run: |
-          flutter build apk --release
+          flutter build apk --release --dart-define=BUILD=${{ github.run_number }}
           cp build/app/outputs/flutter-apk/app-release.apk Didissnap.apk
 
       - uses: actions/upload-artifact@v4

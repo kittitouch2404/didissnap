@@ -10,6 +10,7 @@ import 'elm_source.dart';
 import 'esp32_source.dart';
 import 'perf.dart';
 import 'services.dart';
+import 'updater.dart';
 
 enum LinkState { idle, connecting, connected, error }
 
@@ -35,9 +36,13 @@ class DataHub extends ChangeNotifier {
     settings.addListener(_onSettings);
     _tripTimer = Timer.periodic(const Duration(milliseconds: 100), (_) => _tick());
     cyd = CydLink(settings, this)..start();
+    gps.on; // เริ่ม GPS ถ้าตั้งโหมดอัตโนมัติไว้
+    Timer(const Duration(seconds: 15), () => updater.check(auto: true));
   }
 
   late final AlertEngine alerts = AlertEngine(settings);
+  late final GpsCal gps = GpsCal(settings, data);
+  late final Updater updater = Updater(settings);
   late final DataLogger logger = DataLogger(settings);
   final History history = History();
   DateTime _lastTick = DateTime.now(), _lastFlush = DateTime.now();
