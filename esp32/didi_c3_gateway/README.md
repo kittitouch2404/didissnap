@@ -1,3 +1,8 @@
+> **อัปเดต: ส่งทาง Bluetooth (BLE) แทน ESP-NOW แล้ว** — จอ S3 4.3", จอ CYD 2.8" และแอปแอนดรอยด์ ต่อ C3 พร้อมกันได้ 3 จอ ไม่ต้องใช้ WiFi
+> ต้องลงไลบรารี **NimBLE-Arduino (by h2zero) 2.x** · ชื่อที่ C3 ประกาศ: `Didissnap-C3` · ESP-NOW แบบเดิมเปิดได้ที่ `USE_ESPNOW 1`
+> แอป: MENU → การเชื่อมต่อ → แหล่งข้อมูล "ESP32-C3 ที่ช่อง OBD2 (Bluetooth BLE)"
+> จอ S3: เมนู OBD → OBD SOURCE: C3 · จอ CYD: ตั้ง `#define OBD_LINK_C3 1`
+
 # didi_c3_gateway — ESP32-C3 Super Mini ที่ช่อง OBD2
 
 อ่านค่าจากรถเอง (CAN หรือ K-line) แล้วส่งทาง ESP-NOW ให้จอ 4.3" (S3) และจอ CYD 2.8" — ไม่ต้องใช้ตัวอ่าน ELM327 / Bluetooth
