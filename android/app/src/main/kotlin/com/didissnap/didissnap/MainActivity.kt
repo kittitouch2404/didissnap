@@ -16,6 +16,7 @@ import android.provider.Settings
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import io.flutter.FlutterInjector
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -271,7 +272,7 @@ class MainActivity : FlutterActivity() {
     private fun assetFile(name: String): java.io.File? = try {
         val f = java.io.File(cacheDir, name.substringAfterLast('/'))
         if (!f.exists()) {
-            val key = io.flutter.FlutterInjector.instance().flutterLoader().getLookupKeyForAsset(name)
+            val key = FlutterInjector.instance().flutterLoader().getLookupKeyForAsset(name)
             assets.open(key).use { inp -> f.outputStream().use { inp.copyTo(it) } }
         }
         f
