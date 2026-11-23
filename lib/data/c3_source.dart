@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'app_log.dart';
 import 'car_data.dart';
 import 'custom_pid.dart';
+import 'elm_source.dart';
 import 'hub.dart';
 import 'native.dart';
 
