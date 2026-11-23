@@ -40,10 +40,24 @@ jobs:
           printf '\nandroid {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }\n}\n' >> "$f"
           tail -8 "$f"
 
+      # เซ็นทุก build ด้วยกุญแจเดียวกัน -> ติดตั้งทับเวอร์ชันเก่าได้ (ไม่ต้องลบแอป ค่าตั้งไม่หาย)
+      - name: Fixed release signing key
+        run: |
+          f=android/app/build.gradle.kts
+          if [ -f "$f" ]; then
+            printf '\nandroid {\n    signingConfigs {\n        create("didi") {\n            storeFile = file("../keystore/didissnap.jks")\n            storePassword = "didissnap"\n            keyAlias = "didissnap"\n            keyPassword = "didissnap"\n        }\n    }\n    buildTypes {\n        getByName("release") {\n            signingConfig = signingConfigs.getByName("didi")\n        }\n    }\n}\n' >> "$f"
+          else
+            f=android/app/build.gradle
+            printf '\nandroid {\n    signingConfigs {\n        didi {\n            storeFile file("../keystore/didissnap.jks")\n            storePassword "didissnap"\n            keyAlias "didissnap"\n            keyPassword "didissnap"\n        }\n    }\n    buildTypes {\n        release {\n            signingConfig signingConfigs.didi\n        }\n    }\n}\n' >> "$f"
+          fi
+          tail -18 "$f"
+
       - name: Build APK
         run: |
           flutter build apk --release --dart-define=BUILD=${{ github.run_number }}
           cp build/app/outputs/flutter-apk/app-release.apk Didissnap.apk
+          # ตรวจว่าเซ็นด้วยกุญแจคงที่จริง
+          "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs Didissnap.apk | head -3 || true
 
       - uses: actions/upload-artifact@v4
         with:
