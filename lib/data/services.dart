@@ -88,15 +88,58 @@ class AlertEngine {
   AlertEngine(this.s);
   final AppSettings s;
 
-  /// ข้อความเตือนที่โชว์อยู่ (null = ไม่มี)  สีแดง/ส้ม
-  final ValueNotifier<(String, bool)?> banner = ValueNotifier(null);
+  /// เสียงเตือนที่เลือกได้ (id ตรงกับฝั่ง Kotlin playAlert)
+  static const List<String> sounds = [
+    'บี๊บสั้น', 'บี๊บคู่', 'ไซเรนแหลม', 'เตือนภัยยาว', 'ติ๊ด ๆ เร็ว', 'เสียงผิดพลาด', 'ติ๊ง-ต่อง',
+    'ระฆังเตือน', 'ไซเรนรถแข่ง', '8-bit alarm', 'เสียงพูด (ภาษาไทย)', 'ปิดเสียง',
+  ];
+
+  /// ประเภทเตือน: (key, ชื่อ, เสียงเริ่มต้น)
+  static const List<(String, String, int)> kinds = [
+    ('ect', 'น้ำร้อน', 2),
+    ('volt', 'แบตต่ำ', 3),
+    ('shift', 'ถึงรอบเปลี่ยนเกียร์', 1),
+    ('speed', 'ขับเร็วเกิน', 0),
+    ('oil', 'ถึงระยะเปลี่ยนน้ำมันเครื่อง', 6),
+  ];
+
+  /// เล่นเสียงของเตือนชนิดนี้ (text = คำพูดถ้าเลือกเสียงพูด)
+  Future<void> play(String key, String text, {int times = 1}) async {
+    final id = s.alertSound(key);
+    if (id >= 11) return;
+    if (id == 10) {
+      await Native.alertSound(10, s.alertVol, text);
+      return;
+    }
+    for (var i = 0; i < times; i++) {
+      await Native.alertSound(id, s.alertVol, text);
+      if (i < times - 1) await Future<void>.delayed(Duration(milliseconds: id >= 7 ? 1700 : 1000));
+    }
+  }
+
+  /// ข้อความเตือนที่โชว์อยู่ (key, ข้อความ, ร้ายแรง)  null = ไม่มี
+  final ValueNotifier<(String, String, bool)?> banner = ValueNotifier(null);
+
+  /// แตะปิดหน้าเตือน = เงียบเรื่องนั้น 2 นาที (ยังเห็นแถบเล็ก)
+  final Map<String, DateTime> _snooze = {};
+  void snooze(String key) {
+    _snooze[key] = DateTime.now().add(const Duration(minutes: 2));
+    _bump.value++;
+  }
+
+  final ValueNotifier<int> _bump = ValueNotifier(0);
+  Listenable get changes => Listenable.merge([banner, _bump]);
+  bool snoozed(String key) {
+    final t = _snooze[key];
+    return t != null && DateTime.now().isBefore(t);
+  }
 
   static final _t0 = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _ectAt = _t0, _voltAt = _t0, _spdAt = _t0;
   DateTime? _connAt;
   bool _shiftArmed = true;
   int _voltLowN = 0;
-  bool _oilShown = false;
+  bool _oilShown = false, _oilBeeped = false;
 
   void tick(CarData d, bool connected) {
     final now = DateTime.now();
@@ -107,16 +150,15 @@ class AlertEngine {
     }
     _connAt ??= now;
     final settled = now.difference(_connAt!).inSeconds > 8; // เพิ่งต่อติด: ค่ายังไม่นิ่ง
-    final vol = s.alertVol;
-    (String, bool)? show;
+    (String, String, bool)? show;
 
     // น้ำร้อน: เตือนทันที แล้วซ้ำทุก 60 วินาทีถ้ายังร้อน
     final ect = d.ect;
     if (s.alertEct && ect != null && ect >= s.ectWarn) {
-      show = ('น้ำร้อน ${ect.round()}°C', true);
-      if (now.difference(_ectAt).inSeconds >= 60) {
+      show = ('ect', 'น้ำร้อน ${ect.round()}°C', true);
+      if (now.difference(_ectAt).inSeconds >= 60 && !snoozed('ect')) {
         _ectAt = now;
-        _beeps(1, 3, 350, vol);
+        play('ect', 'เตือน น้ำร้อน ${ect.round()} องศา', times: 3);
       }
     }
     // แบตต่ำ: ต่ำติดกัน ~3 วินาที (กันวูบตอนสตาร์ท)
@@ -124,51 +166,47 @@ class AlertEngine {
     if (s.alertVolt && settled && v != null && v < s.alertVolt10 / 10 && d.rpm > 400) {
       _voltLowN++;
       if (_voltLowN > 30) {
-        show ??= ('แบตต่ำ ${v.toStringAsFixed(1)} V', true);
-        if (now.difference(_voltAt).inSeconds >= 120) {
+        show ??= ('volt', 'แบตต่ำ ${v.toStringAsFixed(1)} V', true);
+        if (now.difference(_voltAt).inSeconds >= 120 && !snoozed('volt')) {
           _voltAt = now;
-          _beeps(3, 2, 300, vol);
+          play('volt', 'เตือน แบตเตอรี่ต่ำ ${v.toStringAsFixed(1)} โวลต์', times: 2);
         }
       }
     } else {
       _voltLowN = 0;
     }
-    // รอบถึงจุดเปลี่ยนเกียร์: บี๊บครั้งเดียวต่อการเร่ง
+    // รอบถึงจุดเปลี่ยนเกียร์: เสียงครั้งเดียวต่อการเร่ง (ไม่ขึ้นหน้าเตือน)
     final sr = s.alertShiftRpm > 0 ? s.alertShiftRpm : s.shiftStart;
     if (s.alertShift) {
       if (_shiftArmed && d.rpm >= sr) {
         _shiftArmed = false;
-        Native.tone(2, 120, vol);
+        play('shift', 'เปลี่ยนเกียร์');
       } else if (d.rpm < sr - 600) {
         _shiftArmed = true;
       }
     }
     // ขับเร็วเกิน: ซ้ำทุก 6 วินาที
     if (s.alertSpeed && d.speed > s.alertSpeedKmh) {
-      show ??= ('เร็วเกิน ${d.speed.round()} km/h', false);
-      if (now.difference(_spdAt).inSeconds >= 6) {
+      show ??= ('speed', 'เร็วเกิน ${d.speed.round()} km/h', false);
+      if (now.difference(_spdAt).inSeconds >= 6 && !snoozed('speed')) {
         _spdAt = now;
-        _beeps(0, 2, 160, vol);
+        play('speed', 'ขับเร็วเกิน', times: 2);
       }
     }
-    // ถึงระยะเปลี่ยนน้ำมันเครื่อง: โชว์ 8 วินาทีหลังต่อติด (ครั้งเดียวต่อการเปิดแอป)
+    // ถึงระยะเปลี่ยนน้ำมันเครื่อง: โชว์ ~10 วินาทีหลังต่อติด (ครั้งเดียวต่อการเปิดแอป)
     if (!_oilShown && settled && s.oilEvery > 0 && s.live('oilKm') >= s.oilEvery) {
       final t = now.difference(_connAt!).inSeconds;
-      if (t < 18) {
-        show ??= ('ถึงระยะเปลี่ยนน้ำมันเครื่อง (${s.live('oilKm').round()} km)', false);
+      if (t < 20 && !snoozed('oil')) {
+        show ??= ('oil', 'ถึงระยะเปลี่ยนน้ำมันเครื่อง (${s.live('oilKm').round()} km)', false);
+        if (!_oilBeeped) {
+          _oilBeeped = true;
+          play('oil', 'ถึงระยะเปลี่ยนน้ำมันเครื่องแล้ว');
+        }
       } else {
         _oilShown = true;
       }
-      if (t == 9) _beeps(0, 1, 250, vol);
     }
     if (banner.value != show) banner.value = show;
-  }
-
-  Future<void> _beeps(int kind, int n, int ms, int vol) async {
-    for (var i = 0; i < n; i++) {
-      await Native.tone(kind, ms, vol);
-      await Future<void>.delayed(Duration(milliseconds: ms + 150));
-    }
   }
 }
 

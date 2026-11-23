@@ -81,14 +81,45 @@ class TripAlertTab extends StatelessWidget {
         if (s.alertSpeed)
           _StepRow('เกิน', s.alertSpeedKmh, 40, 220, 5, (v) => s.alertSpeedKmh = v, unit: ' km/h'),
         _StepRow('ความดังเสียงเตือน', s.alertVol, 10, 100, 10, (v) => s.alertVol = v, unit: '%'),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Wrap(spacing: 8, children: [
-            OutlinedButton(onPressed: () => Native.tone(1, 350, s.alertVol), child: const Text('ลอง: น้ำร้อน')),
-            OutlinedButton(onPressed: () => Native.tone(2, 120, s.alertVol), child: const Text('ลอง: Shift')),
-            OutlinedButton(onPressed: () => Native.tone(0, 160, s.alertVol), child: const Text('ลอง: เร็วเกิน')),
-          ]),
-        ),
+        const _Header('เสียงของแต่ละเรื่อง'),
+        for (final k in AlertEngine.kinds)
+          ListTile(
+            dense: true,
+            title: Text(k.$2),
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              DropdownButton<int>(
+                value: s.alertSound(k.$1).clamp(0, AlertEngine.sounds.length - 1),
+                items: [
+                  for (var i = 0; i < AlertEngine.sounds.length; i++)
+                    DropdownMenuItem(value: i, child: Text(AlertEngine.sounds[i])),
+                ],
+                onChanged: (v) {
+                  s.setAlertSound(k.$1, v ?? 0);
+                  hub.alerts.play(k.$1, 'เตือน ${k.$2}');
+                },
+              ),
+              IconButton(
+                tooltip: 'ลองฟัง',
+                icon: const Icon(Icons.play_circle_outline),
+                onPressed: () => hub.alerts.play(k.$1, 'เตือน ${k.$2}'),
+              ),
+            ]),
+          ),
+        const _Hint('เสียงพูด: ใช้เสียงอ่านภาษาไทยของเครื่อง (ถ้าไม่มีเสียง ให้ลง "Google Speech Services" / ตั้งภาษาไทยใน Text-to-speech)'),
+        const _Header('หน้าเตือน'),
+        for (final (v, t) in const [
+          (2, 'เต็มจอแดงกะพริบ ทุกเรื่อง'),
+          (1, 'เต็มจอเฉพาะเรื่องร้ายแรง (น้ำร้อน / แบตต่ำ) ที่เหลือเป็นแถบเล็ก'),
+          (0, 'แถบเล็กด้านบนอย่างเดียว'),
+        ])
+          RadioListTile<int>(
+            dense: true,
+            title: Text(t),
+            value: v,
+            groupValue: s.alertStyle,
+            onChanged: (x) => s.alertStyle = x ?? 2,
+          ),
+        const _Hint('หน้าเตือนเต็มจอ: แตะจอ = ปิด และเงียบเรื่องนั้น 2 นาที (ยังมีแถบเล็กค้างจนกว่าจะหาย)'),
         const _Header('โหมดกลางคืน (หรี่จอ)'),
         SwitchListTile(dense: true, title: const Text('หรี่จอตามเวลา'), value: s.nightOn, onChanged: (v) => s.nightOn = v),
         if (s.nightOn) ...[

@@ -537,6 +537,12 @@ class AppSettings extends ChangeNotifier {
   set alertSpeed(bool v) => _setB('alertSpeed', v);
   int get alertSpeedKmh => _i('alertSpeedKmh', 120);
   set alertSpeedKmh(int v) => _setI('alertSpeedKmh', v);
+  /// เสียงของเตือนแต่ละชนิด (index ใน AlertEngine.sounds)
+  int alertSound(String key) => _i('alertSnd_$key', const {'ect': 2, 'volt': 3, 'shift': 1, 'speed': 0, 'oil': 6}[key] ?? 0);
+  void setAlertSound(String key, int v) => _setI('alertSnd_$key', v);
+  /// หน้าเตือน: 0 แถบเล็ก, 1 เต็มจอแดงกะพริบเฉพาะเรื่องร้ายแรง (น้ำร้อน/แบตต่ำ), 2 เต็มจอทุกเรื่อง
+  int get alertStyle => _i('alertStyle', 2);
+  set alertStyle(int v) => _setI('alertStyle', v);
   int get alertVol => _i('alertVol', 80);
   set alertVol(int v) => _setI('alertVol', v);
 

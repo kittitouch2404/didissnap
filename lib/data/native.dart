@@ -48,6 +48,13 @@ class Native {
   }
 
   /// เสียงเตือน (0 บี๊บ, 1 เตือนแรง, 2 shift, 3 เตือนยาว)
+  /// เสียงเตือนแบบที่เลือก (ดู AlertEngine.sounds)  text = คำพูดของเสียงพูด
+  static Future<void> alertSound(int id, int vol, String text) async {
+    try {
+      await m.invokeMethod('alertSound', {'id': id, 'vol': vol, 'text': text});
+    } catch (_) {}
+  }
+
   static Future<void> tone(int kind, int ms, int vol) async {
     try {
       await m.invokeMethod('tone', {'kind': kind, 'ms': ms, 'vol': vol});

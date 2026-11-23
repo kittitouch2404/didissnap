@@ -185,6 +185,8 @@ class _DashShellState extends State<DashShell> {
             right: 0,
             child: IgnorePointer(child: Center(child: _AlertBanner(hub: hub))),
           ),
+          // หน้าเตือนเต็มจอ (แดงกะพริบ) แตะ = ปิด + เงียบ 2 นาที
+          Positioned.fill(child: _AlertFull(hub: hub)),
           Positioned(top: 6, right: 8, child: _MenuButton(onTap: _openMenu, color: Color(widget.settings.menuColor))),
           Positioned(
             bottom: 3,
@@ -328,9 +330,12 @@ class _AlertBannerState extends State<_AlertBanner> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<(String, bool)?>(
-      valueListenable: widget.hub.alerts.banner,
-      builder: (_, a, __) {
+    final al = widget.hub.alerts;
+    return ListenableBuilder(
+      listenable: al.changes,
+      builder: (_, __) {
+        var a = al.banner.value;
+        if (a != null && _isFull(widget.hub, a) && !al.snoozed(a.$1)) a = null; // โชว์เต็มจออยู่แล้ว
         final rec = widget.hub.settings.logOn && widget.hub.state == LinkState.connected;
         return Row(mainAxisSize: MainAxisSize.min, children: [
           if (rec)
@@ -351,17 +356,96 @@ class _AlertBannerState extends State<_AlertBanner> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
                 decoration: BoxDecoration(
-                  color: a.$2 ? const Color(0xE6D0101E) : const Color(0xE6E07800),
+                  color: a.$3 ? const Color(0xE6D0101E) : const Color(0xE6E07800),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 22),
                   const SizedBox(width: 8),
-                  Text(a.$1, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white)),
+                  Text(a.$2, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white)),
                 ]),
               ),
             ),
         ]);
+      },
+    );
+  }
+}
+
+
+/// เรื่องนี้ต้องขึ้นเต็มจอไหม
+bool _isFull(DataHub hub, (String, String, bool) a) {
+  final st = hub.settings.alertStyle;
+  return st == 2 || (st == 1 && a.$3);
+}
+
+class _AlertFull extends StatefulWidget {
+  const _AlertFull({required this.hub});
+  final DataHub hub;
+  @override
+  State<_AlertFull> createState() => _AlertFullState();
+}
+
+class _AlertFullState extends State<_AlertFull> {
+  Timer? _t;
+  bool _on = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(milliseconds: 380), (_) {
+      if (mounted && widget.hub.alerts.banner.value != null) setState(() => _on = !_on);
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final al = widget.hub.alerts;
+    return ListenableBuilder(
+      listenable: al.changes,
+      builder: (context, _) {
+        final a = al.banner.value;
+        if (a == null || !_isFull(widget.hub, a) || al.snoozed(a.$1)) return const SizedBox.shrink();
+        final red = a.$3;
+        final base = red ? const Color(0xFFD0101E) : const Color(0xFFE07800);
+        final ic = switch (a.$1) {
+          'ect' => Icons.thermostat,
+          'volt' => Icons.battery_alert,
+          'speed' => Icons.speed,
+          'oil' => Icons.oil_barrel_outlined,
+          _ => Icons.warning_amber_rounded,
+        };
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => al.snooze(a.$1),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            color: _on ? base.withValues(alpha: 0.92) : Colors.black.withValues(alpha: 0.88),
+            child: Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(ic, size: 120, color: _on ? Colors.white : base),
+                const SizedBox(height: 8),
+                Text('เตือน!',
+                    style: TextStyle(fontSize: 40, fontWeight: FontWeight.w900, color: _on ? Colors.white : base, letterSpacing: 4)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(a.$2,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 64, fontWeight: FontWeight.w900, color: _on ? Colors.white : base)),
+                ),
+                const SizedBox(height: 18),
+                Text('แตะจอเพื่อปิด (เงียบ 2 นาที)',
+                    style: TextStyle(fontSize: 18, color: (_on ? Colors.white : base).withValues(alpha: 0.8))),
+              ]),
+            ),
+          ),
+        );
       },
     );
   }

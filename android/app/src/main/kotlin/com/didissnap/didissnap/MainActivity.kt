@@ -33,6 +33,7 @@ class MainActivity : FlutterActivity() {
     private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private val mainHandler = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
+    private val audioIo = Executors.newSingleThreadExecutor()   // เสียงเตือน: แยกเธรด ไม่ให้ไปหน่วง Bluetooth
 
     @Volatile private var socket: BluetoothSocket? = null
     @Volatile private var out: OutputStream? = null
@@ -84,7 +85,7 @@ class MainActivity : FlutterActivity() {
                     val kind = call.argument<Int>("kind") ?: 0
                     val ms = call.argument<Int>("ms") ?: 200
                     val vol = (call.argument<Int>("vol") ?: 80).coerceIn(0, 100)
-                    io.execute {
+                    audioIo.execute {
                         try {
                             val tg = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, vol)
                             val t = when (kind) {
@@ -99,6 +100,10 @@ class MainActivity : FlutterActivity() {
                         } catch (e: Exception) {
                         }
                     }
+                    result.success(true)
+                }
+                "alertSound" -> {
+                    playAlert(call.argument<Int>("id") ?: 0, (call.argument<Int>("vol") ?: 80).coerceIn(0, 100), call.argument<String>("text") ?: "")
                     result.success(true)
                 }
                 "brightness" -> {
@@ -256,6 +261,80 @@ class MainActivity : FlutterActivity() {
     private var pendingAudio: MethodChannel.Result? = null
     private var pendingText: MethodChannel.Result? = null
     private var pendingFile: MethodChannel.Result? = null
+
+    // ---------------- เสียงเตือน ----------------
+    private var tts: android.speech.tts.TextToSpeech? = null
+    private var ttsOk = false
+    private var player: android.media.MediaPlayer? = null
+
+    /** เล่นเสียงจาก assets ของ Flutter (ก๊อปไว้ใน cache ครั้งแรก) */
+    private fun assetFile(name: String): java.io.File? = try {
+        val f = java.io.File(cacheDir, name.substringAfterLast('/'))
+        if (!f.exists()) {
+            val key = io.flutter.FlutterInjector.instance().flutterLoader().getLookupKeyForAsset(name)
+            assets.open(key).use { inp -> f.outputStream().use { inp.copyTo(it) } }
+        }
+        f
+    } catch (e: Exception) { null }
+
+    /**
+     * id: 0 บี๊บสั้น, 1 บี๊บคู่, 2 ไซเรนแหลม, 3 เตือนภัยยาว, 4 ติ๊ดเร็ว, 5 เสียงผิดพลาด, 6 ติ๊ง-ต่อง,
+     *     7 ระฆัง, 8 ไซเรนรถแข่ง, 9 8-bit alarm, 10 เสียงพูดภาษาไทย, 11 ปิด
+     */
+    private fun playAlert(id: Int, vol: Int, text: String) {
+        when (id) {
+            in 0..6 -> audioIo.execute {
+                try {
+                    val tg = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, vol)
+                    fun tone(t: Int, ms: Int, gap: Int = 60) { tg.startTone(t, ms); Thread.sleep((ms + gap).toLong()) }
+                    when (id) {
+                        0 -> tone(android.media.ToneGenerator.TONE_PROP_BEEP, 180)
+                        1 -> tone(android.media.ToneGenerator.TONE_PROP_BEEP2, 300)
+                        2 -> tone(android.media.ToneGenerator.TONE_CDMA_HIGH_L, 700)
+                        3 -> tone(android.media.ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 900)
+                        4 -> repeat(5) { tone(android.media.ToneGenerator.TONE_CDMA_PIP, 70, 50) }
+                        5 -> tone(android.media.ToneGenerator.TONE_SUP_ERROR, 700)
+                        6 -> tone(android.media.ToneGenerator.TONE_CDMA_CONFIRM, 500)
+                    }
+                    tg.release()
+                } catch (e: Exception) {
+                }
+            }
+            7, 8, 9 -> {
+                val f = assetFile(when (id) { 7 -> "assets/alert_bell.m4a"; 8 -> "assets/alert_siren.m4a"; else -> "assets/alert_8bit.m4a" }) ?: return
+                try {
+                    player?.release()
+                    val mp = android.media.MediaPlayer()
+                    mp.setAudioStreamType(android.media.AudioManager.STREAM_MUSIC)
+                    mp.setDataSource(f.absolutePath)
+                    mp.setVolume(vol / 100f, vol / 100f)
+                    mp.setOnCompletionListener { it.release(); if (player === it) player = null }
+                    mp.prepare()
+                    mp.start()
+                    player = mp
+                } catch (e: Exception) {
+                }
+            }
+            10 -> {
+                val say = {
+                    val b = Bundle()
+                    b.putFloat(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_VOLUME, vol / 100f)
+                    tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, b, "alert")
+                }
+                if (tts == null) {
+                    tts = android.speech.tts.TextToSpeech(this) { st ->
+                        ttsOk = st == android.speech.tts.TextToSpeech.SUCCESS
+                        if (ttsOk) {
+                            tts?.language = java.util.Locale("th", "TH")
+                            say()
+                        }
+                    }
+                } else if (ttsOk) {
+                    say()
+                }
+            }
+        }
+    }
     private var gpsSink: EventChannel.EventSink? = null
     private var gpsListener: android.location.LocationListener? = null
 
