@@ -52,6 +52,9 @@ class MainActivity : FlutterActivity() {
         ch.setMethodCallHandler { call, result ->
             when (call.method) {
                 "launchReason" -> result.success(intent?.getStringExtra("autoStartReason"))
+                "deviceInfo" -> result.success(
+                    "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}) · ${resources.displayMetrics.widthPixels}x${resources.displayMetrics.heightPixels}"
+                )
                 "installApk" -> {
                     // เปิดหน้าติดตั้ง APK ที่แอปโหลดมาเอง (Android 8+ ต้องอนุญาต "ติดตั้งแอปที่ไม่รู้จัก")
                     try {

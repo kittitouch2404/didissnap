@@ -16,6 +16,8 @@ import '../data/hub.dart';
 import '../data/native.dart';
 import '../data/services.dart';
 import '../data/updater.dart';
+import '../data/app_log.dart';
+import 'help_page.dart';
 import '../settings.dart';
 import 'esp32_pics_ui.dart';
 import 'paint_utils.dart';

@@ -11,6 +11,7 @@ import 'esp32_source.dart';
 import 'perf.dart';
 import 'services.dart';
 import 'updater.dart';
+import 'app_log.dart';
 
 enum LinkState { idle, connecting, connected, error }
 
@@ -129,6 +130,7 @@ class DataHub extends ChangeNotifier {
   /// แหล่งข้อมูลเรียกเพื่ออัปเดตสถานะ (ถ้าไม่ใช่แหล่งปัจจุบันจะถูกเมิน)
   void setLink(CarSource from, LinkState s, String msg) {
     if (_disposed || !identical(from, _src)) return;
+    if (s != state || msg != message) AppLog.i('การเชื่อมต่อ: ${s.name} · $msg');
     state = s;
     message = msg;
     notifyListeners();

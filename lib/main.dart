@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import 'data/app_log.dart';
 import 'data/hub.dart';
 import 'data/key_sound.dart';
 import 'data/native.dart';
 import 'settings.dart';
+import 'data/updater.dart';
 import 'ui/boot_logo.dart';
 import 'ui/lock_page.dart';
 import 'ui/custom_logo.dart';
@@ -16,10 +18,23 @@ import 'ui/dash_shell.dart';
 import 'ui/paint_utils.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final settings = await AppSettings.load();
-  final hub = DataHub(settings);
-  runApp(DashApp(settings: settings, hub: hub));
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    await AppLog.init();
+    // เก็บ error ทุกชนิดไว้ใน log (ส่งให้ช่วยดูได้จากเมนู)
+    FlutterError.onError = (d) {
+      AppLog.e('Flutter: ${d.exceptionAsString()}', null, d.stack);
+      FlutterError.presentError(d);
+    };
+    PlatformDispatcher.instance.onError = (err, st) {
+      AppLog.e('Platform', err, st);
+      return true;
+    };
+    final settings = await AppSettings.load();
+    final hub = DataHub(settings);
+    AppLog.i('เปิดแอป build-$kBuild');
+    runApp(DashApp(settings: settings, hub: hub));
+  }, (err, st) => AppLog.e('Uncaught', err, st));
 }
 
 class DashApp extends StatefulWidget {

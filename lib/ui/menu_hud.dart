@@ -187,6 +187,9 @@ class _HudMenuPageState extends State<HudMenuPage> {
           ('โค้ดเครื่องยนต์', () => _open('โค้ดเครื่องยนต์ (DTC)', () => DtcTab(hub: hub))),
           ('จอ ESP32', () => _open('จอ ESP32', () => Esp32Tab(settings: s, hub: hub))),
           (hub.updater.hasNew ? 'อัปเดต! build-${hub.updater.latest}' : 'อัปเดตแอป', _updateDialog),
+          ('ส่ง log ปัญหา', _logDialog),
+          ('คู่มือ', () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => Theme(data: _menuTheme(Color(s.menuColor)), child: const HelpPage())))),
         ];
         return Theme(
           data: _menuTheme(a),
@@ -262,7 +265,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
                             onTap: b.$2,
                             child: SizedBox(
                               height: 52,
-                              child: Center(child: Text(b.$1, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600))),
+                              child: Center(child: Text(b.$1, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600))),
                             ),
                           ),
                         ),
@@ -274,6 +277,88 @@ class _HudMenuPageState extends State<HudMenuPage> {
           ),
         );
       },
+    );
+  }
+
+  /// log ปัญหา: ดูล่าสุด + บันทึกลง Download ไว้ส่งให้ช่วยดู
+  void _logDialog() {
+    AppLog.i('เปิดหน้า log');
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Theme(
+        data: _menuTheme(Color(s.menuColor)),
+        child: StatefulBuilder(
+          builder: (ctx, set) {
+            final lines = AppLog.recent.reversed.take(60).toList();
+            return AlertDialog(
+              title: const Text('log ปัญหา'),
+              content: SizedBox(
+                width: 900,
+                height: 420,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  const Text('เจอปัญหาตอนไหน กด "บันทึกลง Download" แล้วส่งไฟล์ให้ช่วยดูได้เลย (ไม่มี token / รหัสในไฟล์)',
+                      style: TextStyle(fontSize: 13, color: Colors.white60)),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: Container(
+                      color: const Color(0xFF0E0E0E),
+                      padding: const EdgeInsets.all(8),
+                      child: ListView(children: [
+                        for (final l in lines)
+                          Text(l,
+                              style: TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 12,
+                                  color: l.contains(' E ') ? const Color(0xFFFF6B76) : Colors.white70)),
+                      ]),
+                    ),
+                  ),
+                ]),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    AppLog.clear();
+                    set(() {});
+                  },
+                  child: const Text('ล้าง log'),
+                ),
+                FilledButton.icon(
+                  icon: const Icon(Icons.download),
+                  label: const Text('บันทึกลง Download'),
+                  onPressed: () async {
+                    final dev = await Native.deviceInfo();
+                    final cps = [for (var k = 0; k < AppSettings.nCustom; k++) s.customPid(k)].where((c) => c.valid).map((c) => '${c.label}=${c.hdr}/${c.cmd}').join(', ');
+                    final head = [
+                      'Didissnap log',
+                      'build: $kBuild',
+                      'เครื่อง: $dev',
+                      'แหล่งข้อมูล: ${s.source.name} · สถานะ: ${hub.state.name} · ${hub.message}',
+                      'รถ: ${s.profiles[s.profCur]} (${s.profiles.length} คัน)',
+                      'ส่งค่า CYD: ${s.cydLink} (${hub.cyd.status}) · บันทึก CSV: ${s.logOn} · GPS ชดเชย: ${s.speedCalMode} ${(s.speedCal * 100 - 100).toStringAsFixed(1)}%',
+                      'เปิดอัตโนมัติ: boot=${s.autoBoot} wake=${s.autoWake} power=${s.autoPower} bt=${s.autoBt}',
+                      'Custom PID: ${cps.isEmpty ? '-' : cps}',
+                      'หน้า: ${s.pages.join(',')}',
+                      '-' * 40,
+                    ].join('\n');
+                    final d = await getTemporaryDirectory();
+                    final n = DateTime.now();
+                    String two(int x) => x.toString().padLeft(2, '0');
+                    final name = 'didissnap_log_${n.year}${two(n.month)}${two(n.day)}_${two(n.hour)}${two(n.minute)}.txt';
+                    final f = File('${d.path}/$name');
+                    await f.writeAsString('$head\n${AppLog.all()}');
+                    final ok = await Native.saveToDownloads(f.path, name, 'text/plain');
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(ok ? 'บันทึกไว้ที่ Download/Didissnap/$name' : 'บันทึกไม่สำเร็จ')));
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 

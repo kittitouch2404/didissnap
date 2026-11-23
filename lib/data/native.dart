@@ -86,6 +86,14 @@ class Native {
 
   static const EventChannel gps = EventChannel('didissnap/gps');
 
+  static Future<String> deviceInfo() async {
+    try {
+      return (await m.invokeMethod<String>('deviceInfo')) ?? '?';
+    } catch (_) {
+      return '?';
+    }
+  }
+
   static Future<bool> installApk(String path) async {
     try {
       return (await m.invokeMethod<bool>('installApk', {'path': path})) ?? false;

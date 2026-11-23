@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../settings.dart';
+import 'app_log.dart';
 import 'native.dart';
 
 /// เลข build ของแอปนี้ (ใส่ตอน build บน GitHub: --dart-define=BUILD=<run_number>)
@@ -75,8 +76,10 @@ class Updater extends ChangeNotifier {
       assetApi = assets.isNotEmpty ? '${assets.first['url']}' : '';
       s.setUpdateSeen(latest, assetApi);
       status = hasNew ? 'มีเวอร์ชันใหม่ build-$latest' : 'ล่าสุดแล้ว (build-${kBuild > 0 ? kBuild : '?'})';
+      AppLog.i('เช็กอัปเดต: $status');
     } catch (e) {
       status = 'เช็กไม่ได้ (ไม่มีเน็ต?)';
+      AppLog.e('เช็กอัปเดตไม่ได้', e);
     } finally {
       c.close(force: true);
       busy = false;
@@ -131,6 +134,7 @@ class Updater extends ChangeNotifier {
       if (!ok) status = 'เปิดหน้าติดตั้งไม่ได้ — อนุญาต "ติดตั้งแอปที่ไม่รู้จัก" ให้แอปนี้ แล้วกดอีกครั้ง';
     } catch (e) {
       status = 'โหลดไม่สำเร็จ ($e)';
+      AppLog.e('โหลดอัปเดตไม่สำเร็จ', e);
     } finally {
       c.close(force: true);
       busy = false;

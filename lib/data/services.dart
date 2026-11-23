@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../settings.dart';
 import 'car_data.dart';
+import 'app_log.dart';
 import 'native.dart';
 
 // ======================================================================
@@ -206,7 +207,10 @@ class AlertEngine {
         _oilShown = true;
       }
     }
-    if (banner.value != show) banner.value = show;
+    if (banner.value != show) {
+      if (show != null && banner.value?.$1 != show.$1) AppLog.i('เตือน: ${show.$2}');
+      banner.value = show;
+    }
   }
 }
 
