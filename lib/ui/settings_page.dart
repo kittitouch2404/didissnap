@@ -9,6 +9,7 @@ import '../data/car_data.dart';
 import '../data/custom_pid.dart';
 import '../data/elm_source.dart';
 import '../data/key_sound.dart';
+import 'custom_logo.dart';
 import '../data/hub.dart';
 import '../data/native.dart';
 import '../settings.dart';
@@ -383,6 +384,58 @@ class DisplayTab extends StatelessWidget {
               groupValue: s.bootMode,
               onChanged: (x) => s.bootMode = x ?? 2,
             ),
+          if (s.bootMode == 2) ...[
+            SwitchListTile(
+              dense: true,
+              title: const Text('โลโก้ของฉัน (เล่นต่อจากโลโก้สุ่ม)'),
+              subtitle: Text(s.myLogoPath.isEmpty
+                  ? 'ยังไม่ได้เลือก — รูป / GIF / วิดีโอ'
+                  : '${CustomLogoPage.isVideo(s.myLogoPath) ? 'วิดีโอ' : 'รูป/GIF'}: ${s.myLogoPath.split('/').last}'),
+              value: s.myLogoOn && s.myLogoPath.isNotEmpty,
+              onChanged: (v) async {
+                if (v && s.myLogoPath.isEmpty) {
+                  await CustomLogoPage.pick(s);
+                } else {
+                  s.myLogoOn = v;
+                }
+              },
+            ),
+            if (s.myLogoOn && s.myLogoPath.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Wrap(spacing: 12, children: [
+                  OutlinedButton.icon(
+                    onPressed: () => CustomLogoPage.pick(s),
+                    icon: const Icon(Icons.image),
+                    label: const Text('เปลี่ยนโลโก้'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (ctx) => CustomLogoPage(
+                            settings: s, next: () => const _PreviewDone()))),
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('ดูตัวอย่าง'),
+                  ),
+                ]),
+              ),
+              if (!CustomLogoPage.isVideo(s.myLogoPath))
+                _StepRow('แสดงนาน', s.myLogoSec, 1, 15, 1, (v) => s.myLogoSec = v, unit: ' วินาที'),
+              SwitchListTile(
+                dense: true,
+                title: const Text('เต็มจอ (ครอปขอบ)'),
+                subtitle: const Text('ปิด = พอดีจอ มีขอบดำ'),
+                value: s.myLogoFill,
+                onChanged: (v) => s.myLogoFill = v,
+              ),
+              if (CustomLogoPage.isVideo(s.myLogoPath))
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('เปิดเสียงวิดีโอ'),
+                  value: s.myLogoSound,
+                  onChanged: (v) => s.myLogoSound = v,
+                ),
+            ],
+          ],
           const _Header('เสียงตอนบิดกุญแจ'),
           ListTile(
             dense: true,
@@ -1830,4 +1883,17 @@ class _CustomPidSectionState extends State<_CustomPidSection> {
   }
 
   static String _num(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
+}
+
+
+/// หน้าเปล่าหลังดูตัวอย่างโลโก้ -> กลับไปหน้าตั้งค่า
+class _PreviewDone extends StatelessWidget {
+  const _PreviewDone();
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+    });
+    return const ColoredBox(color: Colors.black);
+  }
 }

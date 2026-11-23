@@ -244,6 +244,23 @@ class AppSettings extends ChangeNotifier {
   /// เล่นทุกครั้งที่เปิดแอป (ปิด = เฉพาะตอนแอปเปิดเองเพราะรถติด/จอตื่น)
   bool get keySoundAlways => _b('keySoundAlways', false);
   set keySoundAlways(bool v) => _setB('keySoundAlways', v);
+  /// โลโก้ของฉัน (เล่นต่อจากโลโก้สุ่ม OYT): รูป / GIF / วิดีโอ
+  bool get myLogoOn => _b('myLogoOn', false);
+  set myLogoOn(bool v) => _setB('myLogoOn', v);
+  String get myLogoPath => _s('myLogoPath', '');
+  set myLogoPath(String v) {
+    _p.setString('myLogoPath', v);
+    notifyListeners();
+  }
+  /// รูป/GIF: ค้างกี่วินาที
+  int get myLogoSec => _i('myLogoSec', 3);
+  set myLogoSec(int v) => _setI('myLogoSec', v);
+  /// true = เต็มจอ (ครอปขอบ), false = พอดีจอ (มีขอบดำ)
+  bool get myLogoFill => _b('myLogoFill', false);
+  set myLogoFill(bool v) => _setB('myLogoFill', v);
+  /// วิดีโอ: เปิดเสียงของคลิป
+  bool get myLogoSound => _b('myLogoSound', false);
+  set myLogoSound(bool v) => _setB('myLogoSound', v);
   int get bootLastColor => _i('bootLastColor', -1);
   set bootLastColor(int v) => _p.setInt('bootLastColor', v);
   bool get bootClip => _b('bootClip', true);

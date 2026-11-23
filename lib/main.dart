@@ -9,6 +9,7 @@ import 'data/key_sound.dart';
 import 'data/native.dart';
 import 'settings.dart';
 import 'ui/boot_logo.dart';
+import 'ui/custom_logo.dart';
 import 'ui/boot_video.dart';
 import 'ui/dash_shell.dart';
 import 'ui/paint_utils.dart';
@@ -93,7 +94,13 @@ class _DashAppState extends State<DashApp> {
           ),
         2 => BootLogoPage(
             settings: widget.settings,
-            next: () => DashShell(settings: widget.settings, hub: widget.hub),
+            // โลโก้ของฉัน เล่นต่อจากโลโก้สุ่ม (ถ้าตั้งไว้)
+            next: () => CustomLogoPage.has(widget.settings)
+                ? CustomLogoPage(
+                    settings: widget.settings,
+                    next: () => DashShell(settings: widget.settings, hub: widget.hub),
+                  )
+                : DashShell(settings: widget.settings, hub: widget.hub),
           ),
         _ => DashShell(settings: widget.settings, hub: widget.hub),
       },
