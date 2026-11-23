@@ -12,6 +12,9 @@ class GifCfg {
         bx = ((m['bx'] as num?)?.toDouble() ?? 0.0).clamp(-1.0, 1.0),
         by = ((m['by'] as num?)?.toDouble() ?? 0.0).clamp(-1.0, 1.0),
         six = m['six'] == true,
+        hue2 = (m['hue2'] as num?)?.toDouble() ?? -1,
+        sat2 = (m['sat2'] as num?)?.toDouble() ?? 0.70,
+        rnd = m['rnd'] == true,
         slots = _slots(m['slots']);
 
   static List<int> _slots(Object? v) {
@@ -41,6 +44,13 @@ class GifCfg {
   /// แบบ B: ซูม (1-3 เท่า) + ตำแหน่ง (-1..1 ของระยะที่เลื่อนได้, 0 = กลาง)
   double bz, bx, by;
 
+  /// สีโทนที่ 2 (กรอบใน / แถบ / ขอบตัวเลข)  hue2 < 0 = อัตโนมัติ (ม่วงคู่กับชมพูแบบเดิม)
+  double hue2, sat2;
+  double get hue2Eff => hue2 < 0 ? (hue - 57 + 360) % 360 : hue2;
+
+  /// สุ่มสี 2 โทนใหม่ทุกครั้งที่เปิดแอป
+  bool rnd;
+
   /// ช่องขวา: false = 3 ค่า (ตัวใหญ่), true = 6 ค่า (2 คอลัมน์)
   bool six;
 
@@ -63,5 +73,8 @@ class GifCfg {
         'by': by,
         'slots': slots,
         'six': six,
+        'hue2': hue2,
+        'sat2': sat2,
+        'rnd': rnd,
       };
 }

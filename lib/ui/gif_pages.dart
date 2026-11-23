@@ -151,6 +151,23 @@ class _GifPageState extends State<GifPage> {
   double _acc = 0;
   double _lastT = -1;
 
+  // สุ่มสี 2 โทน (สุ่มครั้งเดียวต่อการเปิดแอป/เปิดหน้า)
+  GifCfg? _rc;
+  String _rcSrc = '';
+  GifCfg _rndCfg(GifCfg c) {
+    final key = c.toJson().toString();
+    if (_rc != null && _rcSrc == key) return _rc!;
+    _rcSrc = key;
+    final r = math.Random();
+    final h = r.nextDouble() * 360;
+    _rc = GifCfg(c.toJson())
+      ..hue = h
+      ..sat = 0.5 + r.nextDouble() * 0.4
+      ..hue2 = (h + 40 + r.nextDouble() * 140) % 360   // โทน 2 ต่างจากโทน 1 พอให้ตัด
+      ..sat2 = 0.6 + r.nextDouble() * 0.35;
+    return _rc!;
+  }
+
   // MAX / MIN ของแต่ละค่า (ตั้งแต่เปิดหน้า)
   final Map<int, double> _pk = {};
 
@@ -284,7 +301,7 @@ class _GifPageState extends State<GifPage> {
                 ? g.frames[_idx.clamp(0, g.frames.length - 1)]
                 : null;
             return CustomPaint(
-              painter: _GifDashPainter(f, c, img, Map.of(_pk), _loading,
+              painter: _GifDashPainter(f, c.rnd ? _rndCfg(c) : c, img, Map.of(_pk), _loading,
                   widget.index),
               child: const SizedBox.expand(),
             );
@@ -313,10 +330,12 @@ class _GifDashPainter extends CustomPainter {
   static const white = Color(0xFFFFF4FC);
 
   Color get top => _hsv(c.hue, c.sat, 1);
-  Color get edge => _hsv(c.hue - 47, 0.8, c.sat < 0.08 ? 0.3 : 0.44);
-  Color get shade => _hsv(c.hue - 47, 0.85, 0.17);
+  /// โทนที่ 2: ขอบตัวเลข / เงา / กรอบใน / ต้นแถบ
+  Color get edge => _hsv(c.hue2Eff + 10, math.max(0.5, c.sat2), c.sat < 0.08 ? 0.3 : 0.44);
+  Color get shade => _hsv(c.hue2Eff + 10, 0.85, 0.17);
+  Color get tone2 => _hsv(c.hue2Eff, c.sat2, 0.9);
   /// เส้นในของกรอบรูป (สีตามตัวเลข: ค่าเริ่มต้นชมพู -> ม่วง)
-  Color get frameIn => _hsv(c.hue - 47, math.min(1.0, c.sat * 1.1), 0.9);
+  Color get frameIn => tone2;
 
   @override
   void paint(Canvas cv, Size sz) {
@@ -426,7 +445,7 @@ class _GifDashPainter extends CustomPainter {
   }
 
   Color _segCol(double t) => t < 0.55
-      ? Color.lerp(vio, top, t / 0.55)!
+      ? Color.lerp(tone2, top, t / 0.55)!
       : Color.lerp(top, white, (t - 0.55) / 0.45)!;
 
   void _segBar(Canvas cv, Rect r, int n, double lit, double redAt,
@@ -654,6 +673,17 @@ Future<void> showGifSettings(BuildContext context, AppSettings s, int index) {
                   ),
                 ],
                 const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: const Text('สุ่มสี 2 โทนทุกครั้งที่เปิดแอป'),
+                  subtitle: const Text('เปิดไว้ = ไม่ใช้สีที่เลือกด้านล่าง'),
+                  value: c.rnd,
+                  onChanged: (v) {
+                    c.rnd = v;
+                    save();
+                  },
+                ),
                 Row(children: [
                   const Text('สีตัวเลข'),
                   const SizedBox(width: 12),
@@ -673,10 +703,25 @@ Future<void> showGifSettings(BuildContext context, AppSettings s, int index) {
                       onPressed: () {
                         c.hue = 322;
                         c.sat = 0.64;
+                        c.hue2 = -1;
+                        c.sat2 = 0.70;
                         save();
                       },
-                      child: const Text('ค่าเริ่มต้น (ชมพู)')),
+                      child: const Text('ค่าเริ่มต้น (ชมพู/ม่วง)')),
+                  TextButton.icon(
+                      onPressed: () {
+                        final r = math.Random();
+                        c.hue = r.nextDouble() * 360;
+                        c.sat = 0.5 + r.nextDouble() * 0.4;
+                        c.hue2 = (c.hue + 40 + r.nextDouble() * 140) % 360;
+                        c.sat2 = 0.6 + r.nextDouble() * 0.35;
+                        c.rnd = false;
+                        save();
+                      },
+                      icon: const Icon(Icons.casino_outlined),
+                      label: const Text('สุ่มเลย')),
                 ]),
+                const Text('โทน 1: ตัวเลข / กรอบนอก / ปลายแถบ'),
                 Slider(
                   min: 0,
                   max: 359,
@@ -695,6 +740,48 @@ Future<void> showGifSettings(BuildContext context, AppSettings s, int index) {
                   activeColor: _hsv(c.hue, c.sat, 1),
                   onChanged: (v) {
                     c.sat = v;
+                    save();
+                  },
+                ),
+                Row(children: [
+                  const Text('โทน 2: กรอบใน / ขอบตัวเลข / ต้นแถบ'),
+                  const SizedBox(width: 12),
+                  Container(
+                    width: 40,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: _hsv(c.hue2Eff, c.sat2, 0.9),
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                  ),
+                  const Spacer(),
+                  if (c.hue2 >= 0)
+                    TextButton(
+                        onPressed: () {
+                          c.hue2 = -1;
+                          c.sat2 = 0.70;
+                          save();
+                        },
+                        child: const Text('อัตโนมัติ (คู่กับโทน 1)')),
+                ]),
+                Slider(
+                  min: 0,
+                  max: 359,
+                  value: c.hue2Eff.clamp(0, 359),
+                  activeColor: _hsv(c.hue2Eff, 0.9, 1),
+                  onChanged: (v) {
+                    c.hue2 = v;
+                    save();
+                  },
+                ),
+                Slider(
+                  min: 0,
+                  max: 1,
+                  value: c.sat2.clamp(0, 1),
+                  activeColor: _hsv(c.hue2Eff, c.sat2, 0.9),
+                  onChanged: (v) {
+                    if (c.hue2 < 0) c.hue2 = c.hue2Eff;
+                    c.sat2 = v;
                     save();
                   },
                 ),
