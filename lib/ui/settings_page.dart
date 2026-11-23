@@ -999,6 +999,7 @@ class _AutoStartTabState extends State<AutoStartTab>
 
   bool get _anyOn =>
       widget.settings.autoBoot ||
+      widget.settings.autoWake ||
       widget.settings.autoPower ||
       widget.settings.autoBt;
 
@@ -1049,6 +1050,16 @@ class _AutoStartTabState extends State<AutoStartTab>
             subtitle: const Text('เหมาะกับมือถือ/แท็บเล็ตที่ติดในรถถาวร และติดเครื่องพร้อมรถ'),
             value: s.autoBoot,
             onChanged: (v) => _toggle(() => s.autoBoot = v, v),
+          ),
+          SwitchListTile(
+            dense: true,
+            title: const Text('จอรถตื่น / ติดเครื่อง (จอแอนดรอยด์ติดรถ)  ★ แนะนำ'),
+            subtitle: const Text('จอติดรถส่วนใหญ่ไม่ได้ปิดเครื่องจริง แค่หลับ — แอปจะเด้งขึ้นเมื่อจอตื่น/ได้สัญญาณ ACC ON (รอ 2-8 วินาที)'),
+            value: s.autoWake,
+            onChanged: (v) async {
+              if (v) await Native.requestNotif();
+              await _toggle(() => s.autoWake = v, v);
+            },
           ),
           SwitchListTile(
             dense: true,

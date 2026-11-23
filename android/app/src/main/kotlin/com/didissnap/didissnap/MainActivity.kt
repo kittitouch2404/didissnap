@@ -150,7 +150,13 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        AutoStart.inFront = true
         applyLockScreen()
+    }
+
+    override fun onPause() {
+        AutoStart.inFront = false
+        super.onPause()
     }
 
     /** แสดงแอปทับหน้าล็อกได้เลย (ไม่ต้องปลดล็อก) ถ้าเปิดค่าตั้งไว้ */

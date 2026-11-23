@@ -46,6 +46,19 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+        <!-- ACC ON ของจอติดรถ (FYT/UIS, TS, MTCD, XY ฯลฯ) -->
+        <receiver android:name=".AccReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.fyt.boot.ACCON" />
+                <action android:name="com.cayboy.action.ACC_ON" />
+                <action android:name="com.microntek.bootcheck" />
+                <action android:name="com.ts.main.ACC_ON" />
+                <action android:name="android.intent.action.ACC_ON" />
+                <action android:name="autochips.intent.action.QB_POWERON" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
         <receiver android:name=".BtReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />

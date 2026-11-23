@@ -210,6 +210,8 @@ class AppSettings extends ChangeNotifier {
   // ---------- เปิดแอปอัตโนมัติ (โค้ด Kotlin อ่านค่าเหล่านี้โดยตรง) ----------
   bool get autoBoot => _b('autoBoot', false);
   set autoBoot(bool v) => _setB('autoBoot', v);
+  bool get autoWake => _b('autoWake', false);
+  set autoWake(bool v) => _setB('autoWake', v);
   bool get autoPower => _b('autoPower', false);
   set autoPower(bool v) => _setB('autoPower', v);
   bool get autoBt => _b('autoBt', false);

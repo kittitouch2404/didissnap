@@ -12,7 +12,10 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 
 /**
@@ -24,6 +27,24 @@ import android.provider.Settings
  */
 object AutoStart {
     private const val PREFS = "FlutterSharedPreferences"
+
+    /** หน้าจอแอปอยู่ด้านหน้าอยู่แล้วหรือยัง (MainActivity onResume/onPause) */
+    @Volatile var inFront = false
+    private var lastAuto = 0L
+    private val h = Handler(Looper.getMainLooper())
+
+    /**
+     * จอรถยนต์ (ACC on / ตื่นจากโหมดหลับ): ระบบจอมักเปิดแอปเดิม/หน้า Home ทับตามหลัง
+     * จึงเปิดแอปหลังรอ 2.5 วินาที และถ้ายังไม่ขึ้นมาข้างหน้า ลองซ้ำอีกครั้งที่ 8 วินาที
+     */
+    fun launchCar(ctx: Context, reason: String) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastAuto < 20000) return                 // กันเด้งซ้ำ ๆ (เช่น ACC + จอติดมาพร้อมกัน)
+        lastAuto = now
+        val app = ctx.applicationContext
+        h.postDelayed({ if (!inFront) launch(app, reason) }, 2500)
+        h.postDelayed({ if (!inFront) launch(app, "$reason-retry") }, 8000)
+    }
 
     fun prefBool(ctx: Context, key: String): Boolean = try {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("flutter.$key", false)
@@ -62,7 +83,8 @@ object AutoStart {
         true
     }
 
-    fun needService(ctx: Context): Boolean = prefBool(ctx, "autoPower") || cydLink(ctx)
+    fun needService(ctx: Context): Boolean =
+        prefBool(ctx, "autoPower") || prefBool(ctx, "autoWake") || cydLink(ctx)
 
     /** เริ่ม/หยุด service เฝ้าการชาร์จ / ทำงานเบื้องหลัง ตามค่าตั้ง */
     fun syncService(ctx: Context) {
@@ -86,7 +108,20 @@ class BootReceiver : BroadcastReceiver() {
         AutoStart.syncService(ctx)
         val a = intent.action ?: return
         if (a == Intent.ACTION_MY_PACKAGE_REPLACED) return
-        if (AutoStart.prefBool(ctx, "autoBoot")) AutoStart.launch(ctx, "boot")
+        if (AutoStart.prefBool(ctx, "autoBoot")) AutoStart.launchCar(ctx, "boot")
+    }
+}
+
+/**
+ * สัญญาณ ACC ON ของจอแอนดรอยด์ติดรถยี่ห้อต่าง ๆ (จอรถส่วนใหญ่ไม่ได้ปิดเครื่องจริง แค่หลับ จึงไม่มี BOOT_COMPLETED)
+ * ชื่อสัญญาณต่างกันตามผู้ผลิต ใส่ไว้หลายแบบ ถ้าจอไม่ส่งก็ไม่มีผลอะไร
+ */
+class AccReceiver : BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent) {
+        AutoStart.syncService(ctx)
+        if (AutoStart.prefBool(ctx, "autoBoot") || AutoStart.prefBool(ctx, "autoWake")) {
+            AutoStart.launchCar(ctx, "acc")
+        }
     }
 }
 
@@ -120,15 +155,21 @@ class PowerWatchService : Service() {
         startInForeground()
         val r = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
-                if (intent.action == Intent.ACTION_POWER_CONNECTED &&
-                    AutoStart.prefBool(ctx, "autoPower")
-                ) {
-                    AutoStart.launch(ctx, "power")
+                when (intent.action) {
+                    Intent.ACTION_POWER_CONNECTED ->
+                        if (AutoStart.prefBool(ctx, "autoPower")) AutoStart.launchCar(ctx, "power")
+                    // จอรถตื่นจากโหมดหลับ (บิดกุญแจ) = จอติด
+                    Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT ->
+                        if (AutoStart.prefBool(ctx, "autoWake")) AutoStart.launchCar(ctx, "wake")
                 }
             }
         }
         receiver = r
-        registerReceiver(r, IntentFilter(Intent.ACTION_POWER_CONNECTED))
+        registerReceiver(r, IntentFilter().apply {
+            addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        })
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
