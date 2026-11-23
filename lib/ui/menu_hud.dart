@@ -280,6 +280,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
   void _updateDialog() {
     final u = hub.updater;
     if (!u.busy && u.status.isEmpty) u.check();
+    final tok = TextEditingController(text: s.ghToken);
     showDialog<void>(
       context: context,
       builder: (ctx) => Theme(
@@ -288,25 +289,41 @@ class _HudMenuPageState extends State<HudMenuPage> {
           listenable: Listenable.merge([u, s]),
           builder: (ctx, _) => AlertDialog(
             title: const Text('อัปเดตแอป'),
-            content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('เวอร์ชันนี้: build-${kBuild > 0 ? kBuild : '?'}'),
-              Text(u.latest > 0 ? 'ล่าสุดบน GitHub: build-${u.latest}' : 'ล่าสุดบน GitHub: -'),
-              const SizedBox(height: 6),
-              Text(u.status, style: TextStyle(color: u.hasNew ? kGreen : Colors.white70, fontWeight: FontWeight.w700)),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('เช็กเองตอนเปิดแอป'),
-                value: s.updateAuto,
-                onChanged: (v) => s.updateAuto = v,
-              ),
-              const Text('กดดาวน์โหลด -> เบราว์เซอร์โหลด APK -> กดติดตั้งทับได้เลย (ค่าตั้งไม่หาย)',
-                  style: TextStyle(fontSize: 12, color: Colors.white54)),
-            ]),
+            content: SizedBox(
+              width: 520,
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('เวอร์ชันนี้: build-${kBuild > 0 ? kBuild : '?'}'),
+                Text(u.latest > 0 ? 'ล่าสุดบน GitHub: build-${u.latest}' : 'ล่าสุดบน GitHub: -'),
+                const SizedBox(height: 6),
+                Text(u.status, style: TextStyle(color: u.hasNew ? kGreen : Colors.white70, fontWeight: FontWeight.w700)),
+                if (u.progress >= 0) Padding(padding: const EdgeInsets.only(top: 8), child: LinearProgressIndicator(value: u.progress)),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: tok,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'GitHub token (สำหรับ repo ส่วนตัว)',
+                    hintText: 'github_pat_...',
+                    isDense: true,
+                  ),
+                  onChanged: (v) => s.ghToken = v,
+                ),
+                const SizedBox(height: 4),
+                const Text('token เก็บในเครื่องนี้เท่านั้น ไม่อยู่ในไฟล์ APK และไม่ถูกสำรองลงไฟล์ .zip',
+                    style: TextStyle(fontSize: 12, color: Colors.white54)),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('เช็กเองตอนเปิดแอป'),
+                  value: s.updateAuto,
+                  onChanged: (v) => s.updateAuto = v,
+                ),
+              ]),
+            ),
             actions: [
               TextButton(onPressed: u.busy ? null : () => u.check(), child: const Text('เช็กอีกครั้ง')),
               FilledButton(
-                onPressed: u.url.isEmpty ? null : () => Native.openUrl(u.url),
-                child: Text(u.hasNew ? 'ดาวน์โหลด build-${u.latest}' : 'ดาวน์โหลดล่าสุด'),
+                onPressed: u.busy || u.assetApi.isEmpty ? null : u.downloadAndInstall,
+                child: Text(u.hasNew ? 'โหลด + ติดตั้ง build-${u.latest}' : 'โหลดตัวล่าสุด'),
               ),
             ],
           ),

@@ -441,6 +441,13 @@ class AppSettings extends ChangeNotifier {
   }
 
   // ---------- เช็กอัปเดตแอป ----------
+  /// token GitHub (อ่านอย่างเดียว) สำหรับเช็ก/โหลดอัปเดตจาก repo ส่วนตัว — ไม่ถูกสำรองลงไฟล์
+  String get ghToken => _s('ghToken', '');
+  set ghToken(String v) {
+    _p.setString('ghToken', v.trim());
+    notifyListeners();
+  }
+
   bool get updateAuto => _b('updateAuto', true);
   set updateAuto(bool v) => _setB('updateAuto', v);
   int get updateLast => _i('updateLast', 0);
@@ -580,7 +587,7 @@ class AppSettings extends ChangeNotifier {
   set graphSec(int v) => _setI('graphSec', v);
 
   // ---------- โปรไฟล์รถ + สำรองค่าตั้ง ----------
-  static const _noCopy = {'profNames', 'profCur', 'lastProfileSwitch'};
+  static const _noCopy = {'profNames', 'profCur', 'lastProfileSwitch', 'ghToken'};
   bool _isProfKey(String k) => k.startsWith('prof_') || _noCopy.contains(k);
 
   /// ค่าตั้งทั้งหมดเป็น JSON (ไม่รวมโปรไฟล์อื่น)

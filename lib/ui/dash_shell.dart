@@ -166,7 +166,9 @@ class _DashShellState extends State<DashShell> {
                       const Icon(Icons.system_update, color: kGreen, size: 20),
                       const SizedBox(width: 8),
                       Text('มีแอปใหม่ build-${u.latest}', style: const TextStyle(fontSize: 14)),
-                      TextButton(onPressed: () => Native.openUrl(u.url), child: const Text('อัปเดต')),
+                      TextButton(
+                          onPressed: u.busy ? null : u.downloadAndInstall,
+                          child: Text(u.progress >= 0 ? '${(u.progress * 100).round()}%' : 'อัปเดต')),
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.close, size: 18),

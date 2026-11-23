@@ -3,23 +3,28 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../settings.dart';
+import 'native.dart';
 
 /// เลข build ของแอปนี้ (ใส่ตอน build บน GitHub: --dart-define=BUILD=<run_number>)
 const int kBuild = int.fromEnvironment('BUILD');
 
-/// เช็กเวอร์ชันใหม่จากหน้า Releases ของ GitHub
+/// เช็ก/โหลดเวอร์ชันใหม่จาก Releases ของ GitHub
+///  repo เป็น private ได้: ใส่ token (อ่านอย่างเดียว) ในแอป -> เก็บไว้ในเครื่องนี้เท่านั้น ไม่ได้อยู่ในไฟล์ APK
+///  แอปโหลด APK เองแล้วเปิดหน้าติดตั้ง (ไม่มีลิงก์สาธารณะ)
 class Updater extends ChangeNotifier {
   Updater(this.s);
   final AppSettings s;
   static const _api = 'https://api.github.com/repos/kittitouch2404/didissnap/releases/latest';
 
   int latest = 0;
-  String url = '';
+  String assetApi = ''; // URL ของไฟล์ผ่าน API (ใช้ token โหลด)
   String status = '';
   bool busy = false;
   bool dismissed = false;
+  double progress = -1; // 0..1 ระหว่างโหลด
 
   void dismiss() {
     dismissed = true;
@@ -27,6 +32,14 @@ class Updater extends ChangeNotifier {
   }
 
   bool get hasNew => kBuild > 0 && latest > kBuild;
+
+  HttpClient _client() => HttpClient()..connectionTimeout = const Duration(seconds: 10);
+
+  void _auth(HttpClientRequest rq) {
+    rq.headers.set('User-Agent', 'didissnap-app');
+    final t = s.ghToken.trim();
+    if (t.isNotEmpty) rq.headers.set('Authorization', 'Bearer $t');
+  }
 
   /// auto = เช็กเองตอนเปิดแอป (ไม่เกินทุก 6 ชม.)
   Future<void> check({bool auto = false}) async {
@@ -36,7 +49,7 @@ class Updater extends ChangeNotifier {
       final last = DateTime.fromMillisecondsSinceEpoch(s.updateLast);
       if (DateTime.now().difference(last).inHours < 6 && s.updateSeen > 0) {
         latest = s.updateSeen;
-        url = s.updateUrl;
+        assetApi = s.updateUrl;
         notifyListeners();
         return;
       }
@@ -44,26 +57,84 @@ class Updater extends ChangeNotifier {
     busy = true;
     status = 'กำลังเช็ก...';
     notifyListeners();
-    final c = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    final c = _client();
     try {
       final rq = await c.getUrl(Uri.parse(_api));
       rq.headers.set('Accept', 'application/vnd.github+json');
-      rq.headers.set('User-Agent', 'didissnap-app');
-      final rs = await rq.close().timeout(const Duration(seconds: 10));
+      _auth(rq);
+      final rs = await rq.close().timeout(const Duration(seconds: 12));
       final body = await rs.transform(utf8.decoder).join();
+      if (rs.statusCode == 404 || rs.statusCode == 401) {
+        status = s.ghToken.trim().isEmpty ? 'repo เป็นส่วนตัว: ใส่ token ก่อน' : 'token ใช้ไม่ได้ / หมดอายุ';
+        return;
+      }
       if (rs.statusCode != 200) throw Exception('HTTP ${rs.statusCode}');
       final j = jsonDecode(body) as Map<String, dynamic>;
-      final tag = '${j['tag_name'] ?? ''}';
-      latest = int.tryParse(tag.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      latest = int.tryParse('${j['tag_name'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
       final assets = (j['assets'] as List?) ?? [];
-      url = assets.isNotEmpty ? '${assets.first['browser_download_url']}' : '${j['html_url'] ?? ''}';
-      s.setUpdateSeen(latest, url);
+      assetApi = assets.isNotEmpty ? '${assets.first['url']}' : '';
+      s.setUpdateSeen(latest, assetApi);
       status = hasNew ? 'มีเวอร์ชันใหม่ build-$latest' : 'ล่าสุดแล้ว (build-${kBuild > 0 ? kBuild : '?'})';
     } catch (e) {
       status = 'เช็กไม่ได้ (ไม่มีเน็ต?)';
     } finally {
       c.close(force: true);
       busy = false;
+      notifyListeners();
+    }
+  }
+
+  /// โหลด APK มาไว้ในแอป แล้วเปิดหน้าติดตั้ง
+  Future<void> downloadAndInstall() async {
+    if (busy || assetApi.isEmpty) return;
+    busy = true;
+    progress = 0;
+    status = 'กำลังโหลด...';
+    notifyListeners();
+    final c = _client()..autoUncompress = false;
+    try {
+      // 1) API ของไฟล์ -> ได้ลิงก์ชั่วคราว (redirect)  2) โหลดจากลิงก์นั้นโดยไม่ส่ง token ต่อ
+      final rq = await c.getUrl(Uri.parse(assetApi));
+      rq.followRedirects = false;
+      rq.headers.set('Accept', 'application/octet-stream');
+      _auth(rq);
+      var rs = await rq.close();
+      if (rs.isRedirect || rs.statusCode == 302 || rs.statusCode == 301) {
+        final loc = rs.headers.value(HttpHeaders.locationHeader);
+        await rs.drain<void>();
+        if (loc == null) throw Exception('no redirect');
+        final rq2 = await c.getUrl(Uri.parse(loc));
+        rq2.headers.set('User-Agent', 'didissnap-app');
+        rs = await rq2.close();
+      }
+      if (rs.statusCode != 200) throw Exception('HTTP ${rs.statusCode}');
+      final total = rs.contentLength;
+      final d = await getTemporaryDirectory();
+      final dir = Directory('${d.path}/updates');
+      await dir.create(recursive: true);
+      final f = File('${dir.path}/Didissnap.apk');
+      final sink = f.openWrite();
+      var got = 0;
+      await for (final ch in rs) {
+        sink.add(ch);
+        got += ch.length;
+        if (total > 0) {
+          progress = got / total;
+          notifyListeners();
+        }
+      }
+      await sink.close();
+      status = 'โหลดเสร็จ — กด "ติดตั้ง" ในหน้าต่างที่ขึ้นมา';
+      progress = -1;
+      notifyListeners();
+      final ok = await Native.installApk(f.path);
+      if (!ok) status = 'เปิดหน้าติดตั้งไม่ได้ — อนุญาต "ติดตั้งแอปที่ไม่รู้จัก" ให้แอปนี้ แล้วกดอีกครั้ง';
+    } catch (e) {
+      status = 'โหลดไม่สำเร็จ ($e)';
+    } finally {
+      c.close(force: true);
+      busy = false;
+      progress = -1;
       notifyListeners();
     }
   }

@@ -52,6 +52,25 @@ class MainActivity : FlutterActivity() {
         ch.setMethodCallHandler { call, result ->
             when (call.method) {
                 "launchReason" -> result.success(intent?.getStringExtra("autoStartReason"))
+                "installApk" -> {
+                    // เปิดหน้าติดตั้ง APK ที่แอปโหลดมาเอง (Android 8+ ต้องอนุญาต "ติดตั้งแอปที่ไม่รู้จัก")
+                    try {
+                        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+                            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                            result.success(false)
+                        } else {
+                            val f = java.io.File(call.argument<String>("path") ?: "")
+                            val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", f)
+                            startActivity(Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "application/vnd.android.package-archive")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
+                            result.success(true)
+                        }
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
                 "openUrl" -> {
                     try {
                         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(call.argument<String>("url") ?: "")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
