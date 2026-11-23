@@ -12,9 +12,12 @@ import '../data/key_sound.dart';
 import 'custom_logo.dart';
 import '../data/hub.dart';
 import '../data/native.dart';
+import '../data/services.dart';
 import '../settings.dart';
 import 'esp32_pics_ui.dart';
 import 'paint_utils.dart';
+
+part 'settings_more.dart';
 
 void _snack(BuildContext context, String msg) {
   ScaffoldMessenger.of(context)
@@ -30,7 +33,7 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 7,
+      length: 10,
       child: Scaffold(
         appBar: AppBar(
           toolbarHeight: 40,
@@ -40,6 +43,9 @@ class SettingsPage extends StatelessWidget {
             tabs: [
               Tab(height: 36, text: 'การเชื่อมต่อ'),
               Tab(height: 36, text: 'หน้าปัด'),
+              Tab(height: 36, text: 'ทริป/เตือน'),
+              Tab(height: 36, text: 'บันทึก CSV'),
+              Tab(height: 36, text: 'รถ/สำรอง'),
               Tab(height: 36, text: 'เกียร์'),
               Tab(height: 36, text: 'รูปพื้นหลัง'),
               Tab(height: 36, text: 'DTC'),
@@ -51,6 +57,9 @@ class SettingsPage extends StatelessWidget {
         body: TabBarView(children: [
           ConnectionTab(settings: settings, hub: hub),
           DisplayTab(settings: settings, hub: hub),
+          TripAlertTab(settings: settings, hub: hub),
+          LogTab(settings: settings, hub: hub),
+          ProfileTab(settings: settings),
           GearTab(settings: settings, hub: hub),
           PicturesTab(settings: settings, hub: hub),
           DtcTab(hub: hub),
@@ -499,10 +508,11 @@ class DisplayTab extends StatelessWidget {
           ListTile(
             dense: true,
             title: const Text('TRIP (ระยะทางที่คำนวณจากความเร็ว)'),
-            subtitle: Text('${hub.data.trip.toStringAsFixed(1)} km'),
+            subtitle: Text('ทริป A ${s.live('tripA').toStringAsFixed(1)} km (รีเซ็ต/ทริป B ดูที่แท็บ ทริป/เตือน)'),
             trailing: FilledButton.tonal(
               onPressed: () {
                 hub.data.trip = 0;
+                s.resetTrip('A');
                 _snack(context, 'รีเซ็ต TRIP แล้ว');
               },
               child: const Text('รีเซ็ต'),

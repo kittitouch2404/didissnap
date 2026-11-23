@@ -9,6 +9,7 @@ import 'demo_source.dart';
 import 'elm_source.dart';
 import 'esp32_source.dart';
 import 'perf.dart';
+import 'services.dart';
 
 enum LinkState { idle, connecting, connected, error }
 
@@ -32,10 +33,35 @@ String errText(Object e) {
 class DataHub extends ChangeNotifier {
   DataHub(this.settings) {
     settings.addListener(_onSettings);
-    _tripTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
-      if (state == LinkState.connected) data.trip += data.speed * 0.25 / 3600;
-    });
+    _tripTimer = Timer.periodic(const Duration(milliseconds: 100), (_) => _tick());
     cyd = CydLink(settings, this)..start();
+  }
+
+  late final AlertEngine alerts = AlertEngine(settings);
+  late final DataLogger logger = DataLogger(settings);
+  final History history = History();
+  DateTime _lastTick = DateTime.now(), _lastFlush = DateTime.now();
+
+  /// ทุก 0.1 วินาที: ทริป / น้ำมัน / เตือน / บันทึก / กราฟ
+  void _tick() {
+    final now = DateTime.now();
+    final dt = (now.difference(_lastTick).inMicroseconds / 1e6).clamp(0.0, 1.0);
+    _lastTick = now;
+    final conn = state == LinkState.connected;
+    if (conn) {
+      final km = data.speed * dt / 3600;
+      data.trip += km;
+      final lph = data.fuelLph;
+      final fresh = lph != null && now.difference(data.mafAt).inSeconds < 5;
+      settings.addTrip(km, fresh ? lph * dt / 3600 : 0, fresh ? km : 0);
+      history.add(data, settings);
+    }
+    if (now.difference(_lastFlush).inSeconds >= 10) {
+      _lastFlush = now;
+      settings.flushTrip();
+    }
+    alerts.tick(data, conn);
+    logger.tick(data, conn);
   }
 
   /// ส่งค่าต่อให้จอ ESP32 CYD ทาง WiFi
@@ -124,6 +150,8 @@ class DataHub extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _tripTimer?.cancel();
+    settings.flushTrip();
+    logger.close();
     cyd.dispose();
     perf.dispose();
     settings.removeListener(_onSettings);

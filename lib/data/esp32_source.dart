@@ -15,6 +15,7 @@ class Esp32Source implements CarSource {
   final int port;
 
   DataHub? _hub;
+  double get _cal => _hub?.settings.speedCal ?? 1.0;
   Socket? _s;
   bool _running = false;
   Completer<Map<String, dynamic>>? _reply;
@@ -119,7 +120,8 @@ class Esp32Source implements CarSource {
     if (d == null) return;
     double? n(String k) => (m[k] is num) ? (m[k] as num).toDouble() : null;
     d.rpm = n('rpm') ?? d.rpm;
-    d.speed = n('spd') ?? d.speed;
+    final sp = n('spd');
+    if (sp != null) d.speed = sp * _cal;
     d.ect = n('ect') ?? d.ect;
     d.iat = n('iat') ?? d.iat;
     d.volt = n('volt') ?? d.volt;

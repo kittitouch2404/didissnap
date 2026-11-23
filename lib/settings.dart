@@ -23,6 +23,7 @@ const List<(String, String)> kPages = [
   ('perf', 'Record (จับเวลาออกตัว 0-100, 1/4 ไมล์)'),
   ('pids', 'ตารางค่า OBD2 ทั้งหมด'),
   ('picture', 'รูปพื้นหลังของคุณ'),
+  ('graph', 'กราฟสด (3 ค่า ย้อนหลัง)'),
   ('gif1', 'GIF 1 (แบบหน้า 9 จอ CYD)'),
   ('gif2', 'GIF 2 (แบบหน้า 10 จอ CYD)'),
   ('gif3', 'GIF 3 (แบบหน้า 11 จอ CYD)'),
@@ -386,5 +387,246 @@ class AppSettings extends ChangeNotifier {
   void notifyListeners() {
     _activeCache = null;
     super.notifyListeners();
+  }
+
+  // ---------- ความเร็ว: ชดเชยให้ตรงจริง (x1000 เช่น 1035 = +3.5%) ----------
+  int get speedCal1000 => _i('speedCal', 1000);
+  set speedCal1000(int v) => _setI('speedCal', v);
+  double get speedCal => speedCal1000 / 1000.0;
+
+  // ---------- ทริป A / B + น้ำมัน (เก็บถาวร ไม่หายตอนปิดแอป) ----------
+  double _d(String k) => _p.getDouble(k) ?? 0;
+  double get tripA => _d('tripA');
+  double get tripB => _d('tripB');
+  double get fuelA => _d('fuelA');
+  double get fuelB => _d('fuelB');
+  double get fuelKmA => _d('fuelKmA');
+  double get fuelKmB => _d('fuelKmB');
+  double get oilKm => _d('oilKm');
+
+  /// เพิ่มระยะ/น้ำมัน (เรียกจาก DataHub)  save = เขียนลงเครื่อง
+  final Map<String, double> _acc = {};
+  void addTrip(double km, double fuelL, double fuelKm) {
+    for (final k in ['tripA', 'tripB', 'oilKm']) {
+      _acc[k] = (_acc[k] ?? _d(k)) + km;
+    }
+    for (final k in ['fuelA', 'fuelB']) {
+      _acc[k] = (_acc[k] ?? _d(k)) + fuelL;
+    }
+    for (final k in ['fuelKmA', 'fuelKmB']) {
+      _acc[k] = (_acc[k] ?? _d(k)) + fuelKm;
+    }
+  }
+
+  double live(String k) => _acc[k] ?? _d(k);
+
+  void flushTrip() {
+    _acc.forEach((k, v) => _p.setDouble(k, v));
+    _acc.clear();
+  }
+
+  void resetTrip(String ab) {
+    for (final k in ['trip$ab', 'fuel$ab', 'fuelKm$ab']) {
+      _acc.remove(k);
+      _p.setDouble(k, 0);
+    }
+    notifyListeners();
+  }
+
+  // ---------- เตือนเปลี่ยนถ่ายน้ำมันเครื่อง ----------
+  int get oilEvery => _i('oilEvery', 5000);
+  set oilEvery(int v) => _setI('oilEvery', v);
+  void resetOil() {
+    _acc.remove('oilKm');
+    _p.setDouble('oilKm', 0);
+    notifyListeners();
+  }
+
+  // ---------- เตือน (เสียง + แถบบนจอ) ----------
+  bool get alertEct => _b('alertEct', true);
+  set alertEct(bool v) => _setB('alertEct', v);
+  bool get alertVolt => _b('alertVolt', true);
+  set alertVolt(bool v) => _setB('alertVolt', v);
+  int get alertVolt10 => _i('alertVolt10', 118);
+  set alertVolt10(int v) => _setI('alertVolt10', v);
+  bool get alertShift => _b('alertShift', false);
+  set alertShift(bool v) => _setB('alertShift', v);
+  int get alertShiftRpm => _i('alertShiftRpm', 0); // 0 = ใช้ค่าไฟ Shift
+  set alertShiftRpm(int v) => _setI('alertShiftRpm', v);
+  bool get alertSpeed => _b('alertSpeed', false);
+  set alertSpeed(bool v) => _setB('alertSpeed', v);
+  int get alertSpeedKmh => _i('alertSpeedKmh', 120);
+  set alertSpeedKmh(int v) => _setI('alertSpeedKmh', v);
+  int get alertVol => _i('alertVol', 80);
+  set alertVol(int v) => _setI('alertVol', v);
+
+  // ---------- โหมดกลางคืน (หรี่จอตามเวลา) ----------
+  bool get nightOn => _b('nightOn', false);
+  set nightOn(bool v) => _setB('nightOn', v);
+  int get nightFrom => _i('nightFrom', 18);
+  set nightFrom(int v) => _setI('nightFrom', v);
+  int get nightTo => _i('nightTo', 6);
+  set nightTo(int v) => _setI('nightTo', v);
+  int get nightLevel => _i('nightLevel', 35);
+  set nightLevel(int v) => _setI('nightLevel', v);
+  int get dayLevel => _i('dayLevel', 0); // 0 = ตามระบบ
+  set dayLevel(int v) => _setI('dayLevel', v);
+
+  // ---------- บันทึกค่า (CSV) ----------
+  bool get logOn => _b('logOn', false);
+  set logOn(bool v) => _setB('logOn', v);
+  int get logHz => _i('logHz', 5);
+  set logHz(int v) => _setI('logHz', v);
+
+  // ---------- หน้ากราฟ: 3 ค่า ----------
+  List<int> get graphSel {
+    final l = _p.getStringList('graphSel');
+    final v = l?.map((e) => int.tryParse(e) ?? 0).toList() ?? [0, 2, 4];
+    return v.length == 3 ? v : [0, 2, 4];
+  }
+
+  set graphSel(List<int> v) {
+    _p.setStringList('graphSel', v.map((e) => '$e').toList());
+    notifyListeners();
+  }
+
+  int get graphSec => _i('graphSec', 30);
+  set graphSec(int v) => _setI('graphSec', v);
+
+  // ---------- โปรไฟล์รถ + สำรองค่าตั้ง ----------
+  static const _noCopy = {'profNames', 'profCur', 'lastProfileSwitch'};
+  bool _isProfKey(String k) => k.startsWith('prof_') || _noCopy.contains(k);
+
+  /// ค่าตั้งทั้งหมดเป็น JSON (ไม่รวมโปรไฟล์อื่น)
+  Map<String, dynamic> snapshot() {
+    flushTrip();
+    final m = <String, dynamic>{};
+    for (final k in _p.getKeys()) {
+      if (_isProfKey(k)) continue;
+      final v = _p.get(k);
+      if (v is List) {
+        m[k] = {'l': v.map((e) => '$e').toList()};
+      } else if (v is bool) {
+        m[k] = {'b': v};
+      } else if (v is int) {
+        m[k] = {'i': v};
+      } else if (v is double) {
+        m[k] = {'d': v};
+      } else if (v is String) {
+        m[k] = {'s': v};
+      }
+    }
+    return m;
+  }
+
+  Future<void> applySnapshot(Map<String, dynamic> m) async {
+    _acc.clear();
+    for (final k in _p.getKeys().toList()) {
+      if (!_isProfKey(k)) await _p.remove(k);
+    }
+    for (final e in m.entries) {
+      if (_isProfKey(e.key)) continue;
+      final v = e.value;
+      if (v is! Map) continue;
+      if (v.containsKey('b')) await _p.setBool(e.key, v['b'] == true);
+      if (v.containsKey('i')) await _p.setInt(e.key, (v['i'] as num).toInt());
+      if (v.containsKey('d')) await _p.setDouble(e.key, (v['d'] as num).toDouble());
+      if (v.containsKey('s')) await _p.setString(e.key, '${v['s']}');
+      if (v.containsKey('l')) await _p.setStringList(e.key, (v['l'] as List).map((x) => '$x').toList());
+    }
+    _gifCache.clear();
+    _cpCache.clear();
+    notifyListeners();
+  }
+
+  List<String> get profiles => _p.getStringList('profNames') ?? ['รถคันที่ 1'];
+  int get profCur => _i('profCur', 0).clamp(0, profiles.length - 1);
+
+  Future<void> switchProfile(int to) async {
+    final names = profiles;
+    if (to < 0 || to >= names.length || to == profCur) return;
+    await _p.setString('prof_${profCur}', jsonEncode(snapshot()));
+    final raw = _p.getString('prof_$to');
+    await _p.setInt('profCur', to);
+    if (raw != null) {
+      try {
+        await applySnapshot(jsonDecode(raw) as Map<String, dynamic>);
+      } catch (_) {}
+    }
+    notifyListeners();
+  }
+
+  /// เพิ่มรถคันใหม่ (เริ่มจากค่าตั้งของคันปัจจุบัน)
+  Future<void> addProfile(String name) async {
+    final names = [...profiles, name];
+    await _p.setStringList('profNames', names);
+    await _p.setString('prof_${names.length - 1}', jsonEncode(snapshot()));
+    await switchProfile(names.length - 1);
+  }
+
+  Future<void> renameProfile(int i, String name) async {
+    final names = [...profiles];
+    if (i < 0 || i >= names.length) return;
+    names[i] = name;
+    await _p.setStringList('profNames', names);
+    notifyListeners();
+  }
+
+  Future<void> deleteProfile(int i) async {
+    final names = [...profiles];
+    if (names.length <= 1 || i == profCur) return;
+    // เลื่อนข้อมูลโปรไฟล์ที่อยู่หลังขึ้นมา
+    for (var k = i; k < names.length - 1; k++) {
+      final nx = _p.getString('prof_${k + 1}');
+      if (nx != null) {
+        await _p.setString('prof_$k', nx);
+      } else {
+        await _p.remove('prof_$k');
+      }
+    }
+    await _p.remove('prof_${names.length - 1}');
+    names.removeAt(i);
+    final cur = profCur;
+    await _p.setStringList('profNames', names);
+    if (i < cur) await _p.setInt('profCur', cur - 1);
+    notifyListeners();
+  }
+
+  /// สำรองทั้งหมด (ค่าตั้งปัจจุบัน + ทุกโปรไฟล์)
+  String exportAll() {
+    final profs = <String, dynamic>{};
+    for (var i = 0; i < profiles.length; i++) {
+      final r = _p.getString('prof_$i');
+      if (r != null) profs['$i'] = r;
+    }
+    return const JsonEncoder.withIndent(' ').convert({
+      'app': 'didissnap',
+      'ver': 1,
+      'current': snapshot(),
+      'profNames': profiles,
+      'profCur': profCur,
+      'profiles': profs,
+    });
+  }
+
+  Future<bool> importAll(String text) async {
+    try {
+      final j = jsonDecode(text) as Map<String, dynamic>;
+      if (j['app'] != 'didissnap') return false;
+      final names = (j['profNames'] as List?)?.map((e) => '$e').toList() ?? ['รถคันที่ 1'];
+      for (final k in _p.getKeys().toList()) {
+        if (k.startsWith('prof_')) await _p.remove(k);
+      }
+      await _p.setStringList('profNames', names);
+      await _p.setInt('profCur', ((j['profCur'] as num?) ?? 0).toInt().clamp(0, names.length - 1));
+      final profs = (j['profiles'] as Map?) ?? {};
+      for (final e in profs.entries) {
+        await _p.setString('prof_${e.key}', '${e.value}');
+      }
+      await applySnapshot((j['current'] as Map).cast<String, dynamic>());
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 }

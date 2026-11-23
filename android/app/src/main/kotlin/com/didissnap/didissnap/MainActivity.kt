@@ -50,6 +50,58 @@ class MainActivity : FlutterActivity() {
         ch.setMethodCallHandler { call, result ->
             when (call.method) {
                 "launchReason" -> result.success(intent?.getStringExtra("autoStartReason"))
+                "tone" -> {
+                    // เสียงเตือน: ToneGenerator ออกลำโพงเพลง (ลำโพงรถ) ไม่มีดีเลย์
+                    val kind = call.argument<Int>("kind") ?: 0
+                    val ms = call.argument<Int>("ms") ?: 200
+                    val vol = (call.argument<Int>("vol") ?: 80).coerceIn(0, 100)
+                    io.execute {
+                        try {
+                            val tg = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, vol)
+                            val t = when (kind) {
+                                1 -> android.media.ToneGenerator.TONE_CDMA_HIGH_L        // เตือนแรง (น้ำร้อน)
+                                2 -> android.media.ToneGenerator.TONE_PROP_BEEP2         // shift
+                                3 -> android.media.ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD
+                                else -> android.media.ToneGenerator.TONE_PROP_BEEP
+                            }
+                            tg.startTone(t, ms)
+                            Thread.sleep((ms + 80).toLong())
+                            tg.release()
+                        } catch (e: Exception) {
+                        }
+                    }
+                    result.success(true)
+                }
+                "brightness" -> {
+                    // ความสว่างของหน้าจอแอป (0..1, ติดลบ = ตามระบบ)
+                    val v = call.argument<Double>("v") ?: -1.0
+                    val lp = window.attributes
+                    lp.screenBrightness = if (v < 0) android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE else v.toFloat().coerceIn(0.01f, 1f)
+                    window.attributes = lp
+                    result.success(true)
+                }
+                "saveToDownloads" -> {
+                    val src = call.argument<String>("path") ?: ""
+                    val name = call.argument<String>("name") ?: java.io.File(src).name
+                    val mime = call.argument<String>("mime") ?: "text/plain"
+                    io.execute {
+                        val ok = saveToDownloads(java.io.File(src), name, mime)
+                        mainHandler.post { result.success(ok) }
+                    }
+                }
+                "pickText" -> {
+                    pendingText?.success(null)
+                    pendingText = result
+                    try {
+                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                        }, REQ_TEXT)
+                    } catch (e: Exception) {
+                        pendingText = null
+                        result.success(null)
+                    }
+                }
                 "pickAudio" -> {
                     pendingAudio?.success(null)
                     pendingAudio = result
@@ -160,11 +212,45 @@ class MainActivity : FlutterActivity() {
 
     private var chan: MethodChannel? = null
     private var pendingAudio: MethodChannel.Result? = null
+    private var pendingText: MethodChannel.Result? = null
+
+    /** ก๊อปไฟล์ไปไว้ในโฟลเดอร์ Download ของเครื่อง (เปิดด้วยแอปไฟล์ได้) */
+    private fun saveToDownloads(src: java.io.File, name: String, mime: String): Boolean = try {
+        if (Build.VERSION.SDK_INT >= 29) {
+            val v = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.Downloads.MIME_TYPE, mime)
+                put(android.provider.MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/Didissnap")
+            }
+            val uri = contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v)!!
+            contentResolver.openOutputStream(uri)!!.use { out -> src.inputStream().use { it.copyTo(out) } }
+            true
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "Didissnap")
+            dir.mkdirs()
+            src.copyTo(java.io.File(dir, name), overwrite = true)
+            true
+        }
+    } catch (e: Exception) {
+        false
+    }
 
     /** เลือกไฟล์เสียงเอง: ก๊อปไว้ในโฟลเดอร์แอป (ไฟล์ต้นฉบับย้าย/ลบได้) */
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_TEXT) {
+            val r = pendingText ?: return
+            pendingText = null
+            val u = data?.data
+            if (resultCode != RESULT_OK || u == null) { r.success(null); return }
+            io.execute {
+                val txt = try { contentResolver.openInputStream(u)!!.use { it.readBytes().toString(Charsets.UTF_8) } } catch (e: Exception) { null }
+                mainHandler.post { r.success(txt) }
+            }
+            return
+        }
         if (requestCode != REQ_AUDIO) return
         val res = pendingAudio ?: return
         pendingAudio = null
@@ -379,5 +465,6 @@ class MainActivity : FlutterActivity() {
         private const val REQ_BT = 4711
         private const val REQ_NOTIF = 4712
         private const val REQ_AUDIO = 4713
+        private const val REQ_TEXT = 4714
     }
 }

@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import '../data/native.dart';
 
 import '../data/hub.dart';
 import '../settings.dart';
 import 'live.dart';
 import 'gif_pages.dart';
+import 'graph_page.dart';
 import 'paint_utils.dart';
 import 'picture_dash.dart';
 import 'pro_pages.dart';
@@ -38,6 +43,23 @@ class _DashShellState extends State<DashShell> {
     _pc = PageController(initialPage: _page);
     widget.settings.addListener(_onSettings);
     _updateMode();
+    _night();
+    _nightT = Timer.periodic(const Duration(seconds: 30), (_) => _night());
+  }
+
+  // ---- โหมดกลางคืน: หรี่จอตามเวลา ----
+  Timer? _nightT;
+  double? _bright;
+  void _night() {
+    final s = widget.settings;
+    final h = DateTime.now().hour;
+    final isNight = s.nightOn &&
+        (s.nightFrom <= s.nightTo ? (h >= s.nightFrom && h < s.nightTo) : (h >= s.nightFrom || h < s.nightTo));
+    final v = isNight ? s.nightLevel / 100.0 : (s.dayLevel > 0 ? s.dayLevel / 100.0 : -1.0);
+    if (v != _bright) {
+      _bright = v;
+      Native.brightness(v);
+    }
   }
 
   /// บอกฝั่งอ่านค่าว่าหน้าที่แสดงอยู่ต้องการข้อมูลแบบไหน
@@ -52,6 +74,7 @@ class _DashShellState extends State<DashShell> {
   }
 
   void _onSettings() {
+    _night();
     final ids = widget.settings.pages;
     if (ids.join(',') == _ids.join(',')) return;
     setState(() {
@@ -67,6 +90,7 @@ class _DashShellState extends State<DashShell> {
   @override
   void dispose() {
     widget.settings.removeListener(_onSettings);
+    _nightT?.cancel();
     _pc.dispose();
     super.dispose();
   }
@@ -97,6 +121,7 @@ class _DashShellState extends State<DashShell> {
       'center' => paint((f) => CenterTachPainter(f)),
       'perf' => PerfPage(key: ValueKey(id), hub: hub),
       'pids' => PidsPage(key: ValueKey(id), hub: hub),
+      'graph' => GraphPage(key: ValueKey(id), hub: hub),
       'gif1' || 'gif2' || 'gif3' || 'gif4' || 'gif5' =>
         GifPage(key: ValueKey(id), index: int.parse(id.substring(3)) - 1, hub: hub),
       _ => LiveBuilder(
@@ -121,6 +146,13 @@ class _DashShellState extends State<DashShell> {
             children: [for (final id in _ids) _pageFor(id)],
           ),
           Positioned(top: 6, left: 8, child: StatusChip(hub: hub)),
+          // แถบเตือน (น้ำร้อน / แบตต่ำ / เร็วเกิน / เปลี่ยนน้ำมันเครื่อง)
+          Positioned(
+            top: 6,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(child: Center(child: _AlertBanner(hub: hub))),
+          ),
           Positioned(top: 6, right: 8, child: _MenuButton(onTap: _openMenu)),
           Positioned(
             bottom: 3,
@@ -231,6 +263,72 @@ class _Dots extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+
+class _AlertBanner extends StatefulWidget {
+  const _AlertBanner({required this.hub});
+  final DataHub hub;
+  @override
+  State<_AlertBanner> createState() => _AlertBannerState();
+}
+
+class _AlertBannerState extends State<_AlertBanner> {
+  Timer? _blink;
+  bool _on = true;
+  @override
+  void initState() {
+    super.initState();
+    _blink = Timer.periodic(const Duration(milliseconds: 450), (_) {
+      if (mounted) setState(() => _on = !_on);
+    });
+  }
+
+  @override
+  void dispose() {
+    _blink?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<(String, bool)?>(
+      valueListenable: widget.hub.alerts.banner,
+      builder: (_, a, __) {
+        final rec = widget.hub.settings.logOn && widget.hub.state == LinkState.connected;
+        return Row(mainAxisSize: MainAxisSize.min, children: [
+          if (rec)
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(10)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(width: 8, height: 8, decoration: const BoxDecoration(color: kRed, shape: BoxShape.circle)),
+                const SizedBox(width: 5),
+                const Text('REC', style: TextStyle(fontSize: 11, color: Colors.white70, fontWeight: FontWeight.w700)),
+              ]),
+            ),
+          if (a != null)
+            AnimatedOpacity(
+              opacity: _on ? 1 : 0.55,
+              duration: const Duration(milliseconds: 200),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+                decoration: BoxDecoration(
+                  color: a.$2 ? const Color(0xE6D0101E) : const Color(0xE6E07800),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 22),
+                  const SizedBox(width: 8),
+                  Text(a.$1, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white)),
+                ]),
+              ),
+            ),
+        ]);
+      },
     );
   }
 }

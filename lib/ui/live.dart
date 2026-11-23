@@ -141,9 +141,9 @@ class _LiveValues {
       cust: [for (var k = 0; k < 4; k++) d.custNow(k)],
       timing: d.timing,
       fuelLph: d.fuelLph == null || DateTime.now().difference(d.mafAt).inSeconds > 5 ? null : d.fuelLph,
-      fuelAvg: d.fuelUsedL > 0.01 && d.fuelKm > 0.1 ? math.min(99.9, d.fuelKm / d.fuelUsedL) : null,
+      fuelAvg: s.live('fuelA') > 0.02 && s.live('fuelKmA') > 0.2 ? math.min(99.9, s.live('fuelKmA') / s.live('fuelA')) : null,
       cvtTemp: d.cvtTemp != null && DateTime.now().difference(d.cvtAt).inSeconds < 5 ? d.cvtTemp : null,
-      trip: d.trip,
+      trip: s.live('tripA'),   // ทริป A (เก็บถาวร)
     );
   }
 }

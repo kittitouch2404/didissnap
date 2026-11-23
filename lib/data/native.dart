@@ -47,6 +47,36 @@ class Native {
     }
   }
 
+  /// เสียงเตือน (0 บี๊บ, 1 เตือนแรง, 2 shift, 3 เตือนยาว)
+  static Future<void> tone(int kind, int ms, int vol) async {
+    try {
+      await m.invokeMethod('tone', {'kind': kind, 'ms': ms, 'vol': vol});
+    } catch (_) {}
+  }
+
+  /// ความสว่างจอของแอป 0..1  (ติดลบ = ตามระบบ)
+  static Future<void> brightness(double v) async {
+    try {
+      await m.invokeMethod('brightness', {'v': v});
+    } catch (_) {}
+  }
+
+  static Future<bool> saveToDownloads(String path, String name, String mime) async {
+    try {
+      return (await m.invokeMethod<bool>('saveToDownloads', {'path': path, 'name': name, 'mime': mime})) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<String?> pickText() async {
+    try {
+      return await m.invokeMethod<String>('pickText');
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<void> bindWifi() async {
     try {
       await m.invokeMethod('bindWifi', {'on': true});
