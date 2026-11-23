@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../settings.dart';
+import 'c3_source.dart';
 import 'car_data.dart';
 import 'cyd_link.dart';
 import 'demo_source.dart';
@@ -113,6 +114,7 @@ class DataHub extends ChangeNotifier {
       SourceType.wifiElm => ElmSource(
           'WiFi', () => TcpTransport(settings.elmHost, settings.elmPort)),
       SourceType.esp32 => Esp32Source(settings.espHost, settings.espPort),
+      SourceType.c3 => C3Source(),
     };
     _src = s;
     s.start(this);

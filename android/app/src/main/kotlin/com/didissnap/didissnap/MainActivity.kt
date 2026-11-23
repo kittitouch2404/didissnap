@@ -52,6 +52,16 @@ class MainActivity : FlutterActivity() {
         ch.setMethodCallHandler { call, result ->
             when (call.method) {
                 "launchReason" -> result.success(intent?.getStringExtra("autoStartReason"))
+                "c3Start" -> {
+                    if (c3 == null) c3 = C3Ble(this, { b -> c3Sink?.success(b) }, { st -> c3Sink?.success(st) })
+                    c3?.start()
+                    result.success(true)
+                }
+                "c3Stop" -> {
+                    c3?.stop()
+                    result.success(true)
+                }
+                "c3Write" -> result.success(c3?.write(call.argument<ByteArray>("b") ?: ByteArray(0)) ?: false)
                 "deviceInfo" -> result.success(
                     "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}) · ${resources.displayMetrics.widthPixels}x${resources.displayMetrics.heightPixels}"
                 )
@@ -256,6 +266,12 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // C3 (BLE): แพ็กเก็ต (ByteArray) + สถานะ (String)
+        EventChannel(messenger, "didissnap/c3").setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) { c3Sink = events }
+            override fun onCancel(arguments: Any?) { c3Sink = null }
+        })
+
         // GPS: ความเร็ว (m/s) + ความแม่นยำ ส่งให้ Flutter ทุก ~1 วินาที
         EventChannel(messenger, "didissnap/gps").setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -284,6 +300,8 @@ class MainActivity : FlutterActivity() {
     private var pendingAudio: MethodChannel.Result? = null
     private var pendingText: MethodChannel.Result? = null
     private var pendingFile: MethodChannel.Result? = null
+    private var c3: C3Ble? = null
+    private var c3Sink: EventChannel.EventSink? = null
 
     // ---------------- เสียงเตือน ----------------
     private var player: android.media.MediaPlayer? = null
@@ -481,7 +499,8 @@ class MainActivity : FlutterActivity() {
     private fun hasConnectPermission(): Boolean {
         if (Build.VERSION.SDK_INT < 31) return true
         return checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
-            PackageManager.PERMISSION_GRANTED
+            PackageManager.PERMISSION_GRANTED &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun ensurePermission(result: MethodChannel.Result) {
@@ -492,7 +511,7 @@ class MainActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT >= 31) {
             pendingPermission?.success(false)
             pendingPermission = result
-            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), REQ_BT)
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN), REQ_BT)
         } else {
             result.success(true)
         }
@@ -506,7 +525,7 @@ class MainActivity : FlutterActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_BT) {
             val ok = grantResults.isNotEmpty() &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED
+                grantResults.all { it == PackageManager.PERMISSION_GRANTED }
             pendingPermission?.success(ok)
             pendingPermission = null
         }

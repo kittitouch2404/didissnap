@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- BLE: หา ESP32-C3 (ตัวอ่าน OBD) -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
 
     <!-- เปิดแอปอัตโนมัติ -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

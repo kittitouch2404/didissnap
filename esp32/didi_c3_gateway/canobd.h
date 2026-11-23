@@ -103,4 +103,52 @@ inline int request(const uint8_t* req, int rl, uint8_t* resp, int maxLen, uint32
   return total > 0 ? got : -1;
 }
 
+// ถามด้วย ID ที่เลือกเอง (Custom PID เช่น 0x7E1 กล่องเกียร์) — คืนคำตอบดิบรวม 7F (ปฏิเสธ) · ไม่เปลี่ยน ecuRx
+inline int requestTo(uint32_t tx, const uint8_t* req, int rl, uint8_t* resp, int maxLen, uint32_t timeoutMs) {
+  if (!on || rl < 1 || rl > 7) return -1;
+  drain();
+  uint8_t d[8] = {(uint8_t)rl, 0, 0, 0, 0, 0, 0, 0};
+  memcpy(d + 1, req, rl);
+  if (!sendFrame(tx, d)) return -1;
+  uint32_t want = tx == 0x7DF ? 0 : tx + 8;
+  uint32_t t0 = millis();
+  int total = -1, got = 0;
+  uint32_t from = 0;
+  twai_message_t m;
+  while (millis() - t0 < timeoutMs) {
+    if (twai_receive(&m, pdMS_TO_TICKS(10)) != ESP_OK) continue;
+    if (m.data_length_code < 2) continue;
+    if (want ? m.identifier != want : (m.identifier < 0x7E8 || m.identifier > 0x7EF)) continue;
+    if (from && m.identifier != from) continue;
+    uint8_t pci = m.data[0] >> 4;
+    if (pci == 0) {
+      int len = m.data[0] & 15;
+      if (len < 1 || len > 7) continue;
+      if (m.data[1] == 0x7F && len >= 3 && m.data[3] == 0x78) { t0 = millis(); continue; }   // รอสักครู่ (กำลังทำ)
+      if (m.data[1] != 0x7F && m.data[1] != (uint8_t)(req[0] + 0x40)) continue;
+      len = min(len, maxLen);
+      memcpy(resp, m.data + 1, len);
+      return len;
+    }
+    if (pci == 1 && total < 0) {
+      total = ((m.data[0] & 15) << 8) | m.data[1];
+      if (m.data[2] != (uint8_t)(req[0] + 0x40)) { total = -1; continue; }
+      from = m.identifier;
+      got = min(6, min(total, maxLen));
+      memcpy(resp, m.data + 2, got);
+      uint8_t fc[8] = {0x30, 0, 0, 0, 0, 0, 0, 0};
+      sendFrame(from - 8, fc);
+      t0 = millis();
+      continue;
+    }
+    if (pci == 2 && total > 0 && m.identifier == from) {
+      int k = min(7, total - got);
+      if (got + k > maxLen) k = maxLen - got;
+      if (k > 0) { memcpy(resp + got, m.data + 1, k); got += k; }
+      if (got >= total || got >= maxLen) return got;
+    }
+  }
+  return total > 0 ? got : -1;
+}
+
 }  // namespace canobd

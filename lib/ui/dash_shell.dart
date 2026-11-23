@@ -223,6 +223,7 @@ class StatusChip extends StatelessWidget {
           SourceType.btElm => 'BT',
           SourceType.wifiElm => 'WiFi',
           SourceType.esp32 => 'ESP32',
+          SourceType.c3 => 'C3',
         };
         return GestureDetector(
           onTap: () => ScaffoldMessenger.of(context)

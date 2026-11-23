@@ -50,6 +50,18 @@ class Text extends StatelessWidget {
 }
 
 const Map<String, String> _en = {
+  'ที่ช่อง': 'at the',
+  'C3 อ่าน': 'C3 reads',
+  'เอง แล้วส่งให้แอป': 'itself and sends to the app',
+  'พร้อมกัน ไม่ต้องใช้': 'at the same time, no need for',
+  'ขอสิทธิ์': 'Requesting permission',
+  'กำลังหา': 'Searching for',
+  'กำลังหารถ': 'searching for the car',
+  'รอค่า': 'waiting for data',
+  'ของเครื่องก่อน': 'on the device first',
+  'ไม่ตอบ': 'not responding',
+  'อ่านโค้ดไม่สำเร็จ': 'Reading codes failed',
+  'อื่นไม่ได้': 'other cannot be used',
   'หลายค่า': 'multi-PID',
   'ดับ': 'off',
   'ต่อแล้ว': 'connected',

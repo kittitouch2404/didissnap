@@ -354,8 +354,7 @@ void setup() {
   menu::dtcPoll = [](char* b, size_t n) { return gwOnly ? didinow::gwPollDtc(b, n) : obdOn ? obdble::pollDtc(b, n) : 0; };
   step(11, "obd ble");
   if (skip(11)) Serial.println("SAFE MODE: skip OBD BLE");
-  else if (menu::obdMode >= 2) {                   // C3: ไม่เปิด Bluetooth เลย (RAM เหลือให้วาด 2 คอร์)
-    if (!wifiOn) Serial.println("C3 mode needs WiFi (ESP-NOW) — WiFi is off");
+  else if (menu::obdMode >= 2) {                   // C3: ต่อ ESP32-C3 ทาง Bluetooth (BLE) — ไม่ต้องเปิด WiFi
     gwOnly = true;
     didinow::gwBegin(menu::obdMode == 3);
     didilink::onDtcRead = didinow::gwReadDtc;

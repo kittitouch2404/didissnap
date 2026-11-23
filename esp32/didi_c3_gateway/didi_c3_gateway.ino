@@ -1,5 +1,6 @@
-// didi_c3_gateway — ESP32-C3 Super Mini เสียบช่อง OBD2: อ่านค่าจากรถ (CAN หรือ K-line) แล้วส่งทาง ESP-NOW
-//  ให้จอ ESP32-S3 4.3" และจอ CYD 2.8" (กี่จอก็ได้) — ไม่ต้องใช้ตัวอ่าน ELM327/Bluetooth
+// didi_c3_gateway — ESP32-C3 Super Mini เสียบช่อง OBD2: อ่านค่าจากรถ (CAN หรือ K-line) แล้วส่งทาง Bluetooth (BLE)
+//  ให้จอ ESP32-S3 4.3", จอ CYD 2.8" และแอปบนจอแอนดรอยด์ ต่อพร้อมกันได้ 3 จอ — ไม่ต้องใช้ ELM327 / WiFi
+//  ต้องลงไลบรารี "NimBLE-Arduino" (by h2zero, 2.x) · ESP-NOW แบบเดิมยังเปิดได้ (USE_ESPNOW 1)
 //
 //  บอร์ด: "ESP32C3 Dev Module" · USB CDC On Boot: Enabled (ดูข้อความผ่าน USB ได้) · Partition: Default 4MB
 //
@@ -12,11 +13,18 @@
 //  ปุ่ม BOOT (GPIO9) กดค้าง 2 วิ = สลับโหมดจำลอง (DEMO) ↔ อ่านจากรถ (จำไว้ข้ามการปิดเปิด)
 //  ไฟ LED บนบอร์ด (GPIO8): กระพริบเร็ว = กำลังหารถ · ติดค้าง กระพริบดับสั้น ๆ = ได้ค่าจากรถ · กระพริบช้า = DEMO
 #include <Arduino.h>
+#include <Preferences.h>
+#define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
+#define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
+#if USE_ESPNOW
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
-#include <Preferences.h>
+#endif
 #include "didinow.h"
+#if USE_BLE
+#include "c3ble.h"
+#endif
 #include "canobd.h"
 #include "kline.h"
 #include "esp_sleep.h"
@@ -58,8 +66,13 @@ static float readVbat() {
 static void deepSleep(uint32_t sec) {
   Serial.printf("[sleep] %u s (vbat %.2f)\n", (unsigned)sec, vbat);
   Serial.flush();
+#if USE_ESPNOW
   esp_now_deinit();
   esp_wifi_stop();
+#endif
+#if USE_BLE
+  NimBLEDevice::deinit(true);
+#endif
   kline::stop();
   canobd::stop();
   pinMode(PIN_K_TX, OUTPUT);
@@ -91,6 +104,7 @@ static void wakeCheck() {
 // ---------------------------------------------------------------- ค่าจากรถ
 struct Raw {
   float rpm = 0, spd = 0, ect = 0, iat = 0, volt = 0, load = 0, tps = 0, map = 0, maf = 0, fuel = 0, stft = 0, afr = 0;
+  float timing = -999, oil = -999;
   uint32_t rpmT = 0;
   uint8_t afrMode = 0;
 } R;
@@ -160,6 +174,8 @@ static bool pid(uint8_t p) {
     case 0x06: R.stft = (b[0] - 128) * 100.f / 128; break;
     case 0x42: if (m >= 2 && !vbat) R.volt = ((b[0] << 8) | b[1]) / 1000.f; break;   // มีสายวัดแบตเอง = ใช้ค่านั้นแทน
     case 0x14: R.afr = b[0] / 200.f; break;
+    case 0x0E: R.timing = b[0] / 2.f - 64; break;
+    case 0x5C: R.oil = b[0] - 40.f; break;
     default:
       if (((p >= 0x24 && p <= 0x2B) || (p >= 0x34 && p <= 0x3B) || p == 0x44) && m >= 2)
         R.afr = ((b[0] << 8) | b[1]) * 2.f / 65536.f * STOICH;
@@ -277,19 +293,36 @@ static void sim(float dt) {
   R.afr = R.tps > 20 ? 12.6f + sinf(t * 2) * .3f : 14.7f + sinf(t * 3) * .4f;
 }
 
-// ---------------------------------------------------------------- ESP-NOW
-static const uint8_t BCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+// ---------------------------------------------------------------- ส่ง/รับ: BLE (+ ESP-NOW ถ้าเปิด)
 static volatile uint8_t pendCmd = 0;
 static volatile uint16_t pendId = 0;
 static uint16_t seq = 0;
-static void onRecv(const esp_now_recv_info_t*, const uint8_t* d, int n) {
+static DidiNowRaw pendRaw = {};
+static volatile bool rawPending = false;
+// คำสั่งจากจอ/แอป (มาทาง BLE หรือ ESP-NOW)
+static void gotCmd(const uint8_t* d, int n) {
   if (n < (int)sizeof(DidiNowCmd)) return;
   const DidiNowCmd* c = (const DidiNowCmd*)d;
-  if (c->magic != DIDINOW_MAGIC || c->type != DN_GWCMD) return;
-  pendId = c->id;
-  pendCmd = c->cmd;
+  if (c->magic != DIDINOW_MAGIC) return;
+  if (c->type == DN_GWCMD) { pendId = c->id; pendCmd = c->cmd; return; }
+  if (c->type == DN_RAWREQ && n >= (int)sizeof(DidiNowRaw) && !rawPending) {
+    memcpy(&pendRaw, d, sizeof(pendRaw));
+    rawPending = true;
+  }
 }
+static void tx(const void* p, size_t n) {
+#if USE_BLE
+  c3ble::send(p, n);
+#endif
+#if USE_ESPNOW
+  static const uint8_t BCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  esp_now_send(BCAST, (const uint8_t*)p, n);
+#endif
+}
+#if USE_ESPNOW
+static void onRecv(const esp_now_recv_info_t*, const uint8_t* d, int n) { gotCmd(d, n); }
 static bool nowBegin() {
+  static const uint8_t BCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   esp_wifi_set_promiscuous(true);
@@ -304,6 +337,7 @@ static bool nowBegin() {
   esp_now_register_recv_cb(onRecv);
   return true;
 }
+#endif
 static void sendData() {
   DidiNowGw m = {};
   m.magic = DIDINOW_MAGIC; m.type = DN_GW; m.seq = seq++;
@@ -312,19 +346,43 @@ static void sendData() {
   m.afrMode = R.afrMode; m.rate = rate; m.rpmT = R.rpmT;
   m.rpm = R.rpm; m.spd = R.spd; m.ect = R.ect; m.iat = R.iat; m.volt = R.volt; m.load = R.load; m.tps = R.tps;
   m.map = R.map; m.maf = R.maf; m.fuel = R.fuel; m.stft = R.stft; m.afr = R.afr;
-  esp_now_send(BCAST, (const uint8_t*)&m, sizeof(m));
+  m.timing = R.timing; m.oil = R.oil;
+  tx(&m, sizeof(m));
 }
 static void sendInfo() {
   DidiNowInfo m = {};
   m.magic = DIDINOW_MAGIC; m.type = DN_GWINFO;
   strlcpy(m.text, diag, sizeof(m.text));
-  esp_now_send(BCAST, (const uint8_t*)&m, sizeof(m));
+  tx(&m, sizeof(m));
 }
 static void sendDtc(uint8_t cmd, uint16_t id, bool ok, char codes[16][6], int n) {
   DidiNowDtc r = {};
   r.magic = DIDINOW_MAGIC; r.type = DN_DTC; r.ok = ok; r.cmd = cmd; r.id = id;
   for (int i = 0; i < n && i < 16; i++) { strlcpy(r.codes[i], codes[i], 6); r.n++; }
-  for (int k = 0; k < 3; k++) { esp_now_send(BCAST, (const uint8_t*)&r, sizeof(r)); delay(20); }
+  for (int k = 0; k < 3; k++) { tx(&r, sizeof(r)); delay(20); }
+}
+// Custom PID: ถามรถด้วยคำสั่ง/ID ที่จอขอมา แล้วตอบคำตอบดิบกลับไป
+static void handleRaw() {
+  if (!rawPending) return;
+  DidiNowRaw q = pendRaw;
+  rawPending = false;
+  DidiNowRawRes r = {};
+  r.magic = DIDINOW_MAGIC; r.type = DN_RAWRES; r.id = q.id;
+  int len = constrain(q.len, 1, 7);
+  if (demo) {
+    r.n = 3; r.data[0] = q.data[0] + 0x40; r.data[1] = len > 1 ? q.data[1] : 0; r.data[2] = 120;   // จำลอง: A = 120
+  } else if (carLink != DN_LINK_OK) {
+    r.n = -1;
+  } else if (proto == DN_P_CAN500 || proto == DN_P_CAN250) {
+    uint32_t to = q.hdr ? q.hdr : (canobd::physical ? canobd::ecuRx - 8 : 0x7DF);
+    r.n = canobd::requestTo(to, q.data, len, r.data, sizeof(r.data), 300);
+  } else if (q.hdr && q.hdr != 0x7DF && q.hdr != 0x7E0) {
+    r.n = -2;                                            // K-line: ถามกล่องอื่นไม่ได้
+  } else {
+    r.n = ask(q.data, len, r.data, sizeof(r.data), 400, true);
+  }
+  if (r.n < -2) r.n = -1;
+  tx(&r, sizeof(r));
 }
 static void handleCmd() {
   uint8_t c = pendCmd;
@@ -376,17 +434,18 @@ static void bootBtn() {
 
 // ---------------------------------------------------------------- งานอ่านรถ (แยก task: ตอน init K-line บล็อกหลายวินาที ไม่ให้ ESP-NOW หยุดส่ง)
 static void obdTask(void*) {
-  static const uint8_t SLOW[] = {0x0D, 0x05, 0x0F, 0x04, 0x0B, 0x10, 0x2F, 0x06, 0x42};
+  static const uint8_t SLOW[] = {0x0D, 0x05, 0x0F, 0x04, 0x0B, 0x10, 0x2F, 0x06, 0x42, 0x0E, 0x5C};
   int slow = 0;
   uint32_t step = 0;
   for (;;) {
-    if (demo) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
+    if (demo) { handleRaw(); vTaskDelay(pdMS_TO_TICKS(100)); continue; }
     if (carLink != DN_LINK_OK) {
       if (connect()) { carLink = DN_LINK_OK; fails = 0; lastOk = millis(); rtcProto = proto; Serial.printf("[obd] connected: %s\n", DN_P_NAME[proto]); }
       else { Serial.println("[obd] no car — retry"); vTaskDelay(pdMS_TO_TICKS(1500)); }
       continue;
     }
     if (pendCmd == DN_CMD_DTC_READ || pendCmd == DN_CMD_DTC_CLEAR) { handleCmd(); continue; }
+    if (rawPending) { handleRaw(); continue; }
     // ลำดับเหมือนจอ S3: รอบ → TPS → AFR (ทุกชุดที่ 4 = ค่าช้าแทน) → รอบ
     int k = step % 4, set = step / 4;
     step++;
@@ -428,9 +487,15 @@ void setup() {
     if (!ok) deepSleep(WAKE_NOVBAT_S);
     carLink = DN_LINK_OK; fails = 0; lastOk = millis();
   }
-  bool ok = nowBegin();
-  Serial.printf("\n[didi_c3] ESP-NOW %s · mode %s · MAC %s\n", ok ? "ready" : "FAILED", demo ? "DEMO" : "CAR",
-                WiFi.macAddress().c_str());
+#if USE_BLE
+  c3ble::onCmd = gotCmd;
+  bool ok = c3ble::begin();
+  Serial.printf("\n[didi_c3] BLE %s · mode %s\n", ok ? "ready" : "FAILED", demo ? "DEMO" : "CAR");
+#endif
+#if USE_ESPNOW
+  bool okn = nowBegin();
+  Serial.printf("[didi_c3] ESP-NOW %s · MAC %s\n", okn ? "ready" : "FAILED", WiFi.macAddress().c_str());
+#endif
   xTaskCreate(obdTask, "obd", 6144, nullptr, 2, nullptr);
 }
 

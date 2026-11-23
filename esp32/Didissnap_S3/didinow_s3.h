@@ -6,6 +6,7 @@
 #include <esp_wifi.h>
 #include "didinow.h"
 #include "data.h"
+#include "c3link.h"
 
 namespace didinow {
 
@@ -24,6 +25,22 @@ static DidiNowDtc gwDtc = {};
 static volatile uint16_t gwDtcId = 0;     // id ของคำตอบ DTC ล่าสุดที่ได้
 static char gwInfo[59] = "";              // ผลตรวจสายจาก C3 (ตอนยังหารถไม่เจอ)
 
+// แพ็กเก็ตจาก C3 (มาทาง BLE หรือ ESP-NOW)
+static void gwFeed(const uint8_t* d, int n) {
+  if (n < 5 || ((const DidiNowCmd*)d)->magic != DIDINOW_MAGIC) return;
+  uint8_t t = ((const DidiNowCmd*)d)->type;
+  // C3 รุ่นเก่า (ไม่มี timing/oil) ส่งสั้นกว่า: รับได้ ช่องที่ขาดเป็น 0
+  if (t == DN_GW && n >= (int)offsetof(DidiNowGw, timing)) {
+    DidiNowGw g = {};
+    memcpy(&g, d, min((size_t)n, sizeof(g)));
+    memcpy(&gwPkt, &g, sizeof(gwPkt));
+    gwLast = millis(); gwSeq++;
+    return;
+  }
+  if (t == DN_DTC && n >= (int)sizeof(DidiNowDtc)) { memcpy(&gwDtc, d, sizeof(gwDtc)); gwDtcId = gwDtc.id; return; }
+  if (t == DN_GWINFO && n >= (int)sizeof(DidiNowInfo)) { memcpy(gwInfo, ((const DidiNowInfo*)d)->text, sizeof(gwInfo) - 1); gwInfo[sizeof(gwInfo) - 1] = 0; return; }
+}
+
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
 static void onRecv(const esp_now_recv_info_t*, const uint8_t* d, int n) {
 #else
@@ -32,9 +49,7 @@ static void onRecv(const uint8_t*, const uint8_t* d, int n) {
   if (n < (int)sizeof(DidiNowCmd)) return;
   if (((const DidiNowCmd*)d)->magic == DIDINOW_MAGIC && gwOn) {
     uint8_t t = ((const DidiNowCmd*)d)->type;
-    if (t == DN_GW && n >= (int)sizeof(DidiNowGw)) { memcpy(&gwPkt, d, sizeof(gwPkt)); gwLast = millis(); gwSeq++; return; }
-    if (t == DN_DTC && n >= (int)sizeof(DidiNowDtc)) { memcpy(&gwDtc, d, sizeof(gwDtc)); gwDtcId = gwDtc.id; return; }
-    if (t == DN_GWINFO && n >= (int)sizeof(DidiNowInfo)) { memcpy(gwInfo, ((const DidiNowInfo*)d)->text, sizeof(gwInfo) - 1); gwInfo[sizeof(gwInfo) - 1] = 0; return; }
+    if (t == DN_GW || t == DN_DTC || t == DN_GWINFO) { gwFeed(d, n); return; }
   }
   const DidiNowCmd* c = (const DidiNowCmd*)d;
   if (c->magic != DIDINOW_MAGIC || c->type != DN_CMD) return;
@@ -101,11 +116,16 @@ inline void reply(uint8_t cmd, uint16_t id, bool good, const String& json) {
 static uint32_t gwApplied = 0, gwRpmT = 0, gwModeT = 0;
 static uint16_t gwMyId = 0x8000;
 static void gwCmd(uint8_t cmd, uint16_t id) {
-  if (!ok) return;
   DidiNowCmd c = {DIDINOW_MAGIC, DN_GWCMD, cmd, id};
+  if (c3link::send(&c, sizeof(c))) return;      // ต่อ C3 ทาง BLE อยู่
+  if (!ok) return;
   esp_now_send(BCAST, (const uint8_t*)&c, sizeof(c));
 }
-inline void gwBegin(bool demo) { gwOn = true; gwDemo = demo; }
+// ble = ต่อ C3 ทาง Bluetooth (C3 รุ่นใหม่) · ESP-NOW แบบเดิมยังรับได้ถ้าเปิด WiFi
+inline void gwBegin(bool demo, bool ble = true) {
+  gwOn = true; gwDemo = demo;
+  if (ble) c3link::begin(gwFeed);
+}
 inline bool gwHeard() { return gwLast && millis() - gwLast < 1500; }
 inline bool gwLive() { return gwHeard() && (gwPkt.link == DN_LINK_OK || gwPkt.link == DN_LINK_DEMO); }
 inline bool gwIsDemo() { return gwHeard() && gwPkt.link == DN_LINK_DEMO; }
@@ -131,7 +151,7 @@ inline void gwLoop() {
 inline const char* gwStatus() {
   static char b[72];
   static const char* const AM[] = {"", "  AFR wide", "  O2 narrow", "  AFR cmd"};
-  if (!gwHeard()) return strncmp(gwInfo, "sleep", 5) ? "no signal from C3" : "C3 asleep - start engine to wake";
+  if (!gwHeard()) return strncmp(gwInfo, "sleep", 5) ? (c3link::connected() ? "C3 BLE: waiting data" : "C3 BLE: searching...") : "C3 asleep - start engine to wake";
   uint8_t p = gwPkt.proto < 7 ? gwPkt.proto : 0;
   if (gwPkt.link == DN_LINK_DEMO) return "C3 DEMO";
   if (gwPkt.link != DN_LINK_OK) {

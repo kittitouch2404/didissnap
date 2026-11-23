@@ -155,6 +155,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
           SourceType.btElm => 'BT',
           SourceType.wifiElm => 'WIFI',
           SourceType.esp32 => 'ESP32',
+          SourceType.c3 => 'C3',
         };
         final fa = s.live('fuelA'), fk = s.live('fuelKmA');
         final avg = fa > 0.02 && fk > 0.2 ? ' · ${(fk / fa).toStringAsFixed(1)} km/L' : '';

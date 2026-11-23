@@ -135,6 +135,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
         SourceType.btElm => 'ELM327 Bluetooth (Vgate iCar Pro)',
         SourceType.wifiElm => 'ELM327 WiFi',
         SourceType.esp32 => 'ESP32 ผ่าน WiFi',
+        SourceType.c3 => 'ESP32-C3 ที่ช่อง OBD2 (Bluetooth BLE)  ★',
       };
 
   static String _sub(SourceType t) => switch (t) {
@@ -142,6 +143,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
         SourceType.btElm => 'มือถือต่อ OBD2 เอง ไม่ต้องใช้ ESP32',
         SourceType.wifiElm => 'ตัว OBD2 แบบปล่อย WiFi',
         SourceType.esp32 => 'ESP32 อ่าน OBD2 แล้วส่งค่าต่อมาที่มือถือ (โชว์พร้อมจอ CYD)',
+        SourceType.c3 => 'C3 อ่าน CAN / K-line เอง แล้วส่งให้แอป + จอ S3 + จอ CYD พร้อมกัน ไม่ต้องใช้ Vgate / WiFi',
       };
 
   Future<void> _pickBt() async {

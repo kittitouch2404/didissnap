@@ -7,7 +7,7 @@ import 'data/custom_pid.dart';
 import 'data/gif_cfg.dart';
 
 /// แหล่งข้อมูลรถ
-enum SourceType { demo, btElm, wifiElm, esp32 }
+enum SourceType { demo, btElm, wifiElm, esp32, c3 }
 
 /// หน้าปัดทั้งหมดตามลำดับ (id, ชื่อที่แสดงในเมนู)
 const List<(String, String)> kPages = [
