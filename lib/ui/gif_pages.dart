@@ -226,7 +226,9 @@ class _GifPageState extends State<GifPage> {
       return;
     }
     double rate;
-    if (c.mode == 2) {
+    if (c.mode == 3) {
+      rate = 1.0; // ความเร็วปกติของไฟล์ GIF (ไม่ขึ้นกับรถ)
+    } else if (c.mode == 2) {
       rate = f.speed < 1 ? 0 : (f.speed / 60).clamp(0.0, 3.0);
     } else {
       final r = (f.rpm / math.max(1000, f.redline)).clamp(0.0, 1.2);
@@ -650,6 +652,7 @@ Future<void> showGifSettings(BuildContext context, AppSettings s, int index) {
                     ButtonSegment(value: 1, label: Text('ค้างตามรอบ')),
                     ButtonSegment(value: 2, label: Text('วนเร็วตามความเร็วรถ')),
                     ButtonSegment(value: 0, label: Text('วนเร็วตามรอบ')),
+                    ButtonSegment(value: 3, label: Text('ความเร็วปกติ')),
                   ],
                   selected: {c.mode},
                   onSelectionChanged: (v) {
