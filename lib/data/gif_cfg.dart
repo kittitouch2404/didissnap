@@ -8,6 +8,9 @@ class GifCfg {
         hi = (m['hi'] as num?)?.toInt() ?? 0,
         hue = (m['hue'] as num?)?.toDouble() ?? 322,
         sat = (m['sat'] as num?)?.toDouble() ?? 0.64,
+        bz = ((m['bz'] as num?)?.toDouble() ?? 1.0).clamp(1.0, 3.0),
+        bx = ((m['bx'] as num?)?.toDouble() ?? 0.0).clamp(-1.0, 1.0),
+        by = ((m['by'] as num?)?.toDouble() ?? 0.0).clamp(-1.0, 1.0),
         slots = _slots(m['slots']);
 
   static List<int> _slots(Object? v) {
@@ -30,6 +33,9 @@ class GifCfg {
   /// สีตัวเลข (0-359) + ความสด (0-1)
   double hue, sat;
 
+  /// แบบ B: ซูม (1-3 เท่า) + ตำแหน่ง (-1..1 ของระยะที่เลื่อนได้, 0 = กลาง)
+  double bz, bx, by;
+
   /// ค่าใน 3 ช่องขวา (index ของ kGifMetrics)
   List<int> slots;
 
@@ -41,6 +47,9 @@ class GifCfg {
         'hi': hi,
         'hue': hue,
         'sat': sat,
+        'bz': bz,
+        'bx': bx,
+        'by': by,
         'slots': slots,
       };
 }

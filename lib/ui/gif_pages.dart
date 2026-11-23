@@ -312,6 +312,8 @@ class _GifDashPainter extends CustomPainter {
   Color get top => _hsv(c.hue, c.sat, 1);
   Color get edge => _hsv(c.hue - 47, 0.8, c.sat < 0.08 ? 0.3 : 0.44);
   Color get shade => _hsv(c.hue - 47, 0.85, 0.17);
+  /// เส้นในของกรอบรูป (สีตามตัวเลข: ค่าเริ่มต้นชมพู -> ม่วง)
+  Color get frameIn => _hsv(c.hue - 47, math.min(1.0, c.sat * 1.1), 0.9);
 
   @override
   void paint(Canvas cv, Size sz) {
@@ -320,7 +322,7 @@ class _GifDashPainter extends CustomPainter {
     if (c.style == 1) {
       final fr = Rect.fromLTWH(w * 0.015, h * 0.09, w * 0.97, h * 0.66);
       _frame(cv, fr);
-      _img(cv, fr.deflate(h * 0.012));
+      _img(cv, fr.deflate(h * 0.012), big: true);
       final fs = h * 0.19;
       _anime(cv, _rpmTxt(), Offset(w * 0.40, h * 0.965), fs, f.atRedline, TextAlign.right);
       _label(cv, 'RPM', Offset(w * 0.41, h * 0.90), h * 0.045);
@@ -376,11 +378,11 @@ class _GifDashPainter extends CustomPainter {
     cv.drawRRect(rr, Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3
-      ..color = pink);
+      ..color = top);
     cv.drawRRect(rr.deflate(3), Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
-      ..color = vio);
+      ..color = frameIn);
     final wp = Paint()
       ..color = white
       ..strokeWidth = 3;
@@ -390,7 +392,7 @@ class _GifDashPainter extends CustomPainter {
     cv.drawLine(r.bottomRight - const Offset(0, 18), r.bottomRight - const Offset(0, 48), wp);
   }
 
-  void _img(Canvas cv, Rect r) {
+  void _img(Canvas cv, Rect r, {bool big = false}) {
     final i = img;
     if (i == null) {
       _label(cv, loading ? 'กำลังโหลด GIF...' : 'กดค้างที่ตัวเลข -> เลือก GIF',
@@ -399,9 +401,11 @@ class _GifDashPainter extends CustomPainter {
     }
     // ครอปให้เต็มกรอบ (cover)
     final iw = i.width.toDouble(), ih = i.height.toDouble();
-    final sc = math.max(r.width / iw, r.height / ih);
+    final sc = math.max(r.width / iw, r.height / ih) * (big ? c.bz : 1.0);
     final cw = r.width / sc, ch = r.height / sc;
-    final src = Rect.fromLTWH((iw - cw) / 2, (ih - ch) / 2, cw, ch);
+    // แบบ B: เลื่อนตำแหน่งภาพในส่วนที่เกินกรอบ (bx/by = -1 ซ้าย/บน .. 1 ขวา/ล่าง)
+    final ox = big ? c.bx : 0.0, oy = big ? c.by : 0.0;
+    final src = Rect.fromLTWH((iw - cw) / 2 * (1 + ox), (ih - ch) / 2 * (1 + oy), cw, ch);
     cv.save();
     cv.clipRRect(RRect.fromRectAndRadius(r, const Radius.circular(10)));
     cv.drawImageRect(i, src, r, Paint()..filterQuality = FilterQuality.medium);
@@ -560,6 +564,35 @@ Future<void> showGifSettings(BuildContext context, AppSettings s, int index) {
                     },
                   ),
                 ]),
+                if (c.style == 1) ...[
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    const Text('ตำแหน่งภาพ (แบบ B)'),
+                    const Spacer(),
+                    TextButton(
+                        onPressed: () {
+                          c.bz = 1;
+                          c.bx = 0;
+                          c.by = 0;
+                          save();
+                        },
+                        child: const Text('กลับค่าเดิม')),
+                  ]),
+                  _slRow('ซูม ${(c.bz * 100).round()}%', c.bz, 1, 3, (v) {
+                    c.bz = v;
+                    save();
+                  }),
+                  _slRow('ซ้าย ↔ ขวา', c.bx, -1, 1, (v) {
+                    c.bx = v;
+                    save();
+                  }),
+                  _slRow('บน ↕ ล่าง', c.by, -1, 1, (v) {
+                    c.by = v;
+                    save();
+                  }),
+                  const Text('ภาพเต็มกรอบอยู่แล้ว: ซูมเพิ่มก่อน ถึงจะเลื่อนซ้าย/ขวา/บน/ล่างได้',
+                      style: TextStyle(fontSize: 12, color: Colors.white54)),
+                ],
                 const SizedBox(height: 12),
                 const Text('การเล่นภาพ'),
                 SegmentedButton<int>(
@@ -647,3 +680,9 @@ Future<void> showGifSettings(BuildContext context, AppSettings s, int index) {
     }),
   );
 }
+
+
+Widget _slRow(String label, double v, double lo, double hi, ValueChanged<double> on) => Row(children: [
+      SizedBox(width: 110, child: Text(label, style: const TextStyle(fontSize: 13))),
+      Expanded(child: Slider(min: lo, max: hi, value: v.clamp(lo, hi), onChanged: on)),
+    ]);
