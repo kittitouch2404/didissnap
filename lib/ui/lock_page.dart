@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
@@ -23,6 +24,9 @@ class LockPage extends StatefulWidget {
 }
 
 class _LockPageState extends State<LockPage> {
+  /// ปุ่มตัวเลขแบบสุ่มตำแหน่ง (กันคนแอบดูตำแหน่งนิ้ว) สุ่มใหม่ทุกครั้งที่ใส่ผิด
+  List<String> _digits = _shuffle();
+  static List<String> _shuffle() => [for (var i = 0; i <= 9; i++) '$i']..shuffle(math.Random.secure());
   String _pin = '';
   String _msg = '';
   int _wrong = 0;
@@ -60,6 +64,7 @@ class _LockPageState extends State<LockPage> {
     }
     _wrong++;
     _pin = '';
+    _digits = _shuffle();
     if (_wrong >= 5) {
       // ใส่ผิด 5 ครั้ง: รอ 60 วินาที
       _waitUntil = DateTime.now().add(const Duration(seconds: 60));
@@ -123,11 +128,11 @@ class _LockPageState extends State<LockPage> {
           ),
           const SizedBox(width: 40),
           Column(mainAxisSize: MainAxisSize.min, children: [
-            for (final r in const [
-              ['1', '2', '3'],
-              ['4', '5', '6'],
-              ['7', '8', '9'],
-              ['<', '0', 'OK'],
+            for (final r in [
+              _digits.sublist(0, 3),
+              _digits.sublist(3, 6),
+              _digits.sublist(6, 9),
+              ['<', _digits[9], 'OK'],
             ])
               Row(mainAxisSize: MainAxisSize.min, children: [for (final k in r) key(k)]),
           ]),
