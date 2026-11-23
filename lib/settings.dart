@@ -463,6 +463,10 @@ class AppSettings extends ChangeNotifier {
     _p.setString('updateUrl', url);
   }
 
+  // ---------- ภาษา (ไทย / English) ----------
+  bool get langEn => _b('langEn', false);
+  set langEn(bool v) => _setB('langEn', v);
+
   // ---------- สีเมนู (Racing HUD) ----------
   int get menuColor => _i('menuColor', 0xFFFF7A00);
   set menuColor(int v) => _setI('menuColor', v);

@@ -99,7 +99,7 @@ class TripAlertTab extends StatelessWidget {
                 },
               ),
               IconButton(
-                tooltip: 'ลองฟัง',
+                tooltip: tr('ลองฟัง'),
                 icon: const Icon(Icons.play_circle_outline),
                 onPressed: () => hub.alerts.play(k.$1, 'เตือน ${k.$2}'),
               ),
@@ -272,7 +272,7 @@ class _LogTabState extends State<LogTab> {
             subtitle: Text(_size(f.lengthSync())),
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
               IconButton(
-                tooltip: 'บันทึกลง Download',
+                tooltip: tr('บันทึกลง Download'),
                 icon: const Icon(Icons.download),
                 onPressed: () async {
                   final ok = await Native.saveToDownloads(f.path, f.path.split('/').last, 'text/csv');
@@ -280,7 +280,7 @@ class _LogTabState extends State<LogTab> {
                 },
               ),
               IconButton(
-                tooltip: 'ลบ',
+                tooltip: tr('ลบ'),
                 icon: const Icon(Icons.delete_outline),
                 onPressed: lg.file == f.path
                     ? null
@@ -309,7 +309,7 @@ class ProfileTab extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(title),
-        content: TextField(controller: c, autofocus: true, decoration: const InputDecoration(hintText: 'เช่น Jazz GK')),
+        content: TextField(controller: c, autofocus: true, decoration: InputDecoration(hintText: tr('เช่น Jazz GK'))),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ยกเลิก')),
           FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('ตกลง')),

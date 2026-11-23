@@ -225,6 +225,10 @@ class _HudMenuPageState extends State<HudMenuPage> {
                   }),
                   _hdr('LOG', rec ? '● REC' : (s.logOn ? 'รอต่อรถ' : 'OFF'), rec ? const Color(0xFFFF4A55) : const Color(0xFF8A8A8A),
                       () => s.logOn = !s.logOn),
+                  _hdr('ภาษา', langEn.value ? 'EN' : 'ไทย', Colors.white, () {
+                    s.langEn = !s.langEn;
+                    langEn.value = s.langEn;
+                  }),
                   _hdr('สี', '', a, _pickColor, swatch: a),
                 ]),
               ),
@@ -386,8 +390,8 @@ class _HudMenuPageState extends State<HudMenuPage> {
                 TextField(
                   controller: tok,
                   obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'GitHub token (สำหรับ repo ส่วนตัว)',
+                  decoration: InputDecoration(
+                    labelText: tr('GitHub token (สำหรับ repo ส่วนตัว)'),
                     hintText: 'github_pat_...',
                     isDense: true,
                   ),

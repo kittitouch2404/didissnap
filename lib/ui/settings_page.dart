@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import '../i18n.dart';
 import 'package:archive/archive.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -44,19 +45,19 @@ class SettingsPage extends StatelessWidget {
         appBar: AppBar(
           toolbarHeight: 40,
           title: const Text('MENU', style: TextStyle(fontSize: 16)),
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
             tabs: [
-              Tab(height: 36, text: 'การเชื่อมต่อ'),
-              Tab(height: 36, text: 'หน้าปัด'),
-              Tab(height: 36, text: 'ทริป/เตือน'),
-              Tab(height: 36, text: 'บันทึก CSV'),
-              Tab(height: 36, text: 'รถ/สำรอง'),
-              Tab(height: 36, text: 'เกียร์'),
-              Tab(height: 36, text: 'รูปพื้นหลัง'),
-              Tab(height: 36, text: 'DTC'),
-              Tab(height: 36, text: 'เปิดอัตโนมัติ'),
-              Tab(height: 36, text: 'จอ ESP32'),
+              Tab(height: 36, text: tr('การเชื่อมต่อ')),
+              Tab(height: 36, text: tr('หน้าปัด')),
+              Tab(height: 36, text: tr('ทริป/เตือน')),
+              Tab(height: 36, text: tr('บันทึก CSV')),
+              Tab(height: 36, text: tr('รถ/สำรอง')),
+              Tab(height: 36, text: tr('เกียร์')),
+              Tab(height: 36, text: tr('รูปพื้นหลัง')),
+              Tab(height: 36, text: tr('DTC')),
+              Tab(height: 36, text: tr('เปิดอัตโนมัติ')),
+              Tab(height: 36, text: tr('จอ ESP32')),
             ],
           ),
         ),
@@ -530,7 +531,7 @@ class DisplayTab extends StatelessWidget {
               dense: true,
               secondary: p.$1.startsWith('gif') && s.gifPageCount > 1
                   ? IconButton(
-                      tooltip: 'ลบหน้านี้',
+                      tooltip: tr('ลบหน้านี้'),
                       icon: const Icon(Icons.delete_outline),
                       onPressed: () async {
                         final ok = await showDialog<bool>(
@@ -1716,7 +1717,7 @@ class _CvtTempSectionState extends State<_CvtTempSection> {
             Expanded(
               child: TextFormField(
                 initialValue: s.cvtReq,
-                decoration: const InputDecoration(labelText: 'คำสั่ง (Mode 22 / 21)', hintText: 'เช่น 22xxxx หรือ 21xx'),
+                decoration: InputDecoration(labelText: tr('คำสั่ง (Mode 22 / 21)'), hintText: tr('เช่น 22xxxx หรือ 21xx')),
                 textCapitalization: TextCapitalization.characters,
                 onChanged: (v) => s.cvtReq = v,
               ),
@@ -1739,7 +1740,7 @@ class _CvtTempSectionState extends State<_CvtTempSection> {
         ListTile(
           dense: true,
           title: const Text('คำตอบดิบล่าสุด'),
-          subtitle: SelectableText(d.cvtRaw.isEmpty ? '(ยังไม่มี — ต่อ OBD ติดก่อน)' : d.cvtRaw,
+          subtitle: SelectableText(d.cvtRaw.isEmpty ? tr('(ยังไม่มี — ต่อ OBD ติดก่อน)') : d.cvtRaw,
               style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
         ),
         const _Hint('ทดลอง: ใช้ได้เฉพาะรถ CAN (Jazz GK) — แอปจะสลับไปถามกล่องเกียร์ราว 1-2 วินาทีครั้ง แล้วกลับมาถามเครื่องยนต์\n'
@@ -1899,7 +1900,7 @@ class _CustomPidSectionState extends State<_CustomPidSection> {
               ]),
               const SizedBox(height: 12),
               const Text('คำตอบดิบล่าสุด (กดบันทึกก่อน แล้วรอสักครู่)', style: TextStyle(fontSize: 12)),
-              SelectableText(raw.isEmpty ? '(ยังไม่มี)' : raw,
+              SelectableText(raw.isEmpty ? tr('(ยังไม่มี)') : raw,
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
               if (test.isNotEmpty)
                 Text(test, style: const TextStyle(fontFamily: 'monospace', fontSize: 12, fontWeight: FontWeight.w700)),

@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import '../i18n.dart';
 
 import '../settings.dart';
 
@@ -99,6 +100,15 @@ class _LockPageState extends State<LockPage> {
         );
     return Scaffold(
       backgroundColor: const Color(0xFF070707),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endTop,
+      floatingActionButton: TextButton(
+        onPressed: () {
+          widget.settings.langEn = !widget.settings.langEn;
+          langEn.value = widget.settings.langEn;
+          setState(() {});
+        },
+        child: Text(langEn.value ? 'ภาษาไทย' : 'English', style: const TextStyle(fontSize: 18)),
+      ),
       body: Center(
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           SizedBox(

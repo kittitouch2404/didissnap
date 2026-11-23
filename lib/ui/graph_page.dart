@@ -3,7 +3,8 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' show FontFeature;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import '../i18n.dart';
 
 import '../data/hub.dart';
 import '../data/services.dart';
@@ -195,7 +196,7 @@ class _GraphPageState extends State<GraphPage> {
               Text('${old.name}  ${_off.toStringAsFixed(0)}-${(_off + span).toStringAsFixed(0)}s',
                   style: const TextStyle(fontSize: 12, color: Colors.white60)),
               IconButton(
-                tooltip: 'ปิดไฟล์เก่า',
+                tooltip: tr('ปิดไฟล์เก่า'),
                 icon: const Icon(Icons.close, size: 18),
                 onPressed: () => setState(() => _old = null),
               ),

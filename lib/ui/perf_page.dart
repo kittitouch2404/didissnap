@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:ui' show FontFeature;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import '../i18n.dart';
 
 import '../data/car_data.dart';
 import '../data/hub.dart';

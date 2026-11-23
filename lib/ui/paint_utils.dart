@@ -1,7 +1,8 @@
 import 'dart:math' as math;
 import 'dart:ui' show FontFeature;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import '../i18n.dart';
 
 const kAccent = Color(0xFFFF7A00);
 const kRed = Color(0xFFFF2A2A);
@@ -34,7 +35,7 @@ Size drawText(
 }) {
   TextPainter mk(Paint? fg) => TextPainter(
         text: TextSpan(
-          text: text,
+          text: tr(text),
           style: TextStyle(
             fontSize: size,
             fontWeight: weight,

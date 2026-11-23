@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import '../i18n.dart';
 
 /// คู่มือสั้น ๆ: ของที่ซ่อนอยู่ / กดตรงไหนทำอะไร
 class HelpPage extends StatelessWidget {
@@ -62,9 +63,69 @@ class HelpPage extends StatelessWidget {
     ]),
   ];
 
+  static const List<(IconData, String, List<String>)> _secEn = [
+    (Icons.touch_app, 'Dashboard (all pages)', [
+      'Swipe left/right = change dashboard · dots at the bottom show the page',
+      'Top-left (colored dot + BT/WiFi): tap = connection status',
+      'MENU button top-right = settings',
+      'Show/hide/add pages: MENU → Dashboard → Pages shown',
+    ]),
+    (Icons.gif_box_outlined, 'GIF pages', [
+      'Long-press the numbers (lower half) = page settings: GIF / style A-B / 3 or 6 values / playback / two-tone colors / zoom & move',
+      'Tap a right-side value slot = next value (6-value mode: left/right columns separately)',
+      'Playback: hold by RPM / loop with car speed / loop with RPM / normal speed',
+      'Random colors: turn on "random two-tone colors every launch" or press "Randomize"',
+      'Up to 20 GIF pages: MENU → Dashboard → Add GIF page',
+    ]),
+    (Icons.show_chart, 'Graph page', [
+      'Tap a value name = change it · + / − = number of lines (1-6) · "30s" = time span',
+      '❚❚ Pause = freeze the graph',
+      'Compare old file = open a saved CSV as faint dashed lines · slider picks the range · "Follow" plays it along in real time',
+    ]),
+    (Icons.warning_amber_rounded, 'Alerts', [
+      'Set in MENU → Trip/Alerts: coolant hot / low battery / shift RPM / overspeed / oil change',
+      'Choose a sound for each alert + ▶ to preview',
+      'Full-screen flashing red alert: tap = close and silence that alert for 2 minutes',
+    ]),
+    (Icons.route, 'Trip / fuel / speed', [
+      'Trip A = shown on the dashboard · Trip B = long-term · reset separately',
+      'km/L is estimated from MAF + stoich (AFR SCALE)',
+      'Speed correction: manual, or "Auto with GPS" (drive steadily 40+ km/h for a while)',
+      'Oil change reminder: press "Just changed" every oil change',
+    ]),
+    (Icons.table_chart_outlined, 'CSV logging', [
+      'Tap LOG on the MENU top bar = quick logging on/off · the dashboard shows ● REC',
+      'MENU → CSV log → download button = copy to Download/Didissnap (open with Excel / Google Sheets)',
+      'Delete old files: press it when you want (choose how many to keep)',
+    ]),
+    (Icons.tune, 'Custom PID / CVT', [
+      'MENU → Connection → Custom PID: header / command / formula like Torque, then "Save + test" to see the raw reply',
+      'Formula: A B C D = data bytes · + - * / ( ) allowed · {A:7} = bit',
+      'Show in GIF right slots (CUSTOM 1-4), also sent to the CYD screen',
+    ]),
+    (Icons.directions_car, 'Multiple cars / backup', [
+      'MENU → Car/Backup: each car keeps its own settings · tap CAR on the top bar = switch car',
+      'Back up everything = .zip (settings + GIFs + logo + sounds) in Download/Didissnap',
+      'After reinstalling: restore from the backup, then set permissions again (overlay / battery / GPS)',
+    ]),
+    (Icons.power_settings_new, 'Auto start / logo / sound', [
+      'MENU → Auto start: enable "Car screen wakes" + allow "Display over other apps" + disable battery saver',
+      'If it does not pop up: use the head unit\'s own "Auto start app / start app on ACC ON" menu',
+      'Random OYT logo + my logo + key-on sound: MENU → Dashboard → On app start',
+    ]),
+    (Icons.system_update, 'Update / problems', [
+      'MENU → Update app: check / download + install in the app (installs over, settings kept)',
+      'Private repo: enter a read-only GitHub token on the update page',
+      'Problem: MENU → Send problem log → Save to Download, then send the file',
+      'Menu color: tap "Color" at the top-right of MENU · Language: tap LANG',
+    ]),
+  ];
+
   @override
   Widget build(BuildContext context) {
+    LangScope.watch(context);
     final a = Theme.of(context).colorScheme.primary;
+    final secs = langEn.value ? _secEn : _sec;
     return Scaffold(
       appBar: AppBar(
         title: const Text('คู่มือ', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic)),
@@ -72,7 +133,7 @@ class HelpPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
-          for (final (ic, t, lines) in _sec)
+          for (final (ic, t, lines) in secs)
             Card(
               color: const Color(0xFF121212),
               child: ExpansionTile(

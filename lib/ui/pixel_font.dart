@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import '../i18n.dart';
 
 /// ฟอนต์พิกเซลแบบเกม 16-bit (5x7) วาดเป็นบล็อกสี่เหลี่ยม ไม่ต้องใช้ไฟล์ฟอนต์
 const Map<String, List<String>> _glyphs = {

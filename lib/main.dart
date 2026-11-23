@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -32,6 +33,7 @@ Future<void> main() async {
       return true;
     };
     final settings = await AppSettings.load();
+    langEn.value = settings.langEn;
     final hub = DataHub(settings);
     AppLog.i('เปิดแอป build-$kBuild');
     runApp(DashApp(settings: settings, hub: hub));
@@ -97,6 +99,7 @@ class _DashAppState extends State<DashApp> {
     return MaterialApp(
       title: 'OBD2_Didissnap',
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => LangScope(child: child ?? const SizedBox()),
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
