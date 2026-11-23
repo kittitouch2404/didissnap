@@ -39,7 +39,7 @@ class C3Source implements CarSource {
   Future<void> _run() async {
     final hub = _hub!;
     hub.setLink(this, LinkState.connecting, 'ขอสิทธิ์ Bluetooth...');
-    if (!await ElmSource.ensurePermission()) {
+    if (!await BtTransport.ensurePermission()) {
       hub.setLink(this, LinkState.error, 'ไม่ได้รับสิทธิ์ Bluetooth (อนุญาต "อุปกรณ์ใกล้เคียง" ให้แอป)');
       return;
     }
