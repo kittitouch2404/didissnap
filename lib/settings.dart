@@ -441,6 +441,10 @@ class AppSettings extends ChangeNotifier {
   }
 
   // ---------- เช็กอัปเดตแอป ----------
+  /// ใส่รหัสเข้าแอปถูกแล้วในเครื่องนี้ (ไม่ถูกสำรอง/ไม่ติดไปกับโปรไฟล์)
+  bool get unlocked => _b('unlocked', false);
+  set unlocked(bool v) => _setB('unlocked', v);
+
   /// token GitHub (อ่านอย่างเดียว) สำหรับเช็ก/โหลดอัปเดตจาก repo ส่วนตัว — ไม่ถูกสำรองลงไฟล์
   String get ghToken => _s('ghToken', '');
   set ghToken(String v) {
@@ -587,7 +591,7 @@ class AppSettings extends ChangeNotifier {
   set graphSec(int v) => _setI('graphSec', v);
 
   // ---------- โปรไฟล์รถ + สำรองค่าตั้ง ----------
-  static const _noCopy = {'profNames', 'profCur', 'lastProfileSwitch', 'ghToken'};
+  static const _noCopy = {'profNames', 'profCur', 'lastProfileSwitch', 'ghToken', 'unlocked'};
   bool _isProfKey(String k) => k.startsWith('prof_') || _noCopy.contains(k);
 
   /// ค่าตั้งทั้งหมดเป็น JSON (ไม่รวมโปรไฟล์อื่น)

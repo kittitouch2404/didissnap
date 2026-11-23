@@ -9,6 +9,7 @@ import 'data/key_sound.dart';
 import 'data/native.dart';
 import 'settings.dart';
 import 'ui/boot_logo.dart';
+import 'ui/lock_page.dart';
 import 'ui/custom_logo.dart';
 import 'ui/boot_video.dart';
 import 'ui/dash_shell.dart';
@@ -40,7 +41,9 @@ class _DashAppState extends State<DashApp> {
     widget.settings.addListener(_applySystem);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _applySystem();
-    widget.hub.start();
+    if (widget.settings.unlocked) {
+      widget.hub.start();
+    }
     Native.syncAutoStart();   // เปิด service เบื้องหลัง (ถ้าเปิดส่งค่าให้จอ CYD หรือเปิดแอปอัตโนมัติไว้)
     // เสียงบิดกุญแจ: แอปเปิดอยู่แล้วตอนรถติด / แอปถูกเปิดเองเพราะรถติด
     Native.m.setMethodCallHandler((call) async {
@@ -87,7 +90,19 @@ class _DashAppState extends State<DashApp> {
         ),
         scaffoldBackgroundColor: const Color(0xFF0B0B0B),
       ),
-      home: switch (widget.settings.bootMode) {
+      home: !widget.settings.unlocked
+          ? LockPage(
+              settings: widget.settings,
+              onUnlock: () => widget.hub.restart(),
+              next: _home,
+            )
+          : _home(),
+    );
+  }
+
+  /// หน้าแรกหลังปลดล็อก: โลโก้ / คลิป -> หน้าปัด
+  Widget _home() {
+    return switch (widget.settings.bootMode) {
         1 => BootVideoPage(
             settings: widget.settings,
             next: () => DashShell(settings: widget.settings, hub: widget.hub),
@@ -103,7 +118,6 @@ class _DashAppState extends State<DashApp> {
                 : DashShell(settings: widget.settings, hub: widget.hub),
           ),
         _ => DashShell(settings: widget.settings, hub: widget.hub),
-      },
-    );
+      };
   }
 }

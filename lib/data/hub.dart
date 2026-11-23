@@ -98,6 +98,7 @@ class DataHub extends ChangeNotifier {
       '${settings.espHost}:${settings.espPort}';
 
   void _onSettings() {
+    if (!settings.unlocked) return; // ยังไม่ใส่รหัสเข้าแอป = ไม่ต่อรถ
     if (_signature() != _sig) restart();
   }
 
