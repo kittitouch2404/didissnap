@@ -88,9 +88,9 @@ class TripAlertTab extends StatelessWidget {
             title: Text(k.$2),
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
               DropdownButton<int>(
-                value: s.alertSound(k.$1).clamp(0, AlertEngine.sounds.length - 1),
+                value: AlertEngine.choices.contains(s.alertSound(k.$1)) ? s.alertSound(k.$1) : 1,
                 items: [
-                  for (var i = 0; i < AlertEngine.sounds.length; i++)
+                  for (final i in AlertEngine.choices)
                     DropdownMenuItem(value: i, child: Text(AlertEngine.sounds[i])),
                 ],
                 onChanged: (v) {
@@ -105,7 +105,6 @@ class TripAlertTab extends StatelessWidget {
               ),
             ]),
           ),
-        const _Hint('เสียงพูด: ใช้เสียงอ่านภาษาไทยของเครื่อง (ถ้าไม่มีเสียง ให้ลง "Google Speech Services" / ตั้งภาษาไทยใน Text-to-speech)'),
         const _Header('หน้าเตือน'),
         for (final (v, t) in const [
           (2, 'เต็มจอแดงกะพริบ ทุกเรื่อง'),

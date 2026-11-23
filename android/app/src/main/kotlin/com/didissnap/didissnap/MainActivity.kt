@@ -264,8 +264,6 @@ class MainActivity : FlutterActivity() {
     private var pendingFile: MethodChannel.Result? = null
 
     // ---------------- เสียงเตือน ----------------
-    private var tts: android.speech.tts.TextToSpeech? = null
-    private var ttsOk = false
     private var player: android.media.MediaPlayer? = null
 
     /** เล่นเสียงจาก assets ของ Flutter (ก๊อปไว้ใน cache ครั้งแรก) */
@@ -280,7 +278,7 @@ class MainActivity : FlutterActivity() {
 
     /**
      * id: 0 บี๊บสั้น, 1 บี๊บคู่, 2 ไซเรนแหลม, 3 เตือนภัยยาว, 4 ติ๊ดเร็ว, 5 เสียงผิดพลาด, 6 ติ๊ง-ต่อง,
-     *     7 ระฆัง, 8 ไซเรนรถแข่ง, 9 8-bit alarm, 10 เสียงพูดภาษาไทย, 11 ปิด
+     *     7 ระฆัง, 8 ไซเรนรถแข่ง, 9 8-bit alarm, 11 ปิด
      */
     private fun playAlert(id: Int, vol: Int, text: String) {
         when (id) {
@@ -314,24 +312,6 @@ class MainActivity : FlutterActivity() {
                     mp.start()
                     player = mp
                 } catch (e: Exception) {
-                }
-            }
-            10 -> {
-                val say = {
-                    val b = Bundle()
-                    b.putFloat(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_VOLUME, vol / 100f)
-                    tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, b, "alert")
-                }
-                if (tts == null) {
-                    tts = android.speech.tts.TextToSpeech(this) { st ->
-                        ttsOk = st == android.speech.tts.TextToSpeech.SUCCESS
-                        if (ttsOk) {
-                            tts?.language = java.util.Locale("th", "TH")
-                            say()
-                        }
-                    }
-                } else if (ttsOk) {
-                    say()
                 }
             }
         }

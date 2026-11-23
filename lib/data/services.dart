@@ -91,8 +91,11 @@ class AlertEngine {
   /// เสียงเตือนที่เลือกได้ (id ตรงกับฝั่ง Kotlin playAlert)
   static const List<String> sounds = [
     'บี๊บสั้น', 'บี๊บคู่', 'ไซเรนแหลม', 'เตือนภัยยาว', 'ติ๊ด ๆ เร็ว', 'เสียงผิดพลาด', 'ติ๊ง-ต่อง',
-    'ระฆังเตือน', 'ไซเรนรถแข่ง', '8-bit alarm', 'เสียงพูด (ภาษาไทย)', 'ปิดเสียง',
+    'ระฆังเตือน', 'ไซเรนรถแข่ง', '8-bit alarm', '', 'ปิดเสียง',
   ];
+
+  /// id ที่เลือกได้ในเมนู (10 = เดิมเป็นเสียงพูด เอาออกแล้ว)
+  static const List<int> choices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11];
 
   /// ประเภทเตือน: (key, ชื่อ, เสียงเริ่มต้น)
   static const List<(String, String, int)> kinds = [
@@ -105,12 +108,9 @@ class AlertEngine {
 
   /// เล่นเสียงของเตือนชนิดนี้ (text = คำพูดถ้าเลือกเสียงพูด)
   Future<void> play(String key, String text, {int times = 1}) async {
-    final id = s.alertSound(key);
+    var id = s.alertSound(key);
     if (id >= 11) return;
-    if (id == 10) {
-      await Native.alertSound(10, s.alertVol, text);
-      return;
-    }
+    if (id == 10) id = 1; // เคยตั้งเป็นเสียงพูด -> บี๊บคู่
     for (var i = 0; i < times; i++) {
       await Native.alertSound(id, s.alertVol, text);
       if (i < times - 1) await Future<void>.delayed(Duration(milliseconds: id >= 7 ? 1700 : 1000));
