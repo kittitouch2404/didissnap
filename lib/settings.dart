@@ -271,8 +271,59 @@ class AppSettings extends ChangeNotifier {
 
   // ---------- หน้าที่เปิดใช้ ----------
   // เก็บเป็น "หน้าที่ปิดไว้" เพื่อให้หน้าใหม่ในเวอร์ชันถัดไปโผล่ขึ้นมาเอง
+  // ---------- จำนวนหน้า GIF (เพิ่ม/ลบเองได้ 1-20) ----------
+  int get gifPageCount => _i('gifPages', 5).clamp(1, 20);
+
+  /// หน้าทั้งหมด: หน้า GIF ตามจำนวนที่ตั้ง (gif1..gifN) แทรกตรงตำแหน่งหน้า GIF เดิม
+  List<(String, String)> get allPages {
+    const cydNo = [9, 10, 11, 12, 13];
+    final out = <(String, String)>[];
+    var done = false;
+    for (final p in kPages) {
+      if (p.$1.startsWith('gif')) {
+        if (done) continue;
+        done = true;
+        for (var i = 1; i <= gifPageCount; i++) {
+          out.add(('gif$i', i <= 5 ? 'GIF $i (แบบหน้า ${cydNo[i - 1]} จอ CYD)' : 'GIF $i (เพิ่มเอง)'));
+        }
+      } else {
+        out.add(p);
+      }
+    }
+    return out;
+  }
+
+  /// เพิ่มหน้า GIF ใหม่ (ต่อท้าย) -> คืน index (0-based)
+  int addGifPage() {
+    final n = gifPageCount;
+    if (n >= 20) return -1;
+    _p.setInt('gifPages', n + 1);
+    _p.remove('gp$n');
+    _gifCache.remove(n);
+    notifyListeners();
+    return n;
+  }
+
+  /// ลบหน้า GIF i (0-based): เลื่อนค่าตั้งหน้าที่อยู่ถัดไปขึ้นมา
+  void deleteGifPage(int i) {
+    final n = gifPageCount;
+    if (n <= 1 || i < 0 || i >= n) return;
+    for (var k = i; k < n - 1; k++) {
+      final nx = _p.getString('gp${k + 1}');
+      if (nx != null) {
+        _p.setString('gp$k', nx);
+      } else {
+        _p.remove('gp$k');
+      }
+    }
+    _p.remove('gp${n - 1}');
+    _gifCache.clear();
+    _p.setInt('gifPages', n - 1);
+    notifyListeners();
+  }
+
   List<String> get pages {
-    final all = kPages.map((e) => e.$1).toList();
+    final all = allPages.map((e) => e.$1).toList();
     final off = _p.getStringList('pagesOff') ?? const <String>[];
     final r = all.where((id) => !off.contains(id)).toList();
     return r.isEmpty ? all : r;
@@ -280,7 +331,7 @@ class AppSettings extends ChangeNotifier {
 
   set pages(List<String> v) {
     _p.setStringList('pagesOff',
-        kPages.map((e) => e.$1).where((id) => !v.contains(id)).toList());
+        allPages.map((e) => e.$1).where((id) => !v.contains(id)).toList());
     notifyListeners();
   }
 

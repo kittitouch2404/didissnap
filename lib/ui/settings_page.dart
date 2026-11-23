@@ -520,9 +520,29 @@ class DisplayTab extends StatelessWidget {
             ),
           ),
           const _Header('หน้าที่แสดง (ปัดซ้าย/ขวา)'),
-          for (final p in kPages)
+          for (final p in s.allPages)
             SwitchListTile(
               dense: true,
+              secondary: p.$1.startsWith('gif') && s.gifPageCount > 1
+                  ? IconButton(
+                      tooltip: 'ลบหน้านี้',
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () async {
+                        final ok = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: Text('ลบหน้า ${p.$2.split(' (').first}?'),
+                            content: const Text('ค่าตั้งของหน้านี้ (GIF / สี / ช่องค่า) จะหายไป'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ยกเลิก')),
+                              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('ลบ')),
+                            ],
+                          ),
+                        );
+                        if (ok == true) s.deleteGifPage(int.parse(p.$1.substring(3)) - 1);
+                      },
+                    )
+                  : null,
               title: Text(p.$2),
               value: s.pages.contains(p.$1),
               onChanged: (on) {
@@ -531,12 +551,28 @@ class DisplayTab extends StatelessWidget {
                   _snack(context, 'ต้องเปิดไว้อย่างน้อย 1 หน้า');
                   return;
                 }
-                s.pages = kPages
+                s.pages = s.allPages
                     .map((e) => e.$1)
                     .where((id) => id == p.$1 ? on : cur.contains(id))
                     .toList();
               },
             ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.add),
+                label: Text('เพิ่มหน้า GIF (มี ${s.gifPageCount}/20)'),
+                onPressed: s.gifPageCount >= 20
+                    ? null
+                    : () {
+                        final i = s.addGifPage();
+                        if (i >= 0) _snack(context, 'เพิ่มหน้า GIF ${i + 1} แล้ว — ปัดไปหน้านั้น แล้วกดค้างที่ตัวเลขเพื่อเลือก GIF');
+                      },
+              ),
+            ),
+          ),
         ],
       ),
     );

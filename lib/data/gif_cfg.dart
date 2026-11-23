@@ -11,11 +11,16 @@ class GifCfg {
         bz = ((m['bz'] as num?)?.toDouble() ?? 1.0).clamp(1.0, 3.0),
         bx = ((m['bx'] as num?)?.toDouble() ?? 0.0).clamp(-1.0, 1.0),
         by = ((m['by'] as num?)?.toDouble() ?? 0.0).clamp(-1.0, 1.0),
+        six = m['six'] == true,
         slots = _slots(m['slots']);
 
   static List<int> _slots(Object? v) {
     final l = (v is List) ? v.whereType<num>().map((e) => e.toInt()).toList() : <int>[];
-    return l.length == 3 && l.every((e) => e >= 0 && e < 19) ? l : [0, 1, 2];
+    // 6 ช่องเสมอ: 3 ช่องแรก = โหมด 3 ค่า, โหมด 6 ค่าใช้ครบ
+    const def = [0, 1, 2, 3, 4, 8];
+    if (!l.every((e) => e >= 0 && e < 19)) return [...def];
+    if (l.length == 3) return [...l, ...def.where((e) => !l.contains(e)).take(3)];
+    return l.length == 6 ? l : [...def];
   }
 
   /// ไฟล์ GIF (ก๊อปไว้ในโฟลเดอร์แอป)
@@ -36,7 +41,13 @@ class GifCfg {
   /// แบบ B: ซูม (1-3 เท่า) + ตำแหน่ง (-1..1 ของระยะที่เลื่อนได้, 0 = กลาง)
   double bz, bx, by;
 
-  /// ค่าใน 3 ช่องขวา (index ของ kGifMetrics)
+  /// ช่องขวา: false = 3 ค่า (ตัวใหญ่), true = 6 ค่า (2 คอลัมน์)
+  bool six;
+
+  /// ค่าที่แสดงตอนนี้ (3 หรือ 6 ช่อง)
+  List<int> get shown => six ? slots : slots.sublist(0, 3);
+
+  /// ค่าในช่องขวา (เก็บ 6 ช่องเสมอ) (index ของ kGifMetrics)
   List<int> slots;
 
   Map<String, dynamic> toJson() => {
@@ -51,5 +62,6 @@ class GifCfg {
         'bx': bx,
         'by': by,
         'slots': slots,
+        'six': six,
       };
 }

@@ -226,7 +226,7 @@ class _GifPageState extends State<GifPage> {
   }
 
   void _trackPeaks(Frame f, GifCfg c) {
-    for (final m in c.slots) {
+    for (final m in c.shown) {
       final v = _metricVal(f, m);
       if (v == null) continue;
       final isMin = m == 2 || m == 9;
@@ -240,13 +240,16 @@ class _GifPageState extends State<GifPage> {
     if (c.style != 0) return;
     if (p.dx < size.width * 0.63) return;
     final top = size.height * 0.09, h = size.height * 0.86 / 3;
-    final i = ((p.dy - top) / h).floor();
-    if (i < 0 || i > 2) return;
+    final row = ((p.dy - top) / h).floor();
+    if (row < 0 || row > 2) return;
+    // โหมด 6 ค่า: คอลัมน์ซ้าย = ช่อง 0-2, ขวา = ช่อง 3-5
+    final right = c.six && p.dx > size.width * (0.645 + 0.985) / 2;
+    final i = row + (right ? 3 : 0);
     var m = c.slots[i];
     for (var k = 0; k < kGifMetrics.length; k++) {
       m = (m + 1) % kGifMetrics.length;
       if (m >= kGifCustom0 && !s.customPid(m - kGifCustom0).valid) continue;   // ช่อง Custom ที่ยังไม่ได้ตั้ง = ข้าม
-      if (!c.slots.contains(m)) break;
+      if (!c.shown.contains(m)) break;
     }
     c.slots[i] = m;
     s.setGifCfg(widget.index, c);
@@ -273,7 +276,7 @@ class _GifPageState extends State<GifPage> {
             // ให้ ELM อ่านค่าที่โชว์ในหน้านี้ถี่ขึ้น (แบบ B ไม่มีช่องค่า)
             widget.hub.focusPids = c.style == 1
                 ? const <String>[]
-                : [for (final m in c.slots) kGifMetricPid[m]];
+                : [for (final m in c.shown) kGifMetricPid[m]];
             _advance(f, c);
             _trackPeaks(f, c);
             final g = _gif;
@@ -346,27 +349,37 @@ class _GifDashPainter extends CustomPainter {
     _label(cv, 'km/h', Offset(w * 0.23, h * 0.90), h * 0.04);
     _anime(cv, _rpmTxt(), Offset(w * 0.53, h * 0.965), fs, f.atRedline, TextAlign.right);
     _label(cv, 'RPM', Offset(w * 0.54, h * 0.90), h * 0.04);
-    // ค่า 3 ช่องขวา
-    final x0 = w * 0.645, x1 = w * 0.985, top0 = h * 0.09, bh = h * 0.86 / 3;
-    for (var i = 0; i < 3; i++) {
-      final m = c.slots[i];
-      final y = top0 + bh * i;
-      final (name, unit, dec) = gifMetricInfo(f.s, m);
-      _label(cv, name, Offset(x0, y), h * 0.045);
-      final v = _metricVal(f, m);
-      final isMin = m == 2 || m == 9;
-      final p = pk[m];
-      final pkTxt = '${isMin ? 'MIN' : 'MAX'} ${p == null ? '--' : p.toStringAsFixed(dec)}';
-      _label(cv, pkTxt, Offset(x1, y + h * 0.006), h * 0.032, color: top, right: true);
-      final warn = (m == 0 && v != null && v >= f.ectWarn && (f.time * 3).floor().isEven) ||
-          (m == 2 && v != null && v < 11.8);
-      _anime(cv, v == null ? '--' : v.toStringAsFixed(dec),
-          Offset(x1 - w * 0.045, y + bh * 0.70), h * 0.13, warn, TextAlign.right);
-      _label(cv, unit, Offset(x1 - w * 0.04, y + bh * 0.42), h * 0.035);
-      final (lo, hi) = _metricRange(f, m);
-      final t = v == null ? 0.0 : ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
-      final pt = p == null ? -1.0 : ((p - lo) / (hi - lo)).clamp(0.0, 1.0);
-      _segBar(cv, Rect.fromLTWH(x0, y + bh * 0.80, x1 - x0, h * 0.035), 18, t, 2, peak: pt);
+    // ค่าช่องขวา: 3 ค่า (ตัวใหญ่) หรือ 6 ค่า (2 คอลัมน์)
+    final xa = w * 0.645, xb = w * 0.985, top0 = h * 0.09, bh = h * 0.86 / 3;
+    final nCol = c.six ? 2 : 1, gap = w * 0.02;
+    final cw = (xb - xa - gap * (nCol - 1)) / nCol;
+    for (var col = 0; col < nCol; col++) {
+      final x0 = xa + col * (cw + gap), x1 = x0 + cw;
+      final k = c.six ? 0.72 : 1.0; // ตัวเล็กลงในโหมด 6 ค่า
+      for (var i = 0; i < 3; i++) {
+        final m = c.slots[i + col * 3];
+        final y = top0 + bh * i;
+        final (name, unit, dec) = gifMetricInfo(f.s, m);
+        _label(cv, name, Offset(x0, y), h * 0.045 * (c.six ? 0.8 : 1));
+        final v = _metricVal(f, m);
+        final isMin = m == 2 || m == 9;
+        final p = pk[m];
+        final pkTxt = '${isMin ? 'MIN' : 'MAX'} ${p == null ? '--' : p.toStringAsFixed(dec)}';
+        if (c.six) {
+          _label(cv, pkTxt, Offset(x0, y + bh * 0.80 - h * 0.042), h * 0.026, color: top);
+        } else {
+          _label(cv, pkTxt, Offset(x1, y + h * 0.006), h * 0.032, color: top, right: true);
+        }
+        final warn = (m == 0 && v != null && v >= f.ectWarn && (f.time * 3).floor().isEven) ||
+            (m == 2 && v != null && v < 11.8);
+        _anime(cv, v == null ? '--' : v.toStringAsFixed(dec),
+            Offset(x1 - w * 0.045 * k, y + bh * 0.70), h * 0.13 * k, warn, TextAlign.right);
+        _label(cv, unit, Offset(x1 - w * 0.04 * k, y + bh * 0.42), h * 0.035 * (c.six ? 0.85 : 1));
+        final (lo, hi) = _metricRange(f, m);
+        final t = v == null ? 0.0 : ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
+        final pt = p == null ? -1.0 : ((p - lo) / (hi - lo)).clamp(0.0, 1.0);
+        _segBar(cv, Rect.fromLTWH(x0, y + bh * 0.80, x1 - x0, h * 0.035), c.six ? 10 : 18, t, 2, peak: pt);
+      }
     }
   }
 
@@ -564,6 +577,24 @@ Future<void> showGifSettings(BuildContext context, AppSettings s, int index) {
                     },
                   ),
                 ]),
+                if (c.style == 0) ...[
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    const Text('ช่องค่าด้านขวา'),
+                    const SizedBox(width: 12),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(value: false, label: Text('3 ค่า (ตัวใหญ่)')),
+                        ButtonSegment(value: true, label: Text('6 ค่า (2 คอลัมน์)')),
+                      ],
+                      selected: {c.six},
+                      onSelectionChanged: (v) {
+                        c.six = v.first;
+                        save();
+                      },
+                    ),
+                  ]),
+                ],
                 if (c.style == 1) ...[
                   const SizedBox(height: 8),
                   Row(children: [

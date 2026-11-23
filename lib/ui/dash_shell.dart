@@ -124,7 +124,7 @@ class _DashShellState extends State<DashShell> {
       'perf' => PerfPage(key: ValueKey(id), hub: hub),
       'pids' => PidsPage(key: ValueKey(id), hub: hub),
       'graph' => GraphPage(key: ValueKey(id), hub: hub),
-      'gif1' || 'gif2' || 'gif3' || 'gif4' || 'gif5' =>
+      _ when id.startsWith('gif') =>
         GifPage(key: ValueKey(id), index: int.parse(id.substring(3)) - 1, hub: hub),
       _ => LiveBuilder(
           key: ValueKey(id), hub: hub, builder: (_, f) => PictureDash(f: f)),
