@@ -68,7 +68,8 @@ class AlertEngine {
   /// ข้อความเตือนที่โชว์อยู่ (null = ไม่มี)  สีแดง/ส้ม
   final ValueNotifier<(String, bool)?> banner = ValueNotifier(null);
 
-  DateTime _ectAt = DateTime.fromMillisecondsSinceEpoch(0), _voltAt = _ectAt, _spdAt = _ectAt;
+  static final _t0 = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _ectAt = _t0, _voltAt = _t0, _spdAt = _t0;
   DateTime? _connAt;
   bool _shiftArmed = true;
   int _voltLowN = 0;
