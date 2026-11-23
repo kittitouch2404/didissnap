@@ -73,8 +73,10 @@ class _DashShellState extends State<DashShell> {
     };
   }
 
+  int _col = 0;
   void _onSettings() {
     _night();
+    if (_col != widget.settings.menuColor) setState(() => _col = widget.settings.menuColor);
     final ids = widget.settings.pages;
     if (ids.join(',') == _ids.join(',')) return;
     setState(() {
@@ -153,12 +155,12 @@ class _DashShellState extends State<DashShell> {
             right: 0,
             child: IgnorePointer(child: Center(child: _AlertBanner(hub: hub))),
           ),
-          Positioned(top: 6, right: 8, child: _MenuButton(onTap: _openMenu)),
+          Positioned(top: 6, right: 8, child: _MenuButton(onTap: _openMenu, color: Color(widget.settings.menuColor))),
           Positioned(
             bottom: 3,
             left: 0,
             right: 0,
-            child: _Dots(count: _ids.length, index: _page),
+            child: _Dots(count: _ids.length, index: _page, color: Color(widget.settings.menuColor)),
           ),
         ],
       ),
@@ -216,8 +218,9 @@ class StatusChip extends StatelessWidget {
 }
 
 class _MenuButton extends StatelessWidget {
-  const _MenuButton({required this.onTap});
+  const _MenuButton({required this.onTap, required this.color});
   final VoidCallback onTap;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -225,16 +228,16 @@ class _MenuButton extends StatelessWidget {
       color: Colors.black54,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(6),
-        side: const BorderSide(color: kAccent),
+        side: BorderSide(color: color),
       ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(6),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           child: Text('MENU',
               style: TextStyle(
-                  color: kAccent, fontWeight: FontWeight.w800, fontSize: 12)),
+                  color: color, fontWeight: FontWeight.w800, fontSize: 12)),
         ),
       ),
     );
@@ -242,8 +245,9 @@ class _MenuButton extends StatelessWidget {
 }
 
 class _Dots extends StatelessWidget {
-  const _Dots({required this.count, required this.index});
+  const _Dots({required this.count, required this.index, required this.color});
   final int count, index;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -257,7 +261,7 @@ class _Dots extends StatelessWidget {
               height: 5,
               margin: const EdgeInsets.symmetric(horizontal: 3),
               decoration: BoxDecoration(
-                color: i == index ? kAccent : Colors.white24,
+                color: i == index ? color : Colors.white24,
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
