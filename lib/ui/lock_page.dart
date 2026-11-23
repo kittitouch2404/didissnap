@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import '../settings.dart';
 
 /// รหัสเข้าแอป: เก็บเป็นค่า hash (SHA-256) ไม่มีตัวเลขรหัสจริงอยู่ในแอป
-const String _kPinHash = '375c276b1c03a7d8075a45e764604f2d1ec9caf8ffa37b0a4e34a81fdc3e9939';
+const String _kPinHash = '276ee9b6a82b9ae63bcf745cb5241e69c1ede7d4889832b859be5a2c4dc9d5b9';
 const String _kSalt = 'didissnap-lock-v1:';
 
 bool pinOk(String pin) => sha256.convert(utf8.encode('$_kSalt$pin')).toString() == _kPinHash;
