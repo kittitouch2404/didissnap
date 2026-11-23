@@ -25,6 +25,12 @@ struct RawData {
 };
 static RawData RAW;
 
+// Custom PID ที่ C3 ถามเอง (ช่อง 0-3 = CUSTOM 1-4, 4 = CVT TEMP) — ชื่อ/หน่วยตั้งจากแอป, มาทาง BLE จาก C3
+#define N_CUST 5
+struct CustVal { float v = 0; uint32_t t = 0; bool on = false; uint8_t dec = 1; char name[12] = ""; char unit[6] = ""; };
+static CustVal CUST[N_CUST];
+inline bool custHave(int i) { return i >= 0 && i < N_CUST && CUST[i].on && CUST[i].t && millis() - CUST[i].t < 3000; }
+
 namespace data {
 
 // สปริงหน่วงแบบไม่เด้งเกิน (critically damped) เหมือนในแอป

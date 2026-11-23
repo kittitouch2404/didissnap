@@ -201,7 +201,17 @@ inline void valC(const char* v, int x, int y, int k, uint16_t c, int lab = PX_LA
 }
 // ช่องค่าที่เลือกได้ (หน้า 13 ช่องล่าง) — ลำดับตรงกับ didicfg::SLOT_NAMES
 struct SlotV { const char* v; const char* unit; uint16_t c; };
+// ชื่อช่อง: ช่อง Custom ใช้ชื่อที่ตั้งในแอป
+inline const char* slotName(int i) {
+  if (i >= 12 && i < 12 + N_CUST && CUST[i - 12].name[0]) return CUST[i - 12].name;
+  return didicfg::SLOT_NAMES[i];
+}
 inline SlotV slotVal(int i) {
+  if (i >= 12 && i < 12 + N_CUST) {                        // Custom PID / CVT TEMP จาก C3
+    const CustVal& c = CUST[i - 12];
+    if (!custHave(i - 12)) return {"--", c.unit, rgb(0x888888)};
+    return {c.dec >= 2 ? f2(c.v) : c.dec == 1 ? f1(c.v) : f0(c.v), c.unit, WH};
+  }
   switch (i) {
     case 0: return {f0(D.ect), "C", ectC()};
     case 1: return {f0(D.iat), "C", WH};
@@ -222,7 +232,8 @@ inline SlotV slotVal(int i) {
 }
 // ความกว้างมากสุดที่ช่องนั้นน่าจะใช้ (จัดช่องขวาไม่ให้ทับ)
 inline const char* slotWidest(int i) {
-  static const char* const Wd[] = {"110", "60", "14.8", "-0.9", "100", "100", "99.9", "100", "300", "999.9", "-10.0", "18.8"};
+  static const char* const Wd[] = {"110", "60", "14.8", "-0.9", "100", "100", "99.9", "100", "300", "999.9", "-10.0", "18.8",
+                                   "999.9", "999.9", "999.9", "999.9", "120"};
   return (i >= 0 && i < (int)(sizeof(Wd) / sizeof(Wd[0]))) ? Wd[i] : "999";
 }
 inline void valU(const char* v, const char* u, int x, int y, int k, uint16_t c, int lab = PX_LAB) {
@@ -231,7 +242,7 @@ inline void valU(const char* v, const char* u, int x, int y, int k, uint16_t c, 
 }
 inline int slotWidth(int i) {
   SlotV d = slotVal(i);
-  return max(pxWidth(didicfg::SLOT_NAMES[i], PX_LAB), pxWidth(slotWidest(i), PX_SM) + 2 + 2 * PX_LAB + pxWidth(d.unit, PX_LAB));
+  return max(pxWidth(slotName(i), PX_LAB), pxWidth(slotWidest(i), PX_SM) + 2 + 2 * PX_LAB + pxWidth(d.unit, PX_LAB));
 }
 
 inline void topBar() {               // หน้า 14-16
@@ -596,14 +607,14 @@ inline void p8() {
 // ช่องค่าในแถวล่าง: ป้าย + ตัวเลข + หน่วยเล็ก
 inline void slotBox(int i, int x, int y, int k) {
   SlotV d = slotVal(i);
-  pt(didicfg::SLOT_NAMES[i], x, y, PX_LAB);
+  pt(slotName(i), x, y, PX_LAB);
   int vy = y + lh() + 6;
   pt(d.v, x, vy, k, d.c);
   pt(d.unit, x + pxWidth(d.v, k) + 3, vy + 8 * k - 8, 1);
 }
 // ความกว้างที่ช่องต้องใช้ (คิดจากค่าที่กว้างสุดของช่องนั้น ช่องจะไม่ขยับไปมาตอนตัวเลขเปลี่ยน)
 inline int slotNeed(int i, int k) {
-  return max(pxWidth(didicfg::SLOT_NAMES[i], PX_LAB), pxWidth(slotWidest(i), k) + 3 + pxWidth(slotVal(i).unit, 1));
+  return max(pxWidth(slotName(i), PX_LAB), pxWidth(slotWidest(i), k) + 3 + pxWidth(slotVal(i).unit, 1));
 }
 // ---- หน้า 13: ตัวละครเปลี่ยนหน้าตามรอบ (จาก RpmFacePage) ----
 #define RF_REDLINE 7500        // รอบ redline ของหน้านี้

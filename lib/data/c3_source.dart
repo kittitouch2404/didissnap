@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
@@ -6,7 +7,6 @@ import 'package:flutter/services.dart';
 import 'app_log.dart';
 import 'car_data.dart';
 import 'custom_pid.dart';
-import 'elm_source.dart';
 import 'hub.dart';
 import 'native.dart';
 
@@ -48,12 +48,17 @@ class C3Source implements CarSource {
     await Native.m.invokeMethod('c3Start');
     hub.setLink(this, LinkState.connecting, 'กำลังหา C3...');
     _watch = Timer.periodic(const Duration(milliseconds: 500), (_) => _status());
-    _cust = Timer.periodic(const Duration(milliseconds: 700), (_) => _pollCustom());
+    // ส่งค่าตั้ง Custom PID / CVT TEMP ให้ C3 (C3 ถามรถเองแล้วส่งค่าให้ทุกจอ) — ส่งซ้ำทุก 15 วิ กัน C3 รีบูต
+    hub.settings.addListener(_cfgChanged);
+    _cust = Timer.periodic(const Duration(seconds: 15), (_) => _sendCfg(force: true));
   }
 
   void _onEvent(dynamic e) {
     if (e is String) {
       if (e != _bleState) AppLog.i('C3 BLE: $e');
+      if (e == 'connected' && _bleState != 'connected') {
+        Timer(const Duration(milliseconds: 600), () => _sendCfg(force: true));
+      }
       _bleState = e;
       _status();
       return;
@@ -70,6 +75,10 @@ class C3Source implements CarSource {
         _info = String.fromCharCodes(e.sublist(5).takeWhile((c) => c != 0));
       case 8: // DN_RAWRES
         if (e.length >= 8) _complete(b.getUint16(6, Endian.little), e);
+      case 10: // DN_CUST: ค่าของทุกช่อง
+        if (e.length >= 28) _custVals(b);
+      case 12: // DN_CUSTRAW: คำตอบดิบล่าสุดของช่อง (โชว์ในหน้าทดสอบ)
+        if (e.length >= 7) _custRaw(e);
     }
   }
 
@@ -182,52 +191,115 @@ class C3Source implements CarSource {
     return [for (var i = 0; i < cnt && 8 + i < r.length; i++) r[8 + i].toRadixString(16).padLeft(2, '0').toUpperCase()].join();
   }
 
-  // ---------------- Custom PID / CVT TEMP: วนถามทีละช่อง
-  int _ci = 0;
-  bool _busy = false;
-  Future<void> _pollCustom() async {
-    final hub = _hub;
-    if (hub == null || _busy || hub.state != LinkState.connected) return;
-    final s = hub.settings, d = hub.data;
-    final jobs = <(int, CustomPid?)>[];
+  // ---------------- Custom PID / CVT TEMP: C3 ถามเอง
+  String _cfgSig = '';
+  void _cfgChanged() => _sendCfg();
+
+  static String _ascii(String t, int n) {
+    final a = t.replaceAll('°', '').replaceAll(RegExp(r'[^\x20-\x7E]'), '').trim();
+    return a.length > n ? a.substring(0, n) : a;
+  }
+
+  /// สูตร CVT TEMP แบบเลือกจากเมนู -> สูตรตัวอักษร (เลื่อน A/B ตามไบต์ที่เลือก)
+  static String _cvtFml(int f, int byte) {
+    final a = String.fromCharCode(65 + byte.clamp(0, 20)), bb = String.fromCharCode(66 + byte.clamp(0, 20));
+    return switch (f) {
+      1 => a,
+      2 => '($a*256+$bb)/10-40',
+      3 => '(($a*256+$bb)-2731)/10',
+      4 => '$a-50',
+      5 => '($a*9/5-58-32)*5/9',
+      _ => '$a-40',
+    };
+  }
+
+  Uint8List _custPkt(int slot, bool on, int hdr, String cmdHex, int dec, double lo, double hi, String name, String unit, String fml) {
+    final b = ByteData(84);
+    b.setUint32(0, _magic, Endian.little);
+    b.setUint8(4, 9); // DN_CUSTSET
+    b.setUint8(5, slot);
+    final cmd = CustomPid.cleanHex(cmdHex);
+    final n = (cmd.length ~/ 2).clamp(0, 7);
+    b.setUint8(6, on && n > 0 ? 1 : 0);
+    b.setUint8(7, n);
+    b.setUint16(8, hdr, Endian.little);
+    for (var i = 0; i < n; i++) {
+      b.setUint8(10 + i, int.parse(cmd.substring(i * 2, i * 2 + 2), radix: 16));
+    }
+    b.setUint8(17, dec.clamp(0, 2));
+    b.setFloat32(18, lo, Endian.little);
+    b.setFloat32(22, hi, Endian.little);
+    void str(int off, int len, String t) {
+      final u = ascii.encode(_ascii(t, len - 1));
+      for (var i = 0; i < u.length; i++) {
+        b.setUint8(off + i, u[i]);
+      }
+    }
+    str(26, 12, name);
+    str(38, 6, unit);
+    str(44, 40, fml.toUpperCase());
+    return b.buffer.asUint8List();
+  }
+
+  List<Uint8List> _cfgPkts() {
+    final s = _hub!.settings;
+    final out = <Uint8List>[];
     for (var k = 0; k < 4; k++) {
       final c = s.customPid(k);
-      if (c.valid) jobs.add((k, c));
+      final h = CustomPid.cleanHex(c.hdr);
+      out.add(_custPkt(k, c.valid, h.length == 3 && h != '7DF' ? int.parse(h, radix: 16) : 0, c.cmd, c.dec, c.lo, c.hi,
+          c.label, c.unit, c.formula));
     }
-    if (s.cvtTempOn && s.cvtReq.length >= 4) jobs.add((-1, null));
-    if (jobs.isEmpty) return;
-    _busy = true;
-    try {
-      final (k, c) = jobs[_ci++ % jobs.length];
-      if (c != null) {
-        final h = CustomPid.cleanHex(c.hdr);
-        final cmd = CustomPid.cleanHex(c.cmd);
-        final r = await raw(h.length == 3 && h != '7DF' ? int.parse(h, radix: 16) : 0, cmd);
-        d.custRaw[k] = r;
-        final bytes = ElmSource.parseUds(r, cmd);
-        final v = bytes == null ? null : evalFormula(c.formula, bytes);
-        if (v != null) {
-          d.cust[k] = v;
-          d.custAt[k] = DateTime.now();
-        }
+    final h = s.cvtHdr;
+    out.add(_custPkt(4, s.cvtTempOn && s.cvtReq.length >= 4, h.length == 3 ? int.parse(h, radix: 16) : 0, s.cvtReq, 0, 40,
+        120, 'CVT TEMP', 'C', _cvtFml(s.cvtFml, s.cvtByte)));
+    return out;
+  }
+
+  Future<void> _sendCfg({bool force = false}) async {
+    if (_hub == null || !_running || _bleState != 'connected') return;
+    final pk = _cfgPkts();
+    final sig = pk.map((p) => base64.encode(p)).join();
+    if (!force && sig == _cfgSig) return;
+    _cfgSig = sig;
+    for (final p in pk) {
+      await Native.m.invokeMethod<bool>('c3Write', {'b': p});
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    }
+  }
+
+  void _custVals(ByteData b) {
+    final d = _hub?.data;
+    if (d == null) return;
+    final have = b.getUint8(5);
+    final now = DateTime.now();
+    for (var k = 0; k < 5; k++) {
+      if ((have >> k) & 1 == 0) continue;
+      final v = b.getFloat32(8 + k * 4, Endian.little);
+      if (k < 4) {
+        d.cust[k] = v;
+        d.custAt[k] = now;
       } else {
-        final h = s.cvtHdr;
-        final r = await raw(h.length == 3 ? int.parse(h, radix: 16) : 0, s.cvtReq);
-        d.cvtRaw = r;
-        final b = ElmSource.parseUds(r, s.cvtReq);
-        if (b != null && b.length > s.cvtByte) {
-          final i = s.cvtByte;
-          final v = ElmSource.cvtFormula(s.cvtFml, b[i], i + 1 < b.length ? b[i + 1] : 0);
-          if (v > -40 && v < 200) {
-            d.cvtTemp = v;
-            d.cvtAt = DateTime.now();
-          }
-        }
+        d.cvtTemp = v;
+        d.cvtAt = now;
       }
-    } catch (e) {
-      AppLog.e('C3 custom PID', e);
-    } finally {
-      _busy = false;
+    }
+  }
+
+  void _custRaw(Uint8List e) {
+    final d = _hub?.data;
+    if (d == null) return;
+    final slot = e[5];
+    final n = ByteData.sublistView(e).getInt8(6);
+    final txt = n == -2
+        ? 'K-LINE: ใช้ header อื่นไม่ได้'
+        : n <= 0
+            ? 'NO DATA'
+            : [for (var i = 0; i < n && 7 + i < e.length; i++) e[7 + i].toRadixString(16).padLeft(2, '0').toUpperCase()].join();
+    if (slot < 4) {
+      d.custRaw[slot] = txt;
+    } else if (slot == 4) {
+      d.cvtRaw = txt;
     }
   }
 
@@ -255,6 +327,7 @@ class C3Source implements CarSource {
   @override
   Future<void> stop() async {
     _running = false;
+    _hub?.settings.removeListener(_cfgChanged);
     _watch?.cancel();
     _cust?.cancel();
     await _sub?.cancel();

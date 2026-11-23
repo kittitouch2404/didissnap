@@ -25,6 +25,7 @@
 #if USE_BLE
 #include "c3ble.h"
 #endif
+#include "custeval.h"
 #include "canobd.h"
 #include "kline.h"
 #include "esp_sleep.h"
@@ -299,6 +300,32 @@ static volatile uint16_t pendId = 0;
 static uint16_t seq = 0;
 static DidiNowRaw pendRaw = {};
 static volatile bool rawPending = false;
+// ---- Custom PID ที่ C3 ถามเอง (ตั้งจากแอป จำไว้ในตัว)
+static DidiNowCustSet cust[DN_NCUST] = {};
+static volatile float custV[DN_NCUST];
+static volatile uint32_t custT[DN_NCUST];
+static DidiNowCustRaw custRaw[DN_NCUST];
+static volatile uint8_t custDirty = 0, custRawNew = 0;   // บิต = ช่องที่ต้องบันทึก / มีคำตอบดิบใหม่
+static portMUX_TYPE custMux = portMUX_INITIALIZER_UNLOCKED;
+static void custLoad() {
+  for (int i = 0; i < DN_NCUST; i++) {
+    char k[6] = {'c', 'u', 's', (char)('0' + i), 0};
+    if (prefs.getBytes(k, &cust[i], sizeof(cust[i])) != sizeof(cust[i]) || cust[i].magic != DIDINOW_MAGIC) memset(&cust[i], 0, sizeof(cust[i]));
+    cust[i].fml[sizeof(cust[i].fml) - 1] = 0; cust[i].name[11] = 0; cust[i].unit[5] = 0;
+  }
+}
+static void custSave() {
+  uint8_t d = custDirty;
+  if (!d) return;
+  custDirty = 0;
+  for (int i = 0; i < DN_NCUST; i++) if (d & (1 << i)) {
+    char k[6] = {'c', 'u', 's', (char)('0' + i), 0};
+    DidiNowCustSet c;
+    portENTER_CRITICAL(&custMux); c = cust[i]; portEXIT_CRITICAL(&custMux);
+    prefs.putBytes(k, &c, sizeof(c));
+    Serial.printf("[cust] slot %d %s '%s' hdr %03X fml '%s'\n", i, c.on ? "ON" : "off", c.name, c.hdr, c.fml);
+  }
+}
 // คำสั่งจากจอ/แอป (มาทาง BLE หรือ ESP-NOW)
 static void gotCmd(const uint8_t* d, int n) {
   if (n < (int)sizeof(DidiNowCmd)) return;
@@ -308,6 +335,19 @@ static void gotCmd(const uint8_t* d, int n) {
   if (c->type == DN_RAWREQ && n >= (int)sizeof(DidiNowRaw) && !rawPending) {
     memcpy(&pendRaw, d, sizeof(pendRaw));
     rawPending = true;
+  }
+  if (c->type == DN_CUSTSET && n >= (int)sizeof(DidiNowCustSet)) {
+    const DidiNowCustSet* cs = (const DidiNowCustSet*)d;
+    if (cs->slot >= DN_NCUST) return;
+    portENTER_CRITICAL(&custMux);
+    bool same = !memcmp(&cust[cs->slot], cs, sizeof(DidiNowCustSet));
+    if (!same) {
+      memcpy(&cust[cs->slot], cs, sizeof(DidiNowCustSet));
+      cust[cs->slot].fml[sizeof(cs->fml) - 1] = 0; cust[cs->slot].name[11] = 0; cust[cs->slot].unit[5] = 0;
+      custT[cs->slot] = 0;
+      custDirty |= 1 << cs->slot;
+    }
+    portEXIT_CRITICAL(&custMux);
   }
 }
 static void tx(const void* p, size_t n) {
@@ -349,6 +389,36 @@ static void sendData() {
   m.timing = R.timing; m.oil = R.oil;
   tx(&m, sizeof(m));
 }
+// ค่า Custom ทุกช่อง (4 ครั้ง/วินาที) + ชื่อ/หน่วยทีละช่อง + คำตอบดิบที่ได้ใหม่
+static void sendCust(uint32_t now) {
+  static uint32_t tv = 0, ti = 0;
+  static int si = 0;
+  if (now - tv >= 250) {
+    tv = now;
+    DidiNowCust m = {};
+    m.magic = DIDINOW_MAGIC; m.type = DN_CUST;
+    for (int i = 0; i < DN_NCUST; i++) {
+      if (!cust[i].on) continue;
+      m.on |= 1 << i;
+      if (demo) { m.v[i] = (i == 4 ? 72 : 40 + i * 15) + sinf(now / 2000.f + i) * 3; m.have |= 1 << i; continue; }
+      if (custT[i] && now - custT[i] < 5000) { m.v[i] = custV[i]; m.have |= 1 << i; }
+    }
+    if (m.on) tx(&m, sizeof(m));
+  }
+  if (now - ti >= 600) {
+    ti = now;
+    DidiNowCustInfo m = {};
+    m.magic = DIDINOW_MAGIC; m.type = DN_CUSTINFO; m.slot = si;
+    portENTER_CRITICAL(&custMux);
+    m.on = cust[si].on; m.dec = cust[si].dec; m.lo = cust[si].lo; m.hi = cust[si].hi;
+    memcpy(m.name, cust[si].name, sizeof(m.name)); memcpy(m.unit, cust[si].unit, sizeof(m.unit));
+    portEXIT_CRITICAL(&custMux);
+    tx(&m, sizeof(m));
+    si = (si + 1) % DN_NCUST;
+  }
+  uint8_t nr = custRawNew;
+  for (int i = 0; i < DN_NCUST && nr; i++) if (nr & (1 << i)) { custRawNew &= ~(1 << i); tx(&custRaw[i], sizeof(custRaw[i])); break; }
+}
 static void sendInfo() {
   DidiNowInfo m = {};
   m.magic = DIDINOW_MAGIC; m.type = DN_GWINFO;
@@ -361,6 +431,37 @@ static void sendDtc(uint8_t cmd, uint16_t id, bool ok, char codes[16][6], int n)
   for (int i = 0; i < n && i < 16; i++) { strlcpy(r.codes[i], codes[i], 6); r.n++; }
   for (int k = 0; k < 3; k++) { tx(&r, sizeof(r)); delay(20); }
 }
+// ถาม Custom PID ช่องถัดไปที่เปิดอยู่ (วนทีละช่อง) แล้วคิดสูตร
+static void pollCust() {
+  static int ci = 0;
+  for (int g = 0; g < DN_NCUST; g++) {
+    int i = ci;
+    ci = (ci + 1) % DN_NCUST;
+    DidiNowCustSet c;
+    portENTER_CRITICAL(&custMux); c = cust[i]; portEXIT_CRITICAL(&custMux);
+    if (!c.on || c.len < 1 || c.len > 7) continue;
+    DidiNowCustRaw r = {};
+    r.magic = DIDINOW_MAGIC; r.type = DN_CUSTRAW; r.slot = i;
+    if (proto == DN_P_CAN500 || proto == DN_P_CAN250) {
+      uint32_t to = c.hdr ? c.hdr : (canobd::physical ? canobd::ecuRx - 8 : 0x7DF);
+      r.n = canobd::requestTo(to, c.data, c.len, r.data, sizeof(r.data), 250);
+    } else if (c.hdr && c.hdr != 0x7DF && c.hdr != 0x7E0) {
+      r.n = -2;
+    } else {
+      r.n = ask(c.data, c.len, r.data, sizeof(r.data), 300, true);
+    }
+    if (r.n < -2) r.n = -1;
+    // ข้อมูล = หลัง SID+0x40 และ echo ของคำสั่ง (เหมือน parseUds ในแอป)
+    if (r.n > c.len && r.data[0] == (uint8_t)(c.data[0] + 0x40) && !memcmp(r.data + 1, c.data + 1, c.len - 1)) {
+      float v;
+      if (custeval::eval(c.fml, r.data + c.len, r.n - c.len, &v)) { custV[i] = v; custT[i] = millis(); }
+    }
+    custRaw[i] = r;
+    custRawNew |= 1 << i;
+    return;
+  }
+}
+
 // Custom PID: ถามรถด้วยคำสั่ง/ID ที่จอขอมา แล้วตอบคำตอบดิบกลับไป
 static void handleRaw() {
   if (!rawPending) return;
@@ -446,6 +547,8 @@ static void obdTask(void*) {
     }
     if (pendCmd == DN_CMD_DTC_READ || pendCmd == DN_CMD_DTC_CLEAR) { handleCmd(); continue; }
     if (rawPending) { handleRaw(); continue; }
+    static uint32_t lastCust = 0;
+    if (millis() - lastCust > 400) { lastCust = millis(); pollCust(); }   // Custom PID ~2-3 ครั้ง/วินาที รวมทุกช่อง
     // ลำดับเหมือนจอ S3: รอบ → TPS → AFR (ทุกชุดที่ 4 = ค่าช้าแทน) → รอบ
     int k = step % 4, set = step / 4;
     step++;
@@ -472,6 +575,7 @@ void setup() {
   pinMode(PIN_BOOT, INPUT_PULLUP);
   prefs.begin("didic3", false);
   demo = prefs.getBool("demo", false);
+  custLoad();
   kline::begin(PIN_K_RX, PIN_K_TX);
   analogSetPinAttenuation(PIN_VBAT, ADC_11db);
   vbat = readVbat();
@@ -529,6 +633,8 @@ void loop() {
     deepSleep(!vbat ? WAKE_NOVBAT_S : vbat < LOWBAT_V ? WAKE_LOWBAT_S : WAKE_S);
   }
   if (now - lastSend >= 33) { lastSend = now; sendData(); }   // ~30 ครั้ง/วินาที
+  custSave();
+  sendCust(now);
   static uint32_t lastInfo = 0;
   if (!demo && carLink != DN_LINK_OK && now - lastInfo >= 700) { lastInfo = now; sendInfo(); }   // ผลตรวจสายขึ้นจอ
   delay(2);

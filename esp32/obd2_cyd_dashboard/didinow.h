@@ -7,7 +7,8 @@
 #define DIDINOW_MAGIC 0x31444944u   // "DID1"
 #define DIDINOW_CHANNEL 1           // ช่อง WiFi ของ S3 (SoftAP "Didissnap" ตั้งช่อง 1)
 
-enum : uint8_t { DN_DATA = 1, DN_CMD = 2, DN_DTC = 3, DN_GW = 4, DN_GWCMD = 5, DN_GWINFO = 6, DN_RAWREQ = 7, DN_RAWRES = 8 };
+enum : uint8_t { DN_DATA = 1, DN_CMD = 2, DN_DTC = 3, DN_GW = 4, DN_GWCMD = 5, DN_GWINFO = 6, DN_RAWREQ = 7, DN_RAWRES = 8,
+                 DN_CUSTSET = 9, DN_CUST = 10, DN_CUSTINFO = 11, DN_CUSTRAW = 12 };
 enum : uint8_t { DN_LINK_DEMO = 0, DN_LINK_WAIT = 1, DN_LINK_OK = 2 };
 enum : uint8_t { DN_CMD_DTC_READ = 1, DN_CMD_DTC_CLEAR = 2, DN_CMD_MODE_AUTO = 3, DN_CMD_MODE_DEMO = 4 };
 // โปรโตคอลที่ C3 ใช้คุยกับรถ
@@ -80,6 +81,51 @@ struct __attribute__((packed)) DidiNowRawRes {
   int8_t n;           // จำนวนไบต์คำตอบ · -1 = ไม่มีใครตอบ · -2 = ไม่รองรับ (K-line ใช้ header อื่นไม่ได้)
   uint16_t id;
   uint8_t data[48];   // ไบต์คำตอบ เริ่มที่ SID+0x40 (หรือ 7F)
+};
+
+// ---------------------------------------------------------------- Custom PID ที่ C3 ถามเอง (โชว์ได้ทุกจอ)
+// ช่อง 0-3 = CUSTOM 1-4, ช่อง 4 = CVT TEMP · ตั้งจากแอป (C3 จำไว้ในตัว ใช้ได้แม้ไม่เปิดแอป)
+#define DN_NCUST 5
+// แอป -> C3: ตั้งค่าช่อง
+struct __attribute__((packed)) DidiNowCustSet {
+  uint32_t magic;
+  uint8_t type;       // DN_CUSTSET
+  uint8_t slot;       // 0-4
+  uint8_t on;         // 0 = ปิดช่องนี้
+  uint8_t len;        // จำนวนไบต์คำสั่ง (1-7)
+  uint16_t hdr;       // CAN ID ที่ถาม (0 = เครื่องยนต์)
+  uint8_t data[7];    // คำสั่ง เช่น 22 xx xx
+  uint8_t dec;        // ทศนิยม
+  float lo, hi;       // ช่วงแถบ
+  char name[12];
+  char unit[6];
+  char fml[40];       // สูตรแบบ Torque: A B C ... + - * / ( ) {A:7}
+};
+// C3 -> ทุกจอ: ค่าของทุกช่อง ~4 ครั้ง/วินาที
+struct __attribute__((packed)) DidiNowCust {
+  uint32_t magic;
+  uint8_t type;       // DN_CUST
+  uint8_t have;       // บิต i = ช่อง i มีค่าสด
+  uint8_t on;         // บิต i = ช่อง i เปิดใช้
+  uint8_t pad;
+  float v[DN_NCUST];
+};
+// C3 -> ทุกจอ: ชื่อ/หน่วย/ช่วงของช่อง (วนทีละช่อง)
+struct __attribute__((packed)) DidiNowCustInfo {
+  uint32_t magic;
+  uint8_t type;       // DN_CUSTINFO
+  uint8_t slot, on, dec;
+  float lo, hi;
+  char name[12];
+  char unit[6];
+};
+// C3 -> ทุกจอ: คำตอบดิบล่าสุดของช่อง (ไว้ทดสอบ PID ในแอป)
+struct __attribute__((packed)) DidiNowCustRaw {
+  uint32_t magic;
+  uint8_t type;       // DN_CUSTRAW
+  uint8_t slot;
+  int8_t n;           // -1 = ไม่มีใครตอบ · -2 = K-line ใช้ header อื่นไม่ได้
+  uint8_t data[48];
 };
 
 // ---------------------------------------------------------------- Bluetooth (BLE) แทน ESP-NOW

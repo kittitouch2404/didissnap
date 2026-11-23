@@ -24,6 +24,8 @@ static volatile uint32_t gwLast = 0, gwSeq = 0;
 static DidiNowDtc gwDtc = {};
 static volatile uint16_t gwDtcId = 0;     // id ของคำตอบ DTC ล่าสุดที่ได้
 static char gwInfo[59] = "";              // ผลตรวจสายจาก C3 (ตอนยังหารถไม่เจอ)
+static_assert(DN_NCUST == N_CUST, "N_CUST (data.h) must match DN_NCUST (didinow.h)");
+static auto& gwCust = CUST;
 
 // แพ็กเก็ตจาก C3 (มาทาง BLE หรือ ESP-NOW)
 static void gwFeed(const uint8_t* d, int n) {
@@ -39,6 +41,24 @@ static void gwFeed(const uint8_t* d, int n) {
   }
   if (t == DN_DTC && n >= (int)sizeof(DidiNowDtc)) { memcpy(&gwDtc, d, sizeof(gwDtc)); gwDtcId = gwDtc.id; return; }
   if (t == DN_GWINFO && n >= (int)sizeof(DidiNowInfo)) { memcpy(gwInfo, ((const DidiNowInfo*)d)->text, sizeof(gwInfo) - 1); gwInfo[sizeof(gwInfo) - 1] = 0; return; }
+  if (t == DN_CUST && n >= (int)sizeof(DidiNowCust)) {
+    const DidiNowCust* m = (const DidiNowCust*)d;
+    for (int i = 0; i < DN_NCUST; i++) {
+      gwCust[i].on = (m->on >> i) & 1;
+      if ((m->have >> i) & 1) { gwCust[i].v = m->v[i]; gwCust[i].t = millis(); }
+    }
+    return;
+  }
+  if (t == DN_CUSTINFO && n >= (int)sizeof(DidiNowCustInfo)) {
+    const DidiNowCustInfo* m = (const DidiNowCustInfo*)d;
+    if (m->slot >= DN_NCUST) return;
+    CustVal& c = gwCust[m->slot];
+    c.on = m->on; c.dec = m->dec;
+    memcpy(c.name, m->name, 11); c.name[11] = 0;
+    memcpy(c.unit, m->unit, 5); c.unit[5] = 0;
+    for (char* p = c.name; *p; p++) *p = toupper(*p);
+    return;
+  }
 }
 
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
