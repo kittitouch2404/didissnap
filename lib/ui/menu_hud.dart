@@ -77,6 +77,96 @@ class _HudMenuPageState extends State<HudMenuPage> {
     ));
   }
 
+  /// หน้าที่มีหลายแท็บ (เช่น หน้าปัด | รูปพื้นหลัง | เกียร์)
+  void _openTabs(String title, List<(String, Widget Function())> tabs) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => AnimatedBuilder(
+        animation: s,
+        builder: (_, __) {
+          final a = Color(s.menuColor);
+          return Theme(
+            data: _menuTheme(a),
+            child: DefaultTabController(
+              length: tabs.length,
+              child: Scaffold(
+                appBar: AppBar(
+                  toolbarHeight: 56,
+                  shape: Border(top: BorderSide(color: a, width: 4)),
+                  title: Text(title.toUpperCase(),
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, letterSpacing: 1)),
+                  bottom: TabBar(
+                    indicatorColor: a,
+                    labelColor: a,
+                    labelStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                    tabs: [for (final t in tabs) Tab(text: tr(t.$1))],
+                  ),
+                ),
+                body: TabBarView(children: [for (final t in tabs) t.$2()]),
+              ),
+            ),
+          );
+        },
+      ),
+    ));
+  }
+
+  void _openDisplay() => _openTabs('หน้าปัด', [
+        ('หน้าปัด', () => DisplayTab(settings: s, hub: hub)),
+        ('รูปพื้นหลัง', () => PicturesTab(settings: s, hub: hub)),
+        ('เกียร์', () => GearTab(settings: s, hub: hub)),
+      ]);
+
+  /// เมนู 09: อัปเดตแอป + ส่ง log ปัญหา
+  void _toolsDialog() {
+    final u = hub.updater;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final a = Color(s.menuColor);
+        Widget big(IconData ic, String t, String sub, VoidCallback on) => Expanded(
+              child: Material(
+                color: const Color(0xFF161616),
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.only(topLeft: Radius.circular(4), topRight: Radius.circular(18), bottomLeft: Radius.circular(18), bottomRight: Radius.circular(4)),
+                  side: BorderSide(color: Color(0xFF2A2A2A)),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    on();
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Icon(ic, color: a, size: 34),
+                      const SizedBox(height: 14),
+                      Text(t, style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+                      Text(sub, style: const TextStyle(fontSize: 13, color: Color(0xFF9A9A9A))),
+                    ]),
+                  ),
+                ),
+              ),
+            );
+        return Theme(
+          data: _menuTheme(a),
+          child: AlertDialog(
+            title: const Text('อัปเดต / log'),
+            content: SizedBox(
+              width: 560,
+              child: Row(children: [
+                big(Icons.system_update_alt, u.hasNew ? 'อัปเดต! build-${u.latest}' : 'อัปเดตแอป',
+                    'ตอนนี้ build-${kBuild > 0 ? kBuild : '?'}', _updateDialog),
+                const SizedBox(width: 12),
+                big(Icons.bug_report_outlined, 'ส่ง log ปัญหา', 'ดู / บันทึกไว้ส่งให้ช่วยดู', _logDialog),
+              ]),
+            ),
+            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ปิด'))],
+          ),
+        );
+      },
+    );
+  }
+
   void _pickColor() {
     showDialog<void>(
       context: context,
@@ -167,8 +257,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
         final cards = <(String, String, IconData, VoidCallback)>[
           ('การเชื่อมต่อ', '$src · ${conn ? 'ต่อแล้ว' : 'ยังไม่ต่อ'}${s.cydLink ? ' · CYD' : ''}', Icons.wifi_tethering,
               () => _open('การเชื่อมต่อ', () => ConnectionTab(settings: s, hub: hub))),
-          ('หน้าปัด', 'redline ${s.redline} · ${s.pages.length} หน้า', Icons.speed,
-              () => _open('หน้าปัด', () => DisplayTab(settings: s, hub: hub))),
+          ('หน้าปัด', 'redline ${s.redline} · ${s.pages.length} หน้า · รูป · เกียร์', Icons.speed, _openDisplay),
           ('ทริป / เตือน', 'A ${s.live('tripA').toStringAsFixed(1)} km$avg', Icons.warning_amber_rounded,
               () => _open('ทริป / เตือน', () => TripAlertTab(settings: s, hub: hub))),
           ('บันทึก CSV', '$_csv ไฟล์ · ${s.logOn ? '${s.logHz} Hz' : 'ปิด'}', Icons.table_chart_outlined,
@@ -180,15 +269,13 @@ class _HudMenuPageState extends State<HudMenuPage> {
           ('เปิดอัตโนมัติ', s.autoWake ? 'จอรถตื่น · เปิด' : (s.autoBoot || s.autoPower || s.autoBt ? 'เปิดอยู่' : 'ปิด'), Icons.power_settings_new,
               () => _open('เปิดอัตโนมัติ', () => AutoStartTab(settings: s))),
           ('โลโก้ / เสียง', '${switch (s.bootMode) { 2 => 'OYT สุ่ม', 1 => 'คลิป', _ => 'ไม่มีโลโก้' }} · ${KeySound.builtIn[s.keySound.clamp(0, KeySound.builtIn.length - 1)].$1}',
-              Icons.auto_awesome, () => _open('หน้าปัด', () => DisplayTab(settings: s, hub: hub))),
+              Icons.auto_awesome, _openDisplay),
+          ('อัปเดต / log', hub.updater.hasNew ? 'มีเวอร์ชันใหม่ build-${hub.updater.latest}' : 'build-${kBuild > 0 ? kBuild : '?'} · ส่ง log ปัญหา',
+              hub.updater.hasNew ? Icons.new_releases_outlined : Icons.system_update_alt, _toolsDialog),
         ];
         final small = <(String, VoidCallback)>[
-          ('รูปพื้นหลัง', () => _open('รูปพื้นหลัง', () => PicturesTab(settings: s, hub: hub))),
-          ('เกียร์', () => _open('เกียร์', () => GearTab(settings: s, hub: hub))),
           ('โค้ดเครื่องยนต์', () => _open('โค้ดเครื่องยนต์ (DTC)', () => DtcTab(hub: hub))),
           ('จอ ESP32', () => _open('จอ ESP32', () => Esp32Tab(settings: s, hub: hub))),
-          (hub.updater.hasNew ? 'อัปเดต! build-${hub.updater.latest}' : 'อัปเดตแอป', _updateDialog),
-          ('ส่ง log ปัญหา', _logDialog),
           ('คู่มือ', () => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => Theme(data: _menuTheme(Color(s.menuColor)), child: const HelpPage())))),
         ];
