@@ -246,7 +246,7 @@ inline const char* gwStatus() {
   static char b[72];
   static const char* const AM[] = {"", "  AFR wide", "  O2 narrow", "  AFR cmd"};
   if (!gwHeard()) return strncmp(gwInfo, "sleep", 5) ? (c3link::connected() ? "C3 BLE: waiting data" : "C3 BLE: searching...") : "C3 asleep - start engine to wake";
-  uint8_t p = gwPkt.proto < 7 ? gwPkt.proto : 0;
+  uint8_t p = gwPkt.proto < DN_P_COUNT ? gwPkt.proto : 0;
   if (gwPkt.link == DN_LINK_DEMO) return "C3 DEMO";
   if (gwPkt.link != DN_LINK_OK) {
     if (!gwInfo[0]) return "C3: searching car...";

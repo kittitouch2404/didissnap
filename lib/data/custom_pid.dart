@@ -113,6 +113,19 @@ class _Parser {
       final bit = int.parse(inner[1]);
       return ((_byte(inner[0]) >> bit) & 1).toDouble();
     }
+    // ฟังก์ชัน: SIGNED(x) = มีเครื่องหมาย 8 บิต · S16(x) = 16 บิต (แปลงมาจาก Torque)
+    final fn = RegExp(r'([A-Z][A-Z0-9]+)\(').matchAsPrefix(s, i);
+    if (fn != null) {
+      i = fn.end;
+      final v = expr();
+      if (_c != ')') throw const FormatException(')');
+      i++;
+      return switch (fn.group(1)) {
+        'SIGNED' => v >= 128 ? v - 256 : v,
+        'S16' => v >= 32768 ? v - 65536 : v,
+        _ => throw const FormatException('fn'),
+      };
+    }
     if (RegExp(r'[A-Z]').hasMatch(c)) {
       i++;
       return _byte(c).toDouble();

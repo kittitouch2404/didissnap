@@ -24,6 +24,7 @@ class _PidsPageState extends State<PidsPage> {
   @override
   void initState() {
     super.initState();
+    widget.hub.pidPageViews++;
     _t = Timer.periodic(const Duration(milliseconds: 300), (_) {
       if (mounted) setState(() {});
     });
@@ -31,6 +32,7 @@ class _PidsPageState extends State<PidsPage> {
 
   @override
   void dispose() {
+    widget.hub.pidPageViews--;
     _t?.cancel();
     super.dispose();
   }

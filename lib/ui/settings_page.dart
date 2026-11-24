@@ -13,6 +13,7 @@ import '../data/c3_cal.dart';
 import '../data/car_data.dart';
 import '../data/custom_pid.dart';
 import '../data/skin.dart';
+import '../data/torque_import.dart';
 import '../data/elm_source.dart';
 import '../data/key_sound.dart';
 import 'custom_logo.dart';
@@ -1852,9 +1853,102 @@ class _CustomPidSectionState extends State<_CustomPidSection> {
             onTap: () => _edit(k),
           );
         }),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.file_open_outlined),
+            label: const Text('นำเข้าจากไฟล์ Torque (.csv)'),
+            onPressed: _importTorque,
+          ),
+        ),
+      ),
       const _Hint('เลือกโชว์ได้ในช่องขวาของหน้า GIF (CUSTOM 1-4) และส่งต่อให้จอ CYD ด้วย\n'
-          'ตัวอย่าง: น้ำมันเครื่อง 015C สูตร A-40 · องศาไฟ 010E สูตร A/2-64 · แรงดันเซนเซอร์ A/F 0134 สูตร (C*256+D)/256-128'),
+          'ตัวอย่าง: น้ำมันเครื่อง 015C สูตร A-40 · องศาไฟ 010E สูตร A/2-64 · แรงดันเซนเซอร์ A/F 0134 สูตร (C*256+D)/256-128\n'
+          'ไฟล์ Torque: หาได้จากเว็บ/กลุ่มรถรุ่นนั้น (ค้น "torque pid csv" + รุ่นรถ) → เลือกค่าที่อยากได้ใส่ช่อง 1-4'),
     ]);
+  }
+
+  /// นำเข้า PID จากไฟล์ .csv ของแอป Torque แล้วเลือกใส่ช่อง 1-4
+  Future<void> _importTorque() async {
+    final path = await Native.pickFile(mime: '*/*');
+    if (path == null || !mounted) return;
+    List<TorquePid> list;
+    try {
+      final bytes = await File(path).readAsBytes();
+      list = parseTorqueCsv(utf8.decode(bytes, allowMalformed: true));
+    } catch (e) {
+      if (mounted) _snack(context, 'อ่านไฟล์ไม่ได้: $e');
+      return;
+    }
+    if (!mounted) return;
+    if (list.isEmpty) {
+      _snack(context, 'ไม่พบรายการ PID ในไฟล์นี้ (ต้องเป็นไฟล์ .csv ของ Torque)');
+      return;
+    }
+    final q = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
+        final f = q.text.trim().toLowerCase();
+        final shown = list.where((p) => f.isEmpty || '${p.name} ${p.short} ${p.cmd}'.toLowerCase().contains(f)).toList();
+        final okN = list.where((p) => p.problem == null).length;
+        return AlertDialog(
+          title: Text('PID จากไฟล์ (${list.length} รายการ · ใช้ได้ $okN)'),
+          content: SizedBox(
+            width: 720,
+            height: 460,
+            child: Column(children: [
+              TextField(
+                controller: q,
+                decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr('ค้นชื่อ / คำสั่ง'), isDense: true),
+                onChanged: (_) => set(() {}),
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: shown.length,
+                  itemBuilder: (_, i) {
+                    final p = shown[i];
+                    return ListTile(
+                      dense: true,
+                      title: Text(p.name),
+                      subtitle: Text(
+                          '${p.hdr.isEmpty ? '7DF' : p.hdr} · ${p.cmd} · ${p.formula}${p.unit.isEmpty ? '' : ' (${p.unit})'}'
+                          '${p.problem == null ? '' : '\n⚠ ${p.problem}'}',
+                          style: TextStyle(color: p.problem == null ? null : Colors.orangeAccent)),
+                      trailing: p.problem != null
+                          ? null
+                          : PopupMenuButton<int>(
+                              tooltip: tr('ใส่ช่อง'),
+                              icon: const Icon(Icons.add_circle_outline),
+                              itemBuilder: (_) => [
+                                for (var k = 0; k < AppSettings.nCustom; k++)
+                                  PopupMenuItem(
+                                    value: k,
+                                    child: Text('ใส่ช่อง ${k + 1}'
+                                        '${widget.s.customPid(k).valid ? ' (แทน ${widget.s.customPid(k).label})' : ''}'),
+                                  ),
+                              ],
+                              onSelected: (k) {
+                                widget.s.setCustomPid(k, p.toCustom());
+                                set(() {});
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                    SnackBar(content: Text('ใส่ "${p.label}" ในช่อง ${k + 1} แล้ว')));
+                              },
+                            ),
+                    );
+                  },
+                ),
+              ),
+            ]),
+          ),
+          actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('เสร็จ'))],
+        );
+      }),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _edit(int k) async {

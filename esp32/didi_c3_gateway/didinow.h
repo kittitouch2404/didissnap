@@ -12,8 +12,12 @@ enum : uint8_t { DN_DATA = 1, DN_CMD = 2, DN_DTC = 3, DN_GW = 4, DN_GWCMD = 5, D
 enum : uint8_t { DN_LINK_DEMO = 0, DN_LINK_WAIT = 1, DN_LINK_OK = 2 };
 enum : uint8_t { DN_CMD_DTC_READ = 1, DN_CMD_DTC_CLEAR = 2, DN_CMD_MODE_AUTO = 3, DN_CMD_MODE_DEMO = 4 };
 // โปรโตคอลที่ C3 ใช้คุยกับรถ
-enum : uint8_t { DN_P_NONE = 0, DN_P_DEMO = 1, DN_P_CAN500 = 2, DN_P_CAN250 = 3, DN_P_ISO9141 = 4, DN_P_KWPFAST = 5, DN_P_KWPSLOW = 6 };
-static const char* const DN_P_NAME[] = {"search", "DEMO", "CAN 500k", "CAN 250k", "K ISO9141", "K KWP fast", "K KWP slow"};
+enum : uint8_t { DN_P_NONE = 0, DN_P_DEMO = 1, DN_P_CAN500 = 2, DN_P_CAN250 = 3, DN_P_ISO9141 = 4, DN_P_KWPFAST = 5, DN_P_KWPSLOW = 6,
+                 DN_P_CAN500X = 7, DN_P_CAN250X = 8 };   // X = CAN ID 29 บิต
+static const char* const DN_P_NAME[] = {"search", "DEMO", "CAN 500k", "CAN 250k", "K ISO9141", "K KWP fast", "K KWP slow", "CAN 500k 29bit", "CAN 250k 29bit"};
+#define DN_P_COUNT (sizeof(DN_P_NAME) / sizeof(DN_P_NAME[0]))
+inline bool dnIsCan(uint8_t p) { return p == DN_P_CAN500 || p == DN_P_CAN250 || p == DN_P_CAN500X || p == DN_P_CAN250X; }
+inline bool dnIsK(uint8_t p) { return p >= DN_P_ISO9141 && p <= DN_P_KWPSLOW; }
 
 // S3 -> จอ: ค่ารถ ~30 ครั้ง/วินาที (ค่าดิบจาก OBD ยังไม่หน่วง — จอหน่วงเอง)
 struct __attribute__((packed)) DidiNowData {

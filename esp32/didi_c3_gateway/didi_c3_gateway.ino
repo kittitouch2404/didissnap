@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.24b"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.25"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -129,8 +129,8 @@ static int fails = 0;
 
 // ---------------------------------------------------------------- ส่งคำถาม OBD ผ่านโปรโตคอลที่ต่อได้
 static int ask(const uint8_t* req, int rl, uint8_t* resp, int maxLen, uint32_t tmo = 0, bool multi = false, int expect = 0) {
-  if (proto == DN_P_CAN500 || proto == DN_P_CAN250) return canobd::request(req, rl, resp, maxLen, tmo ? tmo : 120);
-  if (proto >= DN_P_ISO9141) return kline::request(req, rl, resp, maxLen, tmo ? tmo : 150, multi, expect);
+  if (dnIsCan(proto)) return canobd::request(req, rl, resp, maxLen, tmo ? tmo : 120);
+  if (dnIsK(proto)) return kline::request(req, rl, resp, maxLen, tmo ? tmo : 150, multi, expect);
   return -1;
 }
 
@@ -207,7 +207,7 @@ static int dtcRead(char codes[16][6]) {
   if (n < 1) return -1;
   int i = 1, k = 0;
   // CAN มีจำนวนรหัสนำหน้า (ไบต์หลัง 0x43) — K-line ไม่มี
-  if (proto == DN_P_CAN500 || proto == DN_P_CAN250) i = 2;
+  if (dnIsCan(proto)) i = 2;
   static const char T[] = {'P', 'C', 'B', 'U'};
   for (; i + 1 < n && k < 16; i += 2) {
     uint16_t v = (r[i] << 8) | r[i + 1];
@@ -222,17 +222,24 @@ static bool dtcClear() {
 }
 
 // ---------------------------------------------------------------- หารถ: CAN 500k → CAN 250k → K-line เร็ว → K-line ช้า
-static bool tryCan(uint32_t br, uint8_t p) {
+// ลอง ID 11 บิตก่อน (รถส่วนใหญ่) ไม่ตอบ → ลอง ID 29 บิตที่ความเร็วเดียวกัน
+static bool tryCan(uint32_t br, uint8_t p, uint8_t pExt) {
 #if USE_CAN
   if (!canobd::start(PIN_CAN_TX, PIN_CAN_RX, br, true)) return false;
   bool traffic = canobd::sniff(300);                    // ฟังก่อน ไม่ส่งอะไรออกบัส (กันรบกวนรถถ้าความเร็วไม่ตรง)
   canobd::stop();
   // บัสเงียบ (บางรถช่อง OBD ผ่าน gateway) → ลองถามที่ 500k ครั้งเดียว
   if (!traffic && br != 500000) return false;
-  if (!canobd::start(PIN_CAN_TX, PIN_CAN_RX, br, false)) return false;
-  proto = p;
-  if (readMasks()) { canobd::physical = true; Serial.printf("[obd] CAN %u ok, ECU 0x%03X\n", (unsigned)br, (unsigned)canobd::ecuRx); return true; }
-  canobd::stop();
+  for (int e = 0; e < 2; e++) {
+    if (!canobd::start(PIN_CAN_TX, PIN_CAN_RX, br, false, e == 1)) return false;
+    proto = e ? pExt : p;
+    if (readMasks()) {
+      canobd::physical = true;
+      Serial.printf("[obd] CAN %u %s ok, ECU 0x%X\n", (unsigned)br, e ? "29-bit" : "11-bit", (unsigned)canobd::ecuRx);
+      return true;
+    }
+    canobd::stop();
+  }
   proto = DN_P_NONE;
 #endif
   return false;
@@ -268,8 +275,8 @@ static void disconnect() {
 static bool connect() {
   carLink = DN_LINK_WAIT;
   setDiag("trying CAN 500k");
-  if (tryCan(500000, DN_P_CAN500)) return true;
-  if (tryCan(250000, DN_P_CAN250)) return true;
+  if (tryCan(500000, DN_P_CAN500, DN_P_CAN500X)) return true;
+  if (tryCan(250000, DN_P_CAN250, DN_P_CAN250X)) return true;
   if (tryK(true)) return true;
   if (tryK(false)) return true;
   return false;
@@ -551,8 +558,8 @@ static void pollCust() {
     if (!c.on || c.len < 1 || c.len > 7) continue;
     DidiNowCustRaw r = {};
     r.magic = DIDINOW_MAGIC; r.type = DN_CUSTRAW; r.slot = i;
-    if (proto == DN_P_CAN500 || proto == DN_P_CAN250) {
-      uint32_t to = c.hdr ? c.hdr : (canobd::physical ? canobd::ecuRx - 8 : 0x7DF);
+    if (dnIsCan(proto)) {
+      uint32_t to = c.hdr ? c.hdr : canobd::defTx();
       r.n = canobd::requestTo(to, c.data, c.len, r.data, sizeof(r.data), 250);
     } else if (c.hdr && c.hdr != 0x7DF && c.hdr != 0x7E0) {
       r.n = -2;
@@ -583,8 +590,8 @@ static void handleRaw() {
     r.n = 3; r.data[0] = q.data[0] + 0x40; r.data[1] = len > 1 ? q.data[1] : 0; r.data[2] = 120;   // จำลอง: A = 120
   } else if (carLink != DN_LINK_OK) {
     r.n = -1;
-  } else if (proto == DN_P_CAN500 || proto == DN_P_CAN250) {
-    uint32_t to = q.hdr ? q.hdr : (canobd::physical ? canobd::ecuRx - 8 : 0x7DF);
+  } else if (dnIsCan(proto)) {
+    uint32_t to = q.hdr ? q.hdr : canobd::defTx();
     r.n = canobd::requestTo(to, q.data, len, r.data, sizeof(r.data), 300);
   } else if (q.hdr && q.hdr != 0x7DF && q.hdr != 0x7E0) {
     r.n = -2;                                            // K-line: ถามกล่องอื่นไม่ได้
@@ -694,8 +701,8 @@ void setup() {
     bool ok = false;
     if (rtcProto == DN_P_ISO9141 || rtcProto == DN_P_KWPSLOW) ok = tryK(false, true);
     else if (rtcProto == DN_P_KWPFAST) ok = tryK(true);
-    else if (rtcProto == DN_P_CAN500) ok = tryCan(500000, DN_P_CAN500);
-    else if (rtcProto == DN_P_CAN250) ok = tryCan(250000, DN_P_CAN250);
+    else if (rtcProto == DN_P_CAN500 || rtcProto == DN_P_CAN500X) ok = tryCan(500000, DN_P_CAN500, DN_P_CAN500X);
+    else if (rtcProto == DN_P_CAN250 || rtcProto == DN_P_CAN250X) ok = tryCan(250000, DN_P_CAN250, DN_P_CAN250X);
     else ok = connect();
     Serial.printf("[wake] car %s\n", ok ? "found" : "not found -> sleep");
     if (!ok && !usbHost()) deepSleep(WAKE_NOVBAT_S);
@@ -722,7 +729,7 @@ void loop() {
   if (demo) { float dt = lastSim ? (now - lastSim) / 1000.f : 0; lastSim = now; sim(fminf(dt, .1f)); }
   if (now - rateT >= 1000) {
     rate = demo ? 0 : answers; answers = 0; rateT = now;
-    if (carLink == DN_LINK_OK && proto >= DN_P_ISO9141) Serial.printf("[obd] %u/s  P3 %u ms\n", rate, kline::p3);
+    if (carLink == DN_LINK_OK && dnIsK(proto)) Serial.printf("[obd] %u/s  P3 %u ms\n", rate, kline::p3);
   }
   // แบต + หลับเมื่อดับรถ
   static uint32_t lastV = 0, lastCar = 0;

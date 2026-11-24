@@ -8,6 +8,22 @@ namespace canobd {
 static bool on = false;
 static uint32_t ecuRx = 0x7E8;     // ID ที่ ECU เครื่องตอบ (หาได้จากคำตอบแรก)
 static bool physical = false;      // true = ถามตรง ECU (ecuRx - 8) แทนถามทุกกล่อง (0x7DF) → ตอบไวกว่า
+static bool ext = false;           // true = CAN ID 29 บิต (ถามทุกกล่อง 18DB33F1 · ตอบ 18DAF1xx · ถามตรง 18DAxxF1)
+
+// ID ที่ใช้ถามทุกกล่อง / ถามตรงกล่องที่ตอบมาด้วย rx / เป็นคำตอบ OBD ไหม
+inline uint32_t funcId() { return ext ? 0x18DB33F1 : 0x7DF; }
+inline uint32_t physOf(uint32_t rx) { return ext ? (0x18DA00F1 | ((rx & 0xFF) << 8)) : rx - 8; }
+inline uint32_t defTx() { return physical ? physOf(ecuRx) : funcId(); }
+inline bool isResp(const twai_message_t& m) {
+  return ext ? (m.extd && (m.identifier & 0xFFFFFF00) == 0x18DAF100) : (!m.extd && m.identifier >= 0x7E8 && m.identifier <= 0x7EF);
+}
+// header 11 บิตที่ตั้งในแอป (เช่น 7E1 กล่องเกียร์) → ID 29 บิตที่ตรงกัน (7E0 = 0x10 เครื่อง, 7E1 = 0x18 เกียร์ ...)
+inline uint32_t mapHdr(uint32_t h) {
+  if (!ext || h > 0x7FF) return h;
+  if (h == 0x7DF) return 0x18DB33F1;
+  if (h >= 0x7E0 && h <= 0x7E7) return 0x18DA00F1 | ((0x10 + (h - 0x7E0) * 8) << 8);
+  return h;
+}
 
 inline void stop() {
   if (!on) return;
@@ -16,7 +32,7 @@ inline void stop() {
   on = false;
 }
 
-inline bool start(int pinTx, int pinRx, uint32_t bitrate, bool listenOnly) {
+inline bool start(int pinTx, int pinRx, uint32_t bitrate, bool listenOnly, bool extId = false) {
   stop();
   twai_general_config_t g = TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)pinTx, (gpio_num_t)pinRx,
                                                         listenOnly ? TWAI_MODE_LISTEN_ONLY : TWAI_MODE_NORMAL);
@@ -29,6 +45,8 @@ inline bool start(int pinTx, int pinRx, uint32_t bitrate, bool listenOnly) {
   if (twai_start() != ESP_OK) { twai_driver_uninstall(); return false; }
   on = true;
   physical = false;
+  ext = extId;
+  ecuRx = ext ? 0x18DAF110 : 0x7E8;
   return true;
 }
 
@@ -50,6 +68,7 @@ static void drain() {
 static bool sendFrame(uint32_t id, const uint8_t* d) {
   twai_message_t m = {};
   m.identifier = id;
+  m.extd = id > 0x7FF ? 1 : 0;
   m.data_length_code = 8;
   memcpy(m.data, d, 8);
   return twai_transmit(&m, pdMS_TO_TICKS(30)) == ESP_OK;
@@ -61,14 +80,14 @@ inline int request(const uint8_t* req, int rl, uint8_t* resp, int maxLen, uint32
   drain();
   uint8_t d[8] = {(uint8_t)rl, 0, 0, 0, 0, 0, 0, 0};
   memcpy(d + 1, req, rl);
-  if (!sendFrame(physical ? ecuRx - 8 : 0x7DF, d)) return -1;
+  if (!sendFrame(defTx(), d)) return -1;
   uint32_t t0 = millis();
   int total = -1, got = 0;
   uint32_t from = 0;
   twai_message_t m;
   while (millis() - t0 < timeoutMs) {
     if (twai_receive(&m, pdMS_TO_TICKS(10)) != ESP_OK) continue;
-    if (m.identifier < 0x7E8 || m.identifier > 0x7EF || m.data_length_code < 2) continue;
+    if (!isResp(m) || m.data_length_code < 2) continue;
     if (from && m.identifier != from) continue;
     uint8_t pci = m.data[0] >> 4;
     if (pci == 0) {                                   // เฟรมเดียวจบ
@@ -89,7 +108,7 @@ inline int request(const uint8_t* req, int rl, uint8_t* resp, int maxLen, uint32
       got = min(6, min(total, maxLen));
       memcpy(resp, m.data + 2, got);
       uint8_t fc[8] = {0x30, 0, 0, 0, 0, 0, 0, 0};
-      sendFrame(from - 8, fc);
+      sendFrame(physOf(from), fc);
       t0 = millis();
       continue;
     }
@@ -106,11 +125,13 @@ inline int request(const uint8_t* req, int rl, uint8_t* resp, int maxLen, uint32
 // ถามด้วย ID ที่เลือกเอง (Custom PID เช่น 0x7E1 กล่องเกียร์) — คืนคำตอบดิบรวม 7F (ปฏิเสธ) · ไม่เปลี่ยน ecuRx
 inline int requestTo(uint32_t tx, const uint8_t* req, int rl, uint8_t* resp, int maxLen, uint32_t timeoutMs) {
   if (!on || rl < 1 || rl > 7) return -1;
+  tx = mapHdr(tx);
   drain();
   uint8_t d[8] = {(uint8_t)rl, 0, 0, 0, 0, 0, 0, 0};
   memcpy(d + 1, req, rl);
   if (!sendFrame(tx, d)) return -1;
-  uint32_t want = tx == 0x7DF ? 0 : tx + 8;
+  // ถามตรงกล่อง → รอคำตอบจาก ID คู่กัน (11 บิต: +8 · 29 บิต: 18DAF1xx) · ถามทุกกล่อง → รับจากกล่องไหนก็ได้
+  uint32_t want = tx == funcId() ? 0 : (tx > 0x7FF ? (0x18DAF100 | ((tx >> 8) & 0xFF)) : tx + 8);
   uint32_t t0 = millis();
   int total = -1, got = 0;
   uint32_t from = 0;
@@ -118,7 +139,7 @@ inline int requestTo(uint32_t tx, const uint8_t* req, int rl, uint8_t* resp, int
   while (millis() - t0 < timeoutMs) {
     if (twai_receive(&m, pdMS_TO_TICKS(10)) != ESP_OK) continue;
     if (m.data_length_code < 2) continue;
-    if (want ? m.identifier != want : (m.identifier < 0x7E8 || m.identifier > 0x7EF)) continue;
+    if (want ? m.identifier != want : !isResp(m)) continue;
     if (from && m.identifier != from) continue;
     uint8_t pci = m.data[0] >> 4;
     if (pci == 0) {
@@ -137,7 +158,7 @@ inline int requestTo(uint32_t tx, const uint8_t* req, int rl, uint8_t* resp, int
       got = min(6, min(total, maxLen));
       memcpy(resp, m.data + 2, got);
       uint8_t fc[8] = {0x30, 0, 0, 0, 0, 0, 0, 0};
-      sendFrame(from - 8, fc);
+      sendFrame(physOf(from), fc);
       t0 = millis();
       continue;
     }

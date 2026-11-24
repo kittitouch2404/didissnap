@@ -88,6 +88,9 @@ class DataHub extends ChangeNotifier {
   /// PID ที่หน้าจอปัจจุบันโชว์อยู่ (ให้ K-line อ่านถี่กว่าค่าอื่น)  หน้า GIF ตั้งตามช่องที่เลือก
   List<String> focusPids = const ['11', '04'];
 
+  /// หน้า "ค่า OBD2 ทั้งหมด" เปิดอยู่กี่หน้า (โหมด C3: แอปถาม PID ทั้งหมดเองเฉพาะตอนเปิดหน้านี้)
+  int pidPageViews = 0;
+
   /// ตัวจับเวลาออกตัว
   late final PerfRecorder perf = PerfRecorder(this);
 

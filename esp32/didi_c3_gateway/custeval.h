@@ -1,4 +1,5 @@
-// custeval.h — คิดสูตรแบบ Torque (A B C ... = ไบต์ข้อมูล, + - * / ( ), {A:7} = บิต) บน C3
+// custeval.h — คิดสูตรแบบ Torque (A B C ... = ไบต์ข้อมูล, + - * / ( ), {A:7} = บิต,
+//   SIGNED(x) = มีเครื่องหมาย 8 บิต, S16(x) = มีเครื่องหมาย 16 บิต) บน C3
 #pragma once
 #include <Arduino.h>
 
@@ -26,6 +27,20 @@ static float atom(P& p) {
     int k = L - 'A';
     if (k < 0 || k >= p.n || bit < 0 || bit > 7) { p.err = true; return 0; }
     return (p.b[k] >> bit) & 1;
+  }
+  if (isalpha((unsigned char)c) && isalpha((unsigned char)p.s[1])) {   // ฟังก์ชัน: SIGNED( ) / S16( )
+    char name[8] = {0};
+    int L = 0;
+    while (isalnum((unsigned char)*p.s) && L < 7) name[L++] = toupper(*p.s++);
+    if (p.c() != '(') { p.err = true; return 0; }
+    p.s++;
+    float v = expr(p);
+    if (p.c() != ')') { p.err = true; return 0; }
+    p.s++;
+    if (!strcmp(name, "SIGNED")) return v >= 128 ? v - 256 : v;
+    if (!strcmp(name, "S16")) return v >= 32768 ? v - 65536 : v;
+    p.err = true;
+    return 0;
   }
   if (isalpha((unsigned char)c)) {
     int k = toupper(c) - 'A';

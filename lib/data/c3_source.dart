@@ -11,6 +11,7 @@ import 'custom_pid.dart';
 import 'elm_source.dart';
 import 'hub.dart';
 import 'native.dart';
+import 'pids.dart';
 
 /// แหล่งข้อมูล: ESP32-C3 ที่ช่อง OBD2 (อ่าน CAN / K-line เอง) ต่อทาง Bluetooth BLE
 ///  C3 ส่งค่ารถมาเอง ~30 ครั้ง/วินาที (DidiNowGw) · DTC / Custom PID / CVT TEMP ฝากให้ C3 ถามรถ
@@ -18,11 +19,11 @@ import 'native.dart';
 class C3Source implements CarSource {
   static const _ev = EventChannel('didissnap/c3');
   static const int _magic = 0x31444944; // "DID1"
-  static const _proto = ['search', 'DEMO', 'CAN 500k', 'CAN 250k', 'K ISO9141', 'K KWP fast', 'K KWP slow'];
+  static const _proto = ['search', 'DEMO', 'CAN 500k', 'CAN 250k', 'K ISO9141', 'K KWP fast', 'K KWP slow', 'CAN 500k 29bit', 'CAN 250k 29bit'];
 
   DataHub? _hub;
   StreamSubscription<dynamic>? _sub;
-  Timer? _watch, _cust;
+  Timer? _watch, _cust, _pidT;
   DateTime _last = DateTime.fromMillisecondsSinceEpoch(0);
   String _bleState = '';
   int _link = 1, _proto0 = 0, _rate = 0;
@@ -50,6 +51,7 @@ class C3Source implements CarSource {
     await Native.m.invokeMethod('c3Start');
     hub.setLink(this, LinkState.connecting, 'กำลังหา C3...');
     _watch = Timer.periodic(const Duration(milliseconds: 500), (_) => _status());
+    _pidT = Timer.periodic(const Duration(milliseconds: 250), (_) => _pidTick());
     // ส่งค่าตั้ง Custom PID / CVT TEMP ให้ C3 (C3 ถามรถเองแล้วส่งค่าให้ทุกจอ) — ส่งซ้ำทุก 15 วิ กัน C3 รีบูต
     hub.settings.addListener(_cfgChanged);
     _cust = Timer.periodic(const Duration(seconds: 15), (_) => _sendCfg(force: true));
@@ -98,7 +100,14 @@ class C3Source implements CarSource {
     if (hub == null) return;
     final d = hub.data;
     double f(int o) => b.getFloat32(o, Endian.little);
-    _link = b.getUint8(5);
+    final link = b.getUint8(5);
+    if (link == 2 && _link != 2) {
+      // เพิ่งต่อรถได้ (อาจเป็นรถคันใหม่) → อ่านรายการ PID ใหม่
+      d.supportedPids.clear();
+      d.pidBytes.clear();
+      _pidMaskTry = 0;
+    }
+    _link = link;
     _proto0 = b.getUint8(6);
     final afrMode = b.getUint8(7);
     _rate = b.getUint16(10, Endian.little);
@@ -204,6 +213,47 @@ class C3Source implements CarSource {
     if (cnt == -2) return 'K-LINE: ใช้ header อื่นไม่ได้';
     if (cnt <= 0) return 'NO DATA';
     return [for (var i = 0; i < cnt && 8 + i < r.length; i++) r[8 + i].toRadixString(16).padLeft(2, '0').toUpperCase()].join();
+  }
+
+  // ---------------- หน้า "ค่า OBD2 ทั้งหมด": ถามทุก PID ที่รถรองรับผ่าน C3 (เฉพาะตอนเปิดหน้านั้น ไม่ถ่วงค่าหลัก)
+  bool _pidBusy = false;
+  int _pidIdx = 0, _pidMaskTry = 0;
+
+  static List<int>? _hexBytes(String r) {
+    if (r.isEmpty || r.length.isOdd || !RegExp(r'^[0-9A-F]+$').hasMatch(r)) return null;
+    return [for (var i = 0; i < r.length; i += 2) int.parse(r.substring(i, i + 2), radix: 16)];
+  }
+
+  Future<void> _pidTick() async {
+    final hub = _hub;
+    if (hub == null || !_running || _pidBusy || hub.pidPageViews <= 0 || _link != 2) return;
+    _pidBusy = true;
+    try {
+      final d = hub.data;
+      if (d.supportedPids.isEmpty) {
+        if (_pidMaskTry++ > 5) return; // รถไม่ตอบรายการ PID
+        // 0100, 0120, 0140 ... อ่านต่อเมื่อบิตสุดท้ายบอกว่ามีชุดถัดไป
+        for (var base = 0; base <= 0xC0; base += 0x20) {
+          final b = _hexBytes(await raw(0, '01${base.toRadixString(16).padLeft(2, '0')}'));
+          if (b == null || b.length < 6 || b[0] != 0x41 || b[1] != base) break;
+          final mask = (b[2] << 24) | (b[3] << 16) | (b[4] << 8) | b[5];
+          for (var i = 0; i < 32; i++) {
+            if ((mask >> (31 - i)) & 1 == 1) d.supportedPids.add(base + i + 1);
+          }
+          if (mask & 1 == 0) break;
+        }
+        return;
+      }
+      final ids = d.supportedPids.where((p) => !isBitmapPid(p)).toList()..sort();
+      if (ids.isEmpty) return;
+      for (var k = 0; k < 3 && hub.pidPageViews > 0; k++) {
+        final p = ids[_pidIdx++ % ids.length];
+        final b = _hexBytes(await raw(0, '01${p.toRadixString(16).padLeft(2, '0')}'));
+        if (b != null && b.length >= 3 && b[0] == 0x41 && b[1] == p) d.pidBytes[p] = b.sublist(2);
+      }
+    } finally {
+      _pidBusy = false;
+    }
   }
 
   // ---------------- Custom PID / CVT TEMP: C3 ถามเอง
@@ -379,6 +429,7 @@ class C3Source implements CarSource {
     _hub?.c3ota.onLink(false);
     _watch?.cancel();
     _cust?.cancel();
+    _pidT?.cancel();
     await _sub?.cancel();
     _sub = null;
     try {
