@@ -290,8 +290,43 @@ class AppSettings extends ChangeNotifier {
         out.add(p);
       }
     }
+    for (final k in skins) {
+      out.add(('skin:${k.$1}', 'สกิน: ${k.$2}'));
+    }
     return out;
   }
+
+  // ---------- สกินหน้าปัดที่นำเข้า (ออกแบบเองจากเว็บ) ----------
+  List<(String, String)> get skins => [
+        for (final e in _p.getStringList('skins') ?? const <String>[])
+          if (e.contains('|')) (e.substring(0, e.indexOf('|')), e.substring(e.indexOf('|') + 1)),
+      ];
+
+  void addSkin(String id, String name) {
+    final l = List<String>.from(_p.getStringList('skins') ?? const <String>[]);
+    final i = l.indexWhere((e) => e.startsWith('$id|'));
+    if (i >= 0) {
+      l[i] = '$id|$name';
+    } else {
+      l.add('$id|$name');
+    }
+    _p.setStringList('skins', l);
+    // ให้หน้าใหม่โผล่ (ไม่อยู่ในรายการที่ปิด)
+    final off = List<String>.from(_p.getStringList('pagesOff') ?? const <String>[])..remove('skin:$id');
+    _p.setStringList('pagesOff', off);
+    skinRev++;
+    notifyListeners();
+  }
+
+  void removeSkin(String id) {
+    final l = List<String>.from(_p.getStringList('skins') ?? const <String>[])..removeWhere((e) => e.startsWith('$id|'));
+    _p.setStringList('skins', l);
+    skinRev++;
+    notifyListeners();
+  }
+
+  /// เพิ่มทุกครั้งที่นำเข้า/ลบสกิน (ให้หน้าสกินโหลดไฟล์ใหม่)
+  int skinRev = 0;
 
   /// เพิ่มหน้า GIF ใหม่ (ต่อท้าย) -> คืน index (0-based)
   int addGifPage() {

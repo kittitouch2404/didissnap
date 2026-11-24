@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import '../data/c3_cal.dart';
 import '../data/car_data.dart';
 import '../data/custom_pid.dart';
+import '../data/skin.dart';
 import '../data/elm_source.dart';
 import '../data/key_sound.dart';
 import 'custom_logo.dart';
@@ -535,7 +536,26 @@ class DisplayTab extends StatelessWidget {
           for (final p in s.allPages)
             SwitchListTile(
               dense: true,
-              secondary: p.$1.startsWith('gif') && s.gifPageCount > 1
+              secondary: p.$1.startsWith('skin:')
+                  ? IconButton(
+                      tooltip: tr('ลบสกินนี้'),
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () async {
+                        final ok = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: Text('ลบ ${p.$2}?'),
+                            content: const Text('ลบไฟล์สกินออกจากแอป (ไฟล์ .zip ต้นฉบับไม่หาย นำเข้าใหม่ได้)'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ยกเลิก')),
+                              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('ลบ')),
+                            ],
+                          ),
+                        );
+                        if (ok == true) await SkinStore.delete(p.$1.substring(5), s);
+                      },
+                    )
+                  : p.$1.startsWith('gif') && s.gifPageCount > 1
                   ? IconButton(
                       tooltip: tr('ลบหน้านี้'),
                       icon: const Icon(Icons.delete_outline),
@@ -585,6 +605,29 @@ class DisplayTab extends StatelessWidget {
               ),
             ),
           ),
+          const _Header('สกินหน้าปัด (ออกแบบเอง)'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.file_open_outlined),
+                label: const Text('นำเข้าสกิน (.zip)'),
+                onPressed: () async {
+                  final path = await Native.pickFile(mime: 'application/zip');
+                  if (path == null || !context.mounted) return;
+                  try {
+                    final name = await SkinStore.importZip(path, s);
+                    if (context.mounted) _snack(context, 'นำเข้า "$name" แล้ว — ปัดไปหน้าสุดท้ายเพื่อดู');
+                  } catch (e) {
+                    if (context.mounted) _snack(context, 'นำเข้าไม่ได้: $e');
+                  }
+                },
+              ),
+            ),
+          ),
+          const _Hint('ออกแบบในเว็บ "Didissnap Skin Designer" (เปิดบนคอม/มือถือ) → Export ได้ไฟล์ .zip → ส่งไฟล์มาที่จอนี้ → กดนำเข้า\n'
+              'สกินชื่อเดิม = เขียนทับของเดิม (แก้แล้วนำเข้าใหม่ได้เลย) · ลบได้จากปุ่มถังขยะในรายการหน้าด้านบน'),
         ],
       ),
     );

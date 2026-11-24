@@ -10,6 +10,7 @@ import '../data/hub.dart';
 import '../settings.dart';
 import 'live.dart';
 import 'gif_pages.dart';
+import 'skin_page.dart';
 import 'graph_page.dart';
 import 'paint_utils.dart';
 import 'picture_dash.dart';
@@ -126,6 +127,7 @@ class _DashShellState extends State<DashShell> {
       'perf' => PerfPage(key: ValueKey(id), hub: hub),
       'pids' => PidsPage(key: ValueKey(id), hub: hub),
       'graph' => GraphPage(key: ValueKey(id), hub: hub),
+      _ when id.startsWith('skin:') => SkinPage(key: ValueKey(id), id: id.substring(5), hub: hub),
       _ when id.startsWith('gif') =>
         GifPage(key: ValueKey(id), index: int.parse(id.substring(3)) - 1, hub: hub),
       _ => LiveBuilder(
