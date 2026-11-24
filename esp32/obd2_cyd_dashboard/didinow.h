@@ -8,7 +8,7 @@
 #define DIDINOW_CHANNEL 1           // ช่อง WiFi ของ S3 (SoftAP "Didissnap" ตั้งช่อง 1)
 
 enum : uint8_t { DN_DATA = 1, DN_CMD = 2, DN_DTC = 3, DN_GW = 4, DN_GWCMD = 5, DN_GWINFO = 6, DN_RAWREQ = 7, DN_RAWRES = 8,
-                 DN_CUSTSET = 9, DN_CUST = 10, DN_CUSTINFO = 11, DN_CUSTRAW = 12, DN_CAL = 13 };
+                 DN_CUSTSET = 9, DN_CUST = 10, DN_CUSTINFO = 11, DN_CUSTRAW = 12, DN_CAL = 13, DN_OTA = 14, DN_OTAST = 15 };
 enum : uint8_t { DN_LINK_DEMO = 0, DN_LINK_WAIT = 1, DN_LINK_OK = 2 };
 enum : uint8_t { DN_CMD_DTC_READ = 1, DN_CMD_DTC_CLEAR = 2, DN_CMD_MODE_AUTO = 3, DN_CMD_MODE_DEMO = 4 };
 // โปรโตคอลที่ C3 ใช้คุยกับรถ
@@ -149,3 +149,28 @@ struct __attribute__((packed)) DidiNowCal {
   float o[DN_NCAL];
 };
 inline void dnCalDefault(DidiNowCal& c) { for (int i = 0; i < DN_NCAL; i++) { c.g[i] = 1; c.o[i] = 0; } }
+
+// ---------------------------------------------------------------- อัปเดตเฟิร์มแวร์ C3 ทาง BLE (จากแอป)
+// แอป -> C3 (เขียนแบบรอตอบรับทีละแพ็กเก็ต)
+enum { DN_OTA_INFO = 0, DN_OTA_BEGIN = 1, DN_OTA_DATA = 2, DN_OTA_END = 3, DN_OTA_ABORT = 4 };
+#define DN_OTA_CHUNK 160
+struct __attribute__((packed)) DidiNowOta {
+  uint32_t magic;
+  uint8_t type;       // DN_OTA
+  uint8_t op;         // DN_OTA_*
+  uint16_t len;       // ไบต์ใน data
+  uint32_t off;       // DATA: ตำแหน่งในไฟล์ · BEGIN: ขนาดไฟล์ทั้งหมด
+  uint8_t data[DN_OTA_CHUNK];   // DATA: เนื้อไฟล์ · BEGIN: MD5 (hex 32 ตัว)
+};
+// C3 -> แอป: สถานะ
+enum { DN_OTAS_IDLE = 0, DN_OTAS_RECV = 1, DN_OTAS_DONE = 2, DN_OTAS_ERR = 3 };
+struct __attribute__((packed)) DidiNowOtaSt {
+  uint32_t magic;
+  uint8_t type;       // DN_OTAST
+  uint8_t state;      // DN_OTAS_*
+  uint8_t err;        // รหัสผิดพลาดของ Update (0 = ไม่มี)
+  uint8_t pad;
+  uint32_t off;       // รับแล้วกี่ไบต์
+  uint32_t size;      // ขนาดไฟล์ (IDLE: พื้นที่ที่ลงได้สูงสุด)
+  char msg[40];       // IDLE: เวอร์ชันเฟิร์มแวร์ · ERR: สาเหตุ
+};
