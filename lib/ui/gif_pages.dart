@@ -387,9 +387,9 @@ class _GifDashPainter extends CustomPainter {
         final isMin = m == 2 || m == 9;
         final p = pk[m];
         final pkTxt = '${isMin ? 'MIN' : 'MAX'} ${p == null ? '--' : p.toStringAsFixed(dec)}';
-        if (c.six) {
+        if (c.pk && c.six) {
           _label(cv, pkTxt, Offset(x0, y + bh * 0.80 - h * 0.042), h * 0.026, color: top);
-        } else {
+        } else if (c.pk) {
           _label(cv, pkTxt, Offset(x1, y + h * 0.006), h * 0.032, color: top, right: true);
         }
         final warn = (m == 0 && v != null && v >= f.ectWarn && (f.time * 3).floor().isEven) ||
@@ -399,7 +399,7 @@ class _GifDashPainter extends CustomPainter {
         _label(cv, unit, Offset(x1 - w * 0.04 * k, y + bh * 0.42), h * 0.035 * (c.six ? 0.85 : 1));
         final (lo, hi) = _metricRange(f, m);
         final t = v == null ? 0.0 : ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
-        final pt = p == null ? -1.0 : ((p - lo) / (hi - lo)).clamp(0.0, 1.0);
+        final pt = p == null || !c.pk ? -1.0 : ((p - lo) / (hi - lo)).clamp(0.0, 1.0);
         _segBar(cv, Rect.fromLTWH(x0, y + bh * 0.80, x1 - x0, h * 0.035), c.six ? 10 : 18, t, 2, peak: pt);
       }
     }
@@ -616,6 +616,17 @@ Future<void> showGifSettings(BuildContext context, AppSettings s, int index) {
                       },
                     ),
                   ]),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text('โชว์ค่า MAX / MIN (peak)'),
+                    subtitle: const Text('ปิด = เหลือแค่ตัวเลขกับแถบ ไม่มีค่าสูงสุด/ต่ำสุด และขีด peak บนแถบ'),
+                    value: c.pk,
+                    onChanged: (v) {
+                      c.pk = v;
+                      save();
+                    },
+                  ),
                 ],
                 ...[
                   const SizedBox(height: 8),

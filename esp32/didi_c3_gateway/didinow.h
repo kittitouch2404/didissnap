@@ -8,7 +8,7 @@
 #define DIDINOW_CHANNEL 1           // ช่อง WiFi ของ S3 (SoftAP "Didissnap" ตั้งช่อง 1)
 
 enum : uint8_t { DN_DATA = 1, DN_CMD = 2, DN_DTC = 3, DN_GW = 4, DN_GWCMD = 5, DN_GWINFO = 6, DN_RAWREQ = 7, DN_RAWRES = 8,
-                 DN_CUSTSET = 9, DN_CUST = 10, DN_CUSTINFO = 11, DN_CUSTRAW = 12 };
+                 DN_CUSTSET = 9, DN_CUST = 10, DN_CUSTINFO = 11, DN_CUSTRAW = 12, DN_CAL = 13 };
 enum : uint8_t { DN_LINK_DEMO = 0, DN_LINK_WAIT = 1, DN_LINK_OK = 2 };
 enum : uint8_t { DN_CMD_DTC_READ = 1, DN_CMD_DTC_CLEAR = 2, DN_CMD_MODE_AUTO = 3, DN_CMD_MODE_DEMO = 4 };
 // โปรโตคอลที่ C3 ใช้คุยกับรถ
@@ -136,3 +136,16 @@ struct __attribute__((packed)) DidiNowCustRaw {
 #define DIDIBLE_DATA "d1d15501-6f0b-4e8b-9c4e-0b5d1d150000"
 #define DIDIBLE_CMD  "d1d15502-6f0b-4e8b-9c4e-0b5d1d150000"
 #define DIDIBLE_MTU  185
+
+// ---------------------------------------------------------------- ปรับค่า (gain / offset) ที่ C3 — ทุกจอได้ค่าที่ปรับแล้วเหมือนกัน
+// ค่าที่ส่ง = ค่าจากรถ x g + o   (TPS: ตัดให้อยู่ 0-100 · AFR narrowband (V) ไม่ปรับ · -999 = ไม่รองรับ ไม่ปรับ)
+enum { DC_RPM, DC_SPD, DC_ECT, DC_IAT, DC_VOLT, DC_LOAD, DC_TPS, DC_MAP, DC_MAF, DC_AFR, DC_TIMING, DC_OIL, DC_CVT, DN_NCAL };
+struct __attribute__((packed)) DidiNowCal {
+  uint32_t magic;
+  uint8_t type;       // DN_CAL
+  uint8_t set;        // 1 = จอ/แอป -> C3 (ตั้งค่า) · 0 = C3 -> ทุกจอ (ค่าปัจจุบัน ส่งทุก 2 วิ)
+  uint16_t ver;       // C3 เพิ่มทุกครั้งที่ค่าเปลี่ยน
+  float g[DN_NCAL];
+  float o[DN_NCAL];
+};
+inline void dnCalDefault(DidiNowCal& c) { for (int i = 0; i < DN_NCAL; i++) { c.g[i] = 1; c.o[i] = 0; } }

@@ -317,7 +317,7 @@ void setup() {
   didicfg::onTripReset = resetTrip;
   if (wifiOn) didicfg::begin(prefs, pages::NAMES, pages::N);   // โหลดค่าตั้ง + เว็บตั้งค่า
   else { didicfg::prefs = &prefs; didicfg::pageNames = pages::NAMES; didicfg::pageCount = pages::N; didicfg::load(); }
-  didicfg::rawTps = [] { return RAW.tps; };        // ปรับค่าให้ตรง: "ตั้ง TPS ตอนนี้เป็น 0% / 100%"
+  didicfg::rawTps = [] { return didinow::gwOn ? didinow::gwRawTps() : RAW.tps; };        // ปรับค่าให้ตรง: "ตั้ง TPS ตอนนี้เป็น 0% / 100%"
   step(6, "boot logo");
   if (!skip(6)) bootLogo();
   else lcd::brightness(didicfg::cfg.bri);

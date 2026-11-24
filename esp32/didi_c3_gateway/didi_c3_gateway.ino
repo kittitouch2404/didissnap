@@ -326,6 +326,23 @@ static void custSave() {
     Serial.printf("[cust] slot %d %s '%s' hdr %03X fml '%s'\n", i, c.on ? "ON" : "off", c.name, c.hdr, c.fml);
   }
 }
+// ---- ปรับค่า gain / offset (จำไว้ในตัว)
+static DidiNowCal cal = {};
+static volatile bool calDirty = false;
+static void calLoad() {
+  if (prefs.getBytes("cal", &cal, sizeof(cal)) != sizeof(cal) || cal.magic != DIDINOW_MAGIC) {
+    memset(&cal, 0, sizeof(cal)); cal.magic = DIDINOW_MAGIC; dnCalDefault(cal);
+  }
+  for (int i = 0; i < DN_NCAL; i++) {   // กันค่าเพี้ยน
+    if (!(cal.g[i] > 0.2f && cal.g[i] < 5.f)) cal.g[i] = 1;
+    if (!(fabsf(cal.o[i]) < 500.f)) cal.o[i] = 0;
+  }
+  cal.type = DN_CAL; cal.set = 0;
+}
+static inline float calc(int i, float v) {
+  if (v <= -998.f) return v;
+  return v * cal.g[i] + cal.o[i];
+}
 // คำสั่งจากจอ/แอป (มาทาง BLE หรือ ESP-NOW)
 static void gotCmd(const uint8_t* d, int n) {
   if (n < (int)sizeof(DidiNowCmd)) return;
@@ -335,6 +352,16 @@ static void gotCmd(const uint8_t* d, int n) {
   if (c->type == DN_RAWREQ && n >= (int)sizeof(DidiNowRaw) && !rawPending) {
     memcpy(&pendRaw, d, sizeof(pendRaw));
     rawPending = true;
+  }
+  if (c->type == DN_CAL && n >= (int)sizeof(DidiNowCal) && ((const DidiNowCal*)d)->set == 1) {
+    const DidiNowCal* k = (const DidiNowCal*)d;
+    bool ch = false;
+    for (int i = 0; i < DN_NCAL; i++) {
+      float g = (k->g[i] > 0.2f && k->g[i] < 5.f) ? k->g[i] : 1, o = fabsf(k->o[i]) < 500.f ? k->o[i] : 0;
+      if (g != cal.g[i] || o != cal.o[i]) { cal.g[i] = g; cal.o[i] = o; ch = true; }
+    }
+    if (ch) { cal.ver++; calDirty = true; }
+    return;
   }
   if (c->type == DN_CUSTSET && n >= (int)sizeof(DidiNowCustSet)) {
     const DidiNowCustSet* cs = (const DidiNowCustSet*)d;
@@ -384,9 +411,13 @@ static void sendData() {
   m.link = demo ? DN_LINK_DEMO : carLink;
   m.proto = demo ? DN_P_DEMO : proto;
   m.afrMode = R.afrMode; m.rate = rate; m.rpmT = R.rpmT;
-  m.rpm = R.rpm; m.spd = R.spd; m.ect = R.ect; m.iat = R.iat; m.volt = R.volt; m.load = R.load; m.tps = R.tps;
-  m.map = R.map; m.maf = R.maf; m.fuel = R.fuel; m.stft = R.stft; m.afr = R.afr;
-  m.timing = R.timing; m.oil = R.oil;
+  // ค่าที่ปรับแล้ว (gain / offset ตั้งจากแอปหรือจอ S3)
+  m.rpm = fmaxf(0, calc(DC_RPM, R.rpm)); m.spd = fmaxf(0, calc(DC_SPD, R.spd));
+  m.ect = calc(DC_ECT, R.ect); m.iat = calc(DC_IAT, R.iat); m.volt = calc(DC_VOLT, R.volt);
+  m.load = calc(DC_LOAD, R.load); m.tps = fminf(100, fmaxf(0, calc(DC_TPS, R.tps)));
+  m.map = calc(DC_MAP, R.map); m.maf = fmaxf(0, calc(DC_MAF, R.maf)); m.fuel = R.fuel; m.stft = R.stft;
+  m.afr = R.afrMode == 2 ? R.afr : calc(DC_AFR, R.afr);
+  m.timing = calc(DC_TIMING, R.timing); m.oil = calc(DC_OIL, R.oil);
   tx(&m, sizeof(m));
 }
 // ค่า Custom ทุกช่อง (4 ครั้ง/วินาที) + ชื่อ/หน่วยทีละช่อง + คำตอบดิบที่ได้ใหม่
@@ -401,7 +432,7 @@ static void sendCust(uint32_t now) {
       if (!cust[i].on) continue;
       m.on |= 1 << i;
       if (demo) { m.v[i] = (i == 4 ? 72 : 40 + i * 15) + sinf(now / 2000.f + i) * 3; m.have |= 1 << i; continue; }
-      if (custT[i] && now - custT[i] < 5000) { m.v[i] = custV[i]; m.have |= 1 << i; }
+      if (custT[i] && now - custT[i] < 5000) { m.v[i] = i == 4 ? calc(DC_CVT, custV[i]) : custV[i]; m.have |= 1 << i; }
     }
     if (m.on) tx(&m, sizeof(m));
   }
@@ -415,6 +446,14 @@ static void sendCust(uint32_t now) {
     portEXIT_CRITICAL(&custMux);
     tx(&m, sizeof(m));
     si = (si + 1) % DN_NCUST;
+  }
+  static uint32_t tc = 0;
+  if (now - tc >= 2000 || calDirty) {   // ค่าปรับปัจจุบัน → ทุกจอ (เมนูของจอ/แอปโชว์ค่าตรงกัน)
+    tc = now;
+    if (calDirty) { calDirty = false; prefs.putBytes("cal", &cal, sizeof(cal)); Serial.printf("[cal] saved v%u\n", cal.ver); }
+    DidiNowCal m = cal;
+    m.magic = DIDINOW_MAGIC; m.type = DN_CAL; m.set = 0;
+    tx(&m, sizeof(m));
   }
   uint8_t nr = custRawNew;
   for (int i = 0; i < DN_NCUST && nr; i++) if (nr & (1 << i)) { custRawNew &= ~(1 << i); tx(&custRaw[i], sizeof(custRaw[i])); break; }
@@ -576,6 +615,7 @@ void setup() {
   prefs.begin("didic3", false);
   demo = prefs.getBool("demo", false);
   custLoad();
+  calLoad();
   kline::begin(PIN_K_RX, PIN_K_TX);
   analogSetPinAttenuation(PIN_VBAT, ADC_11db);
   vbat = readVbat();

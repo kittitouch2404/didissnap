@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../settings.dart';
+import 'c3_cal.dart';
 import 'c3_source.dart';
 import 'car_data.dart';
 import 'cyd_link.dart';
@@ -44,6 +45,8 @@ class DataHub extends ChangeNotifier {
 
   late final AlertEngine alerts = AlertEngine(settings);
   late final GpsCal gps = GpsCal(settings, data);
+  /// ค่าปรับ gain/offset ที่เก็บใน C3 (โหมด C3)
+  final C3Cal c3cal = C3Cal();
   late final Updater updater = Updater(settings);
   late final DataLogger logger = DataLogger(settings);
   final History history = History();

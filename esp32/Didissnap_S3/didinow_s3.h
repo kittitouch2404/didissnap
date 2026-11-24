@@ -26,6 +26,9 @@ static volatile uint16_t gwDtcId = 0;     // id ของคำตอบ DTC ล
 static char gwInfo[59] = "";              // ผลตรวจสายจาก C3 (ตอนยังหารถไม่เจอ)
 static_assert(DN_NCUST == N_CUST, "N_CUST (data.h) must match DN_NCUST (didinow.h)");
 static auto& gwCust = CUST;
+// ค่าปรับ (gain/offset) ที่เก็บใน C3 — เมนู CALIBRATE ของจอนี้ = แก้ค่าใน C3
+static DidiNowCal gwCal = {};
+static volatile bool gwCalHave = false, gwCalNew = false;
 
 // แพ็กเก็ตจาก C3 (มาทาง BLE หรือ ESP-NOW)
 static void gwFeed(const uint8_t* d, int n) {
@@ -41,6 +44,12 @@ static void gwFeed(const uint8_t* d, int n) {
   }
   if (t == DN_DTC && n >= (int)sizeof(DidiNowDtc)) { memcpy(&gwDtc, d, sizeof(gwDtc)); gwDtcId = gwDtc.id; return; }
   if (t == DN_GWINFO && n >= (int)sizeof(DidiNowInfo)) { memcpy(gwInfo, ((const DidiNowInfo*)d)->text, sizeof(gwInfo) - 1); gwInfo[sizeof(gwInfo) - 1] = 0; return; }
+  if (t == DN_CAL && n >= (int)sizeof(DidiNowCal)) {
+    if (((const DidiNowCal*)d)->set) return;
+    memcpy(&gwCal, d, sizeof(gwCal));
+    gwCalHave = true; gwCalNew = true;
+    return;
+  }
   if (t == DN_CUST && n >= (int)sizeof(DidiNowCust)) {
     const DidiNowCust* m = (const DidiNowCust*)d;
     for (int i = 0; i < DN_NCUST; i++) {
@@ -102,7 +111,7 @@ inline void loop(uint8_t link) {
     DidiNowData m;
     m.magic = DIDINOW_MAGIC; m.type = DN_DATA; m.link = link; m.seq = seq++;
     m.rpmT = RAW.rpmT;
-    const auto& c = didicfg::cfg;                 // ส่งค่าที่ปรับแล้ว (CALIBRATE) ให้จอ CYD ตรงกับจอนี้
+    const auto& c = data::calByC3 ? data::CAL_NONE : didicfg::cfg;   // ส่งค่าที่ปรับแล้ว (CALIBRATE) ให้จอ CYD ตรงกับจอนี้
     float tp = c.tps1 > c.tps0 ? (RAW.tps - c.tps0) * 100.f / (c.tps1 - c.tps0) : RAW.tps;
     m.rpm = RAW.rpm * c.rpmG / 100.f; m.spd = RAW.spd * c.spdG / 100.f; m.ect = RAW.ect + c.ectO; m.iat = RAW.iat + c.iatO;
     m.volt = RAW.volt + c.vOfs / 10.f;
@@ -142,8 +151,71 @@ static void gwCmd(uint8_t cmd, uint16_t id) {
   esp_now_send(BCAST, (const uint8_t*)&c, sizeof(c));
 }
 // ble = ต่อ C3 ทาง Bluetooth (C3 รุ่นใหม่) · ESP-NOW แบบเดิมยังรับได้ถ้าเปิด WiFi
+// ---- ซิงก์ CALIBRATE ของจอนี้ ↔ ค่าใน C3
+static int gwCalSeen[8];                 // ค่าเมนู (int) ที่ได้จาก C3 ล่าสุด — ช่องที่ผู้ใช้ไม่ได้แก้ส่งค่าเดิมของ C3 กลับไป (ไม่ปัดเศษทิ้ง)
+static bool gwCalSynced = false;
+static uint16_t gwCalVer = 0xFFFF;
+static void gwCalInts(int* a) {
+  const auto& c = didicfg::cfg;
+  a[0] = c.spdG; a[1] = c.rpmG; a[2] = c.afrG; a[3] = c.ectO; a[4] = c.iatO; a[5] = c.vOfs; a[6] = c.tps0; a[7] = c.tps1;
+}
+static void gwCalAdopt() {               // C3 -> เมนูจอนี้
+  auto& c = didicfg::cfg;
+  const DidiNowCal& k = gwCal;
+  auto gi = [](float g, int mn, int mx) { return constrain((int)lroundf(g * 100), mn, mx); };
+  c.spdG = gi(k.g[DC_SPD], 80, 130); c.rpmG = gi(k.g[DC_RPM], 80, 120); c.afrG = gi(k.g[DC_AFR], 80, 120);
+  c.ectO = constrain((int)lroundf(k.o[DC_ECT]), -15, 15); c.iatO = constrain((int)lroundf(k.o[DC_IAT]), -15, 15);
+  c.vOfs = constrain((int)lroundf(k.o[DC_VOLT] * 10), -20, 20);
+  float g = k.g[DC_TPS] > .05f ? k.g[DC_TPS] : 1;
+  int t0 = (int)lroundf(-k.o[DC_TPS] / g), t1 = (int)lroundf(-k.o[DC_TPS] / g + 100 / g);
+  c.tps0 = constrain(t0, 0, 60); c.tps1 = constrain(t1, 30, 100);
+  gwCalInts(gwCalSeen);
+  didicfg::saveLater();
+}
+static void gwCalPush() {                // เมนูจอนี้ -> C3 (เฉพาะช่องที่แก้)
+  int a[8];
+  gwCalInts(a);
+  DidiNowCal m = gwCal;
+  m.magic = DIDINOW_MAGIC; m.type = DN_CAL; m.set = 1;
+  if (a[0] != gwCalSeen[0]) m.g[DC_SPD] = a[0] / 100.f;
+  if (a[1] != gwCalSeen[1]) m.g[DC_RPM] = a[1] / 100.f;
+  if (a[2] != gwCalSeen[2]) m.g[DC_AFR] = a[2] / 100.f;
+  if (a[3] != gwCalSeen[3]) m.o[DC_ECT] = a[3];
+  if (a[4] != gwCalSeen[4]) m.o[DC_IAT] = a[4];
+  if (a[5] != gwCalSeen[5]) m.o[DC_VOLT] = a[5] / 10.f;
+  if (a[6] != gwCalSeen[6] || a[7] != gwCalSeen[7]) {
+    float g = a[7] > a[6] ? 100.f / (a[7] - a[6]) : 1;
+    m.g[DC_TPS] = g; m.o[DC_TPS] = -a[6] * g;
+  }
+  if (c3link::send(&m, sizeof(m))) { memcpy(gwCalSeen, a, sizeof(a)); gwCal = m; gwCal.set = 0; }
+}
+static void gwCalSync() {
+  if (!gwCalHave) return;
+  if (gwCalNew) {
+    gwCalNew = false;
+    if (!gwCalSynced) {
+      gwCalSynced = true;
+      int a[8], d0[8] = {100, 100, 100, 0, 0, 0, 0, 100};
+      gwCalInts(a);
+      // C3 ยังไม่เคยตั้งค่า แต่จอนี้เคยปรับไว้ (ก่อนใช้ C3) → ย้ายค่าของจอนี้ไปเก็บที่ C3
+      if (gwCal.ver == 0 && memcmp(a, d0, sizeof(a))) { memcpy(gwCalSeen, d0, sizeof(d0)); gwCalVer = 0; gwCalPush(); return; }
+    }
+    if (gwCal.ver != gwCalVer) { gwCalVer = gwCal.ver; gwCalAdopt(); }
+    return;
+  }
+  int a[8];
+  gwCalInts(a);
+  if (memcmp(a, gwCalSeen, sizeof(a))) gwCalPush();
+}
+// TPS ดิบ (ก่อน C3 ปรับ) — ใช้กับ "ตั้ง TPS ตอนนี้เป็น 0% / 100%"
+inline float gwRawTps() {
+  if (!gwCalHave) return RAW.tps;
+  float g = gwCal.g[DC_TPS] > .05f ? gwCal.g[DC_TPS] : 1;
+  return constrain((RAW.tps - gwCal.o[DC_TPS]) / g, 0.f, 100.f);
+}
 inline void gwBegin(bool demo, bool ble = true) {
   gwOn = true; gwDemo = demo;
+  data::calByC3 = true;
   if (ble) c3link::begin(gwFeed);
 }
 inline bool gwHeard() { return gwLast && millis() - gwLast < 1500; }
@@ -154,6 +226,8 @@ inline void gwLoop() {
   if (!gwOn) return;
   uint32_t now = millis();
   if (now - gwModeT > 3000) { gwModeT = now; gwCmd(gwDemo ? DN_CMD_MODE_DEMO : DN_CMD_MODE_AUTO, 0); }
+  static uint32_t calT = 0;
+  if (now - calT > 200) { calT = now; gwCalSync(); }
   if (gwSeq == gwApplied) return;
   gwApplied = gwSeq;
   DidiNowGw m;

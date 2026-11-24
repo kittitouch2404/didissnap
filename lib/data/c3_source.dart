@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'app_log.dart';
 import 'car_data.dart';
+import 'c3_cal.dart';
 import 'custom_pid.dart';
 import 'elm_source.dart';
 import 'hub.dart';
@@ -59,6 +60,9 @@ class C3Source implements CarSource {
       if (e != _bleState) AppLog.i('C3 BLE: $e');
       if (e == 'connected' && _bleState != 'connected') {
         Timer(const Duration(milliseconds: 600), () => _sendCfg(force: true));
+        _hub?.c3cal.sender = _write;
+      } else if (e != 'connected') {
+        _hub?.c3cal.sender = null;
       }
       _bleState = e;
       _status();
@@ -76,6 +80,8 @@ class C3Source implements CarSource {
         _info = String.fromCharCodes(e.sublist(5).takeWhile((c) => c != 0));
       case 8: // DN_RAWRES
         if (e.length >= 8) _complete(b.getUint16(6, Endian.little), e);
+      case 13: // DN_CAL: ค่าปรับ gain/offset ปัจจุบันใน C3
+        if (e.length >= 112 && e[5] == 0) _calIn(b);
       case 10: // DN_CUST: ค่าของทุกช่อง
         if (e.length >= 28) _custVals(b);
       case 12: // DN_CUSTRAW: คำตอบดิบล่าสุดของช่อง (โชว์ในหน้าทดสอบ)
@@ -94,10 +100,12 @@ class C3Source implements CarSource {
     _rate = b.getUint16(10, Endian.little);
     _last = DateTime.now();
     if (_link != 2 && _link != 0) return; // ยังไม่ได้ค่ารถ
-    final cal = hub.settings.speedCal;
+    // C3 ปรับค่าให้แล้ว (gain/offset) · ความเร็วดิบ = ถอดเกนของ C3 ออก (ไว้เทียบ GPS)
+    final cal = hub.c3cal;
+    final gs = cal.have && cal.g[C3Cal.iSpd] > 0.2 ? cal.g[C3Cal.iSpd] : 1.0;
     d.rpm = f(16);
-    d.speedRaw = f(20);
-    d.speed = d.speedRaw * cal;
+    d.speed = f(20);
+    d.speedRaw = d.speed / gs;
     d.ect = f(24);
     d.iat = f(28);
     final v = f(32);
@@ -194,7 +202,39 @@ class C3Source implements CarSource {
 
   // ---------------- Custom PID / CVT TEMP: C3 ถามเอง
   String _cfgSig = '';
-  void _cfgChanged() => _sendCfg();
+  void _cfgChanged() {
+    _sendCfg();
+    _speedPush();
+  }
+
+  Future<bool> _write(Uint8List p) async => await Native.m.invokeMethod<bool>('c3Write', {'b': p}) ?? false;
+
+  // ---------------- ชดเชยความเร็วของแอป (ตั้งเอง / GPS) = SPEED GAIN ใน C3 (ค่าเดียวกันทุกจอ)
+  void _calIn(ByteData b) {
+    final hub = _hub;
+    if (hub == null) return;
+    final cal = hub.c3cal;
+    final first = !cal.have;
+    if (!cal.fromPacket(b)) return;
+    final s = hub.settings;
+    final gs = cal.g[C3Cal.iSpd];
+    if ((s.speedCal - gs).abs() < 0.0005) return;
+    final auto = s.speedCalMode == 1 && s.speedCalAutoN >= 20;
+    // C3 ยังไม่เคยตั้ง แต่แอปตั้งไว้ → ย้ายค่าของแอปไป C3 · โหมด GPS อัตโนมัติ → แอปเป็นคนกำหนด
+    if (auto || (first && cal.ver == 0 && (s.speedCal - 1).abs() > 0.0005)) {
+      _speedPush();
+    } else {
+      s.speedCal1000 = (gs * 1000).round(); // ปรับจากจอ S3 / หน้าตั้งค่า C3 → ใช้ค่าของ C3
+    }
+  }
+
+  void _speedPush() {
+    final cal = _hub?.c3cal;
+    if (cal == null || !cal.have || !cal.connected) return;
+    final v = _hub!.settings.speedCal;
+    if ((v - cal.g[C3Cal.iSpd]).abs() < 0.0005) return;
+    cal.setGain(C3Cal.iSpd, v);
+  }
 
   static String _ascii(String t, int n) {
     final a = t.replaceAll('°', '').replaceAll(RegExp(r'[^\x20-\x7E]'), '').trim();
@@ -329,6 +369,7 @@ class C3Source implements CarSource {
   Future<void> stop() async {
     _running = false;
     _hub?.settings.removeListener(_cfgChanged);
+    _hub?.c3cal.sender = null;
     _watch?.cancel();
     _cust?.cancel();
     await _sub?.cancel();

@@ -12,6 +12,7 @@ class GifCfg {
         bx = ((m['bx'] as num?)?.toDouble() ?? 0.0).clamp(-1.0, 1.0),
         by = ((m['by'] as num?)?.toDouble() ?? 0.0).clamp(-1.0, 1.0),
         six = m['six'] == true,
+        pk = m['pk'] != false,
         hue2 = (m['hue2'] as num?)?.toDouble() ?? -1,
         sat2 = (m['sat2'] as num?)?.toDouble() ?? 0.70,
         rnd = m['rnd'] == true,
@@ -54,6 +55,9 @@ class GifCfg {
   /// ช่องขวา: false = 3 ค่า (ตัวใหญ่), true = 6 ค่า (2 คอลัมน์)
   bool six;
 
+  /// โชว์ MAX / MIN (ค่าสูงสุด/ต่ำสุด) ของแต่ละช่อง + ขีดบนแถบ
+  bool pk;
+
   /// ค่าที่แสดงตอนนี้ (3 หรือ 6 ช่อง)
   List<int> get shown => six ? slots : slots.sublist(0, 3);
 
@@ -73,6 +77,7 @@ class GifCfg {
         'by': by,
         'slots': slots,
         'six': six,
+        'pk': pk,
         'hue2': hue2,
         'sat2': sat2,
         'rnd': rnd,

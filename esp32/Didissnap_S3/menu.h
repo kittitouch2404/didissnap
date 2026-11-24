@@ -342,7 +342,7 @@ inline void drawList() {
   const char* ft = edit ? "BTN1 = +     BTN2 = -     HOLD BTN2 = OK" : C.it[sel].desc;
   if (cat == CAT_CAL && C.it[sel].key) {            // ปรับค่า: โชว์ค่าดิบจากรถ → ค่าที่โชว์ ให้เทียบกับมาตรวัดจริง
     const char* k = C.it[sel].key;
-    if (k[0] == 't') snprintf(live, sizeof(live), "%s   now raw %.0f%% = %.0f%%", edit ? "BTN1 + / BTN2 -" : "TPS", RAW.tps, D.tps);
+    if (k[0] == 't') snprintf(live, sizeof(live), "%s   now raw %.0f%% = %.0f%%", edit ? "BTN1 + / BTN2 -" : "TPS", didicfg::rawTps ? didicfg::rawTps() : RAW.tps, D.tps);
     else if (k[0] == 's') snprintf(live, sizeof(live), "%s   car %.0f -> %.0f km/h", edit ? "BTN1 + / BTN2 -" : "SPEED", RAW.spd, D.spd);
     else if (k[0] == 'r') snprintf(live, sizeof(live), "%s   car %.0f -> %.0f rpm", edit ? "BTN1 + / BTN2 -" : "RPM", RAW.rpm, D.rpm);
     else if (k[0] == 'a') snprintf(live, sizeof(live), "%s   car %.1f -> %.1f", edit ? "BTN1 + / BTN2 -" : "AFR", RAW.afr, D.afr);

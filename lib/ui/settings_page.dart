@@ -8,6 +8,7 @@ import 'package:archive/archive.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../data/c3_cal.dart';
 import '../data/car_data.dart';
 import '../data/custom_pid.dart';
 import '../data/elm_source.dart';
@@ -268,6 +269,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
             const _Hint(
                 'ให้จอแอนดรอยด์กับจอ CYD ต่อฮอตสปอตมือถือตัวเดียวกัน — แอปต่อ Vgate แล้วส่งค่าให้จอ CYD ราว 20 ครั้ง/วินาที\n'
                 'แอปทำงานเบื้องหลังต่อได้ (เปิดยูทูป/แผนที่ทับได้) — ปิด "ประหยัดแบตเตอรี่" ให้แอปนี้ในเมนู เปิดแอปอัตโนมัติ'),
+            if (s.source == SourceType.c3) _C3CalSection(hub: hub),
             _CvtTempSection(s: s, hub: hub),
             _CustomPidSection(s: s, hub: hub),
             if (s.source == SourceType.btElm) ...[
@@ -1951,4 +1953,112 @@ class _PreviewDone extends StatelessWidget {
     });
     return const ColoredBox(color: Colors.black);
   }
+}
+
+
+// ======================================================================
+//  ปรับค่า (gain / offset) ที่ C3 — มีผลกับทุกจอ (S3 / CYD / แอป)
+// ======================================================================
+class _C3CalSection extends StatelessWidget {
+  const _C3CalSection({required this.hub});
+  final DataHub hub;
+
+  static String _pct(int v) => 'x${(v / 1000).toStringAsFixed(3)}';
+
+  @override
+  Widget build(BuildContext context) {
+    final cal = hub.c3cal;
+    return ListenableBuilder(
+      listenable: cal,
+      builder: (context, _) {
+        final rows = <Widget>[
+          const _Header('ปรับค่าให้ตรง (gain / offset) ที่ C3'),
+        ];
+        if (!cal.have) {
+          rows.add(const _Hint('ยังไม่ได้รับค่าจาก C3 — ต่อ C3 ให้ได้ก่อน (C3 ต้องเป็นเฟิร์มแวร์รุ่นใหม่)'));
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
+        }
+        for (var i = 0; i < C3Cal.n; i++) {
+          final div = C3Cal.ofsDiv(i), st = C3Cal.ofsStep(i), mx = C3Cal.ofsMax(i);
+          final gi = (cal.g[i] * 1000).round(), oi = (cal.o[i] * div).round();
+          final u = C3Cal.units[i];
+          final changed = gi != 1000 || oi != 0;
+          rows.add(Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+            child: Row(children: [
+              SizedBox(
+                width: 170,
+                child: Text(C3Cal.names[i],
+                    style: TextStyle(fontSize: 14, color: changed ? kGreen : null, fontWeight: changed ? FontWeight.w700 : null)),
+              ),
+              const Text('gain', style: TextStyle(fontSize: 12, color: Colors.white54)),
+              _mini(gi, 500, 2000, 5, (v) => cal.setGain(i, v / 1000), _pct),
+              const SizedBox(width: 12),
+              const Text('offset', style: TextStyle(fontSize: 12, color: Colors.white54)),
+              _mini(oi, -mx, mx, st, (v) => cal.setOfs(i, v / div),
+                  (v) => '${v >= 0 ? '+' : ''}${div == 1 ? v : (v / div).toStringAsFixed(1)} $u'),
+              if (changed)
+                IconButton(
+                  tooltip: 'คืนค่าเดิม',
+                  icon: const Icon(Icons.undo, size: 20),
+                  onPressed: () {
+                    cal.g[i] = 1;
+                    cal.setOfs(i, 0);
+                  },
+                ),
+            ]),
+          ));
+        }
+        rows.add(Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+          child: Wrap(spacing: 8, children: [
+            OutlinedButton.icon(
+              icon: const Icon(Icons.restart_alt),
+              label: const Text('คืนค่าเดิมทั้งหมด'),
+              onPressed: () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (c) => AlertDialog(
+                    title: const Text('คืนค่าปรับทั้งหมด?'),
+                    content: const Text('ทุกค่ากลับเป็น gain x1.000 / offset 0 (มีผลกับทุกจอ)'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('ยกเลิก')),
+                      FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('คืนค่า')),
+                    ],
+                  ),
+                );
+                if (ok == true) {
+                  if (hub.settings.speedCalMode == 0) hub.settings.speedCal1000 = 1000;
+                  cal.reset();
+                }
+              },
+            ),
+          ]),
+        ));
+        rows.add(_Hint('ค่าที่โชว์ = ค่าจากรถ x gain + offset · C3 จำไว้ในตัว ทุกจอ (S3 / CYD / แอป) ได้ค่าที่ปรับแล้วเหมือนกัน\n'
+            'ความเร็ว = ค่าเดียวกับ "ชดเชยความเร็ว" ของแอป และ SPEED GAIN ของจอ S3 (แก้ที่ไหนก็ได้)'
+            '${hub.settings.speedCalMode == 1 ? '\nตอนนี้ตั้งชดเชยความเร็วด้วย GPS อัตโนมัติ — แอปจะเขียนค่าความเร็วทับเมื่อเรียนรู้ครบ' : ''}\n'
+            'AFR แบบ narrowband (โวลต์) C3 ไม่ปรับ · ${cal.connected ? 'ต่อ C3 อยู่ (ชุดค่าที่ ${cal.ver})' : 'ยังไม่ได้ต่อ C3 — แก้ค่าแล้วจะส่งไม่ได้'}'));
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
+      },
+    );
+  }
+
+  static Widget _mini(int v, int mn, int mx, int st, ValueChanged<int> on, String Function(int) fmt) =>
+      Row(mainAxisSize: MainAxisSize.min, children: [
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.remove_circle_outline, size: 22),
+          onPressed: v - st >= mn ? () => on(v - st) : null,
+        ),
+        SizedBox(
+          width: 92,
+          child: Text(fmt(v), textAlign: TextAlign.center, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        ),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.add_circle_outline, size: 22),
+          onPressed: v + st <= mx ? () => on(v + st) : null,
+        ),
+      ]);
 }

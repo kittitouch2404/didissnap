@@ -107,6 +107,9 @@ inline void gearEstimate() {
   else { D.gear[0] = '1' + b; D.gear[1] = 0; }
 }
 
+// โหมด C3: C3 ปรับค่า (gain/offset) ให้แล้ว → จอนี้ไม่ต้องปรับซ้ำ
+static bool calByC3 = false;
+static const didicfg::Config CAL_NONE{};
 inline void update(float dt, bool demo) {
   if (demo) sim(dt);
   // ค่ารอบจาก OBD มาห่าง ๆ (K-line) → เดาต่อจากอัตราเปลี่ยนล่าสุดไม่เกิน 0.25 วิ ให้เข็ม/ตัวเลขไม่ค้างเป็นขั้น
@@ -116,7 +119,7 @@ inline void update(float dt, bool demo) {
     if (age < 0.25f) rpmT = fmaxf(0, RAW.rpm + RAW.rpmRate * age);
   }
   // ปรับค่าให้ตรง (เมนู CAR > CALIBRATE / แอป / เว็บ)
-  const auto& c = didicfg::cfg;
+  const auto& c = calByC3 ? CAL_NONE : didicfg::cfg;
   float tpsC = c.tps1 > c.tps0 ? (RAW.tps - c.tps0) * 100.f / (c.tps1 - c.tps0) : RAW.tps;
   tpsC = fminf(100.f, fmaxf(0.f, tpsC));
   sRpm.step(rpmT * c.rpmG / 100.f, dt, 16); sSpd.step(RAW.spd * c.spdG / 100.f, dt, 9);
