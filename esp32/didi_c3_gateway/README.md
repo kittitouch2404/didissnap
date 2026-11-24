@@ -3,6 +3,8 @@
 > แอป: MENU → การเชื่อมต่อ → แหล่งข้อมูล "ESP32-C3 ที่ช่อง OBD2 (Bluetooth BLE)"
 > จอ S3: เมนู OBD → OBD SOURCE: C3 · จอ CYD: ตั้ง `#define OBD_LINK_C3 1`
 
+> **ปรับค่า gain / offset ที่ C3:** ตั้งจากแอป (ตั้งค่า → ปรับค่าให้ตรงที่ C3) หรือเมนู CALIBRATE ของจอ S3 — C3 จำไว้ในตัว ทุกจอได้ค่าที่ปรับแล้วเหมือนกัน
+
 # didi_c3_gateway — ESP32-C3 Super Mini ที่ช่อง OBD2
 
 อ่านค่าจากรถเอง (CAN หรือ K-line) แล้วส่งทาง ESP-NOW ให้จอ 4.3" (S3) และจอ CYD 2.8" — ไม่ต้องใช้ตัวอ่าน ELM327 / Bluetooth
