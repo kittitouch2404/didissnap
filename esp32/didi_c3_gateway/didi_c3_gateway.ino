@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.24"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.24b"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -66,6 +66,15 @@ static float readVbat() {
   float v = mv / 8.f / 1000.f * VBAT_RATIO;
   return v > 5.f ? v : 0;              // ต่ำกว่า 5V = ไม่ได้ต่อสาย
 }
+// เสียบสาย USB กับคอมอยู่ (มีโฮสต์ USB) → ห้ามหลับ: อัปโหลด/ดู Serial ได้ ไม่หลุดวนเสียงเด้ง
+// ในรถใช้ไฟ 5V จาก step-down (ไม่มีโฮสต์ USB) → หลับประหยัดแบตตามปกติ
+static bool usbHost() {
+#if ARDUINO_USB_MODE && ARDUINO_USB_CDC_ON_BOOT
+  return HWCDC::isPlugged();
+#else
+  return false;
+#endif
+}
 static void deepSleep(uint32_t sec) {
   Serial.printf("[sleep] %u s (vbat %.2f)\n", (unsigned)sec, vbat);
   Serial.flush();
@@ -94,7 +103,8 @@ static void wakeCheck() {
   if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) return;
   vbat = readVbat();
   if (!vbat) return;                   // ไม่ได้ต่อสายวัดแบต → ตื่นมาลองเรียกรถ
-  if (vbat < RUN_V) {
+  delay(250);                          // ให้ USB ต่อกับคอมทันก่อนเช็ก
+  if (vbat < RUN_V && !usbHost()) {
     pinMode(PIN_LED, OUTPUT);
     digitalWrite(PIN_LED, HIGH);
     esp_sleep_enable_timer_wakeup((uint64_t)(vbat < LOWBAT_V ? WAKE_LOWBAT_S : WAKE_S) * 1000000ULL);
@@ -688,8 +698,8 @@ void setup() {
     else if (rtcProto == DN_P_CAN250) ok = tryCan(250000, DN_P_CAN250);
     else ok = connect();
     Serial.printf("[wake] car %s\n", ok ? "found" : "not found -> sleep");
-    if (!ok) deepSleep(WAKE_NOVBAT_S);
-    carLink = DN_LINK_OK; fails = 0; lastOk = millis();
+    if (!ok && !usbHost()) deepSleep(WAKE_NOVBAT_S);
+    if (ok) { carLink = DN_LINK_OK; fails = 0; lastOk = millis(); }
   }
 #if USE_BLE
   c3ble::onCmd = gotCmd;
@@ -724,7 +734,13 @@ void loop() {
   }
   if (!lastCar || carLink == DN_LINK_OK || demo) lastCar = now;
   bool engineOn = vbat >= RUN_V;
-  if (!demo && !engineOn && now - lastCar > (vbat && vbat < LOWBAT_V ? 30000UL : IDLE_SLEEP_S * 1000UL)) {
+  bool wantSleep = !demo && !engineOn && now - lastCar > (vbat && vbat < LOWBAT_V ? 30000UL : IDLE_SLEEP_S * 1000UL);
+  if (wantSleep && usbHost()) {          // ต่อคอมอยู่ → ไม่หลับ (บอกใน Serial ทุก 30 วิ)
+    static uint32_t tn = 0;
+    if (now - tn > 30000) { tn = now; Serial.println("[sleep] skipped: USB connected to computer"); }
+    wantSleep = false;
+  }
+  if (wantSleep) {
     char m[59];
     if (vbat) snprintf(m, sizeof(m), "sleep: engine off, batt %.1fV", vbat);
     else snprintf(m, sizeof(m), "sleep: no car (check every %ds)", WAKE_NOVBAT_S);
