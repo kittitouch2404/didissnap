@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../settings.dart';
 import 'car_data.dart';
+import 'dyno.dart';
 import 'app_log.dart';
 import 'native.dart';
 
@@ -53,6 +54,8 @@ final List<GMetric> kGMetrics = [
       d.cvtTemp != null && DateTime.now().difference(d.cvtAt).inSeconds < 5 ? d.cvtTemp : null),
   for (var k = 0; k < 4; k++)
     GMetric('CUSTOM ${k + 1}', '', 0, 100, 1, (d, s) => d.custNow(k), custom: k),
+  // แรงม้าโดยประมาณจากอากาศเข้า (เบนซิน) — ไว้ดูแนวโน้ม ใช้หน้าไดโนถ้าจะวัดจริง
+  GMetric('HP (ประมาณ)', 'PS', 0, 200, 0, (d, s) => DynoCfg.of(s).livePs(d.maf, d.map, d.rpm, d.iat)),
 ];
 
 /// ชื่อที่โชว์ (ช่อง Custom ใช้ชื่อ/หน่วย/ช่วงที่ตั้งไว้)

@@ -148,6 +148,14 @@ class C3Source implements CarSource {
     final hub = _hub;
     if (hub == null || !_running) return;
     final fresh = DateTime.now().difference(_last).inMilliseconds < 1500;
+    if (hub.dynoActive && _bleState == 'connected') {
+      // วัดไดโน: ให้ C3 ถามแค่รอบ/ความเร็ว/TPS (ต่ออายุทุก 1 วิ — C3 หมดอายุเองใน 2.5 วิ)
+      final now = DateTime.now();
+      if (now.difference(_dynoSent).inMilliseconds >= 900) {
+        _dynoSent = now;
+        Native.m.invokeMethod<bool>('c3Write', {'b': _cmd(5, 0)});
+      }
+    }
     if (hub.c3ota.running) {
       hub.setLink(this, LinkState.connecting, 'กำลังอัปเดตเฟิร์มแวร์ C3 ${(hub.c3ota.progress * 100).round()}%');
     } else if (fresh && (_link == 2 || _link == 0)) {
@@ -216,6 +224,7 @@ class C3Source implements CarSource {
   }
 
   // ---------------- หน้า "ค่า OBD2 ทั้งหมด": ถามทุก PID ที่รถรองรับผ่าน C3 (เฉพาะตอนเปิดหน้านั้น ไม่ถ่วงค่าหลัก)
+  DateTime _dynoSent = DateTime.fromMillisecondsSinceEpoch(0);
   bool _pidBusy = false;
   int _pidIdx = 0, _pidMaskTry = 0;
 

@@ -164,6 +164,16 @@ class AppSettings extends ChangeNotifier {
   bool get cydLink => _b('cydLink', true);
   set cydLink(bool v) => _setB('cydLink', v);
 
+  // ---------- ไดโน (วัดแรงม้า/แรงบิด) ----------
+  String get dynoCfg => _s('dynoCfg', '');
+  set dynoCfg(String v) {
+    _p.setString('dynoCfg', v);
+    notifyListeners();
+  }
+
+  String get dynoRuns => _s('dynoRuns', '[]');
+  set dynoRuns(String v) => _p.setString('dynoRuns', v);
+
   // ---------- Custom PID 4 ช่อง (แบบ Torque) ----------
   static const int nCustom = 4;
   final Map<int, CustomPid> _cpCache = {};

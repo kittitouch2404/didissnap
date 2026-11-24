@@ -10,7 +10,8 @@
 enum : uint8_t { DN_DATA = 1, DN_CMD = 2, DN_DTC = 3, DN_GW = 4, DN_GWCMD = 5, DN_GWINFO = 6, DN_RAWREQ = 7, DN_RAWRES = 8,
                  DN_CUSTSET = 9, DN_CUST = 10, DN_CUSTINFO = 11, DN_CUSTRAW = 12, DN_CAL = 13, DN_OTA = 14, DN_OTAST = 15 };
 enum : uint8_t { DN_LINK_DEMO = 0, DN_LINK_WAIT = 1, DN_LINK_OK = 2 };
-enum : uint8_t { DN_CMD_DTC_READ = 1, DN_CMD_DTC_CLEAR = 2, DN_CMD_MODE_AUTO = 3, DN_CMD_MODE_DEMO = 4 };
+enum : uint8_t { DN_CMD_DTC_READ = 1, DN_CMD_DTC_CLEAR = 2, DN_CMD_MODE_AUTO = 3, DN_CMD_MODE_DEMO = 4,
+                 DN_CMD_DYNO = 5 };   // DYNO: แอปส่งทุก 1 วิ ตอนวัดแรงม้า → C3 ถามแค่รอบ/ความเร็ว/TPS ให้ถี่ที่สุด (หมดอายุเองใน 2.5 วิ)
 // โปรโตคอลที่ C3 ใช้คุยกับรถ
 enum : uint8_t { DN_P_NONE = 0, DN_P_DEMO = 1, DN_P_CAN500 = 2, DN_P_CAN250 = 3, DN_P_ISO9141 = 4, DN_P_KWPFAST = 5, DN_P_KWPSLOW = 6,
                  DN_P_CAN500X = 7, DN_P_CAN250X = 8 };   // X = CAN ID 29 บิต

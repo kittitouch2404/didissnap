@@ -91,6 +91,9 @@ class DataHub extends ChangeNotifier {
   /// หน้า "ค่า OBD2 ทั้งหมด" เปิดอยู่กี่หน้า (โหมด C3: แอปถาม PID ทั้งหมดเองเฉพาะตอนเปิดหน้านี้)
   int pidPageViews = 0;
 
+  /// กำลังวัดไดโน (โหมด C3: บอก C3 ให้ถามรอบ/ความเร็วถี่ขึ้น)
+  bool dynoActive = false;
+
   /// ตัวจับเวลาออกตัว
   late final PerfRecorder perf = PerfRecorder(this);
 

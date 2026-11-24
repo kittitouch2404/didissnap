@@ -8,6 +8,7 @@ import '../i18n.dart';
 
 import '../data/hub.dart';
 import '../data/services.dart';
+import 'dyno_page.dart';
 import '../settings.dart';
 
 /// หน้ากราฟสด: 1-6 ค่า ย้อนหลัง 10-120 วินาที + เปิดไฟล์ CSV เก่ามาเทียบ (เส้นประ)
@@ -182,6 +183,7 @@ class _GraphPageState extends State<GraphPage> {
                 _frozen = _pause ? [for (final l in h.v) List<double>.of(l)] : null;
               });
             }),
+            _btn('ไดโน (แรงม้า)', () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => DynoPage(hub: widget.hub)))),
             _btn(old == null ? 'เทียบไฟล์เก่า' : 'เปลี่ยนไฟล์', _pickOld),
             if (old != null) ...[
               _btn(_follow ? 'หยุดเลื่อน' : 'เลื่อนตาม', () => setState(() => _follow = !_follow)),

@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.25"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.25b"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -362,6 +362,9 @@ static inline float calc(int i, float v) {
   if (v <= -998.f) return v;
   return v * cal.g[i] + cal.o[i];
 }
+// ---- โหมดวัดแรงม้า: ถามแค่รอบ/ความเร็ว/TPS ให้ถี่ที่สุด (แอปต่ออายุทุก 1 วิ)
+static volatile uint32_t dynoUntil = 0;
+static inline bool dynoOn() { return dynoUntil && (int32_t)(dynoUntil - millis()) > 0; }
 // ---- อัปเดตเฟิร์มแวร์ทาง BLE (แอปส่งไฟล์ .bin มาทีละ 160 ไบต์ แบบรอตอบรับ)
 static volatile bool otaOn = false, otaStNew = false, otaReboot = false;
 static volatile uint32_t otaLast = 0;
@@ -424,6 +427,7 @@ static void gotCmd(const uint8_t* d, int n) {
   if (n < (int)sizeof(DidiNowCmd)) return;
   const DidiNowCmd* c = (const DidiNowCmd*)d;
   if (c->magic != DIDINOW_MAGIC) return;
+  if (c->type == DN_GWCMD && c->cmd == DN_CMD_DYNO) { dynoUntil = millis() + 2500; return; }
   if (c->type == DN_GWCMD) { pendId = c->id; pendCmd = c->cmd; return; }
   if (c->type == DN_OTA && n >= (int)offsetof(DidiNowOta, data)) { otaCmd((const DidiNowOta*)d, n); return; }
   if (c->type == DN_RAWREQ && n >= (int)sizeof(DidiNowRaw) && !rawPending) {
@@ -663,6 +667,14 @@ static void obdTask(void*) {
     }
     if (pendCmd == DN_CMD_DTC_READ || pendCmd == DN_CMD_DTC_CLEAR) { handleCmd(); continue; }
     if (rawPending) { handleRaw(); continue; }
+    if (dynoOn()) {                                     // วัดแรงม้า: รอบ → ความเร็ว → รอบ → ความเร็ว → TPS
+      static uint8_t dk = 0;
+      uint8_t p = (dk % 5 == 4) ? 0x11 : (dk % 2 ? 0x0D : 0x0C);
+      dk++;
+      pid(p);
+      if (fails >= 8) { Serial.println("[obd] lost car"); disconnect(); }
+      continue;
+    }
     static uint32_t lastCust = 0;
     if (millis() - lastCust > 400) { lastCust = millis(); pollCust(); }   // Custom PID ~2-3 ครั้ง/วินาที รวมทุกช่อง
     // ลำดับเหมือนจอ S3: รอบ → TPS → AFR (ทุกชุดที่ 4 = ค่าช้าแทน) → รอบ
