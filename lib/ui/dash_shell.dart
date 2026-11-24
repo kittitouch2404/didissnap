@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart' hide Text;
 import '../i18n.dart';
+import '../data/updater.dart';
 
 import '../data/native.dart';
 

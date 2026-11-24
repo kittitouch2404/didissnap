@@ -12,10 +12,10 @@ import 'native.dart';
 /// เลข build ของแอปนี้ (ใส่ตอน build บน GitHub: --dart-define=BUILD=<run_number>)
 const int kBuild = int.fromEnvironment('BUILD');
 
-/// เลข build ตัวสุดท้ายก่อนเริ่มนับเวอร์ชันใหม่ (build ถัดไป = 1.0.1)
-const int kVerBase = 159;
+/// เลข build ตัวสุดท้ายก่อนเริ่มนับเวอร์ชันใหม่ (build 161 = 1.0.1)
+const int kVerBase = 160;
 
-/// เลข build (ภายใน ใช้เทียบอัปเดต) -> ชื่อเวอร์ชันที่โชว์ เช่น 160 -> "v1.0.1"
+/// เลข build (ภายใน ใช้เทียบอัปเดต) -> ชื่อเวอร์ชันที่โชว์ เช่น 161 -> "v1.0.1"
 String verName(int b) => b <= 0 ? '?' : (b <= kVerBase ? 'build-$b' : 'v1.0.${b - kVerBase}');
 
 /// เวอร์ชันของแอปนี้

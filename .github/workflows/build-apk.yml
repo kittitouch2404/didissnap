@@ -52,9 +52,9 @@ jobs:
           fi
           tail -18 "$f"
 
-      # เวอร์ชันที่โชว์: 1.0.x นับจาก build 160 = 1.0.1 (เลข build ยังใช้ภายในเทียบอัปเดต / ชื่อ tag)
+      # เวอร์ชันที่โชว์: 1.0.x นับจาก build 161 = 1.0.1 (เลข build ยังใช้ภายในเทียบอัปเดต / ชื่อ tag)
       - name: Version
-        run: echo "VER=1.0.$(( ${{ github.run_number }} - 159 ))" >> "$GITHUB_ENV"
+        run: echo "VER=1.0.$(( ${{ github.run_number }} - 160 ))" >> "$GITHUB_ENV"
 
       - name: Build APK
         run: |
