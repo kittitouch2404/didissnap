@@ -40,6 +40,7 @@ class C3Ble(private val ctx: Context, private val onPacket: (ByteArray) -> Unit,
     private var scanning = false
     private var gatt: BluetoothGatt? = null
     private var cmdC: BluetoothGattCharacteristic? = null
+    var mtuNow = 23
     private val adapter: BluetoothAdapter? get() = (ctx.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
 
     fun start() {
@@ -57,12 +58,32 @@ class C3Ble(private val ctx: Context, private val onPacket: (ByteArray) -> Unit,
         onState("off")
     }
 
-    /** ส่งคำสั่งให้ C3 (DidiNowCmd / DidiNowRaw) */
+    // คิวเขียน: Android เขียน BLE ได้ทีละครั้ง ต้องรอตอบรับก่อนเขียนอันถัดไป
+    private val queue = ArrayDeque<Pair<ByteArray, ((Boolean) -> Unit)?>>()
+    private var busy: ((Boolean) -> Unit)? = null
+    private var busyOn = false
+    private var busySeq = 0
+    private var failN = 0
+
+    /** ส่งคำสั่งให้ C3 (เข้าคิว) — [done] = เขียนสำเร็จ/ไม่สำเร็จ (C3 ตอบรับแล้ว) */
+    fun write(b: ByteArray, done: ((Boolean) -> Unit)? = null): Boolean {
+        if (gatt == null || cmdC == null) { done?.invoke(false); return false }
+        main.post {
+            if (queue.size > 64) { done?.invoke(false); return@post }
+            queue.addLast(b to done)
+            pump()
+        }
+        return true
+    }
+
     @Suppress("DEPRECATION")
-    fun write(b: ByteArray): Boolean {
-        val g = gatt ?: return false
-        val c = cmdC ?: return false
-        return try {
+    private fun pump() {
+        if (busyOn) return
+        val g = gatt
+        val c = cmdC
+        if (g == null || c == null) { flush(); return }
+        val (b, done) = queue.removeFirstOrNull() ?: return
+        val ok = try {
             if (Build.VERSION.SDK_INT >= 33) {
                 g.writeCharacteristic(c, b, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == 0
             } else {
@@ -71,6 +92,29 @@ class C3Ble(private val ctx: Context, private val onPacket: (ByteArray) -> Unit,
                 g.writeCharacteristic(c)
             }
         } catch (e: Exception) { false }
+        if (!ok) {   // Android ยังไม่ว่าง (เช่นกำลังเขียน descriptor) → ลองใหม่สูงสุด 10 ครั้ง
+            if (++failN <= 10) queue.addFirst(b to done) else { failN = 0; done?.invoke(false) }
+            main.postDelayed({ pump() }, 20)
+            return
+        }
+        failN = 0
+        busyOn = true
+        busy = done
+        val seq = ++busySeq
+        main.postDelayed({ if (busyOn && busySeq == seq) finish(false) }, 3000)   // ไม่ตอบรับ 3 วิ
+    }
+
+    private fun finish(ok: Boolean) {
+        val d = busy
+        busy = null
+        busyOn = false
+        d?.invoke(ok)
+        pump()
+    }
+
+    private fun flush() {
+        busy?.invoke(false); busy = null; busyOn = false
+        while (queue.isNotEmpty()) queue.removeFirst().second?.invoke(false)
     }
 
     private val scanCb = object : ScanCallback() {
@@ -128,14 +172,19 @@ class C3Ble(private val ctx: Context, private val onPacket: (ByteArray) -> Unit,
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 try { g.close() } catch (e: Exception) {}
                 main.post {
-                    if (gatt === g) { gatt = null; cmdC = null }
+                    if (gatt === g) { gatt = null; cmdC = null; flush() }
                     onState("disconnected")
                     retry()
                 }
             }
         }
 
+        override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
+            main.post { if (gatt === g) finish(status == BluetoothGatt.GATT_SUCCESS) }
+        }
+
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
+            mtuNow = mtu
             g.discoverServices()
         }
 

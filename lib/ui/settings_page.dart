@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart' hide Text;
 import '../i18n.dart';
@@ -270,6 +271,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
                 'ให้จอแอนดรอยด์กับจอ CYD ต่อฮอตสปอตมือถือตัวเดียวกัน — แอปต่อ Vgate แล้วส่งค่าให้จอ CYD ราว 20 ครั้ง/วินาที\n'
                 'แอปทำงานเบื้องหลังต่อได้ (เปิดยูทูป/แผนที่ทับได้) — ปิด "ประหยัดแบตเตอรี่" ให้แอปนี้ในเมนู เปิดแอปอัตโนมัติ'),
             if (s.source == SourceType.c3) _C3CalSection(hub: hub),
+            if (s.source == SourceType.c3) _C3OtaSection(hub: hub),
             _CvtTempSection(s: s, hub: hub),
             _CustomPidSection(s: s, hub: hub),
             if (s.source == SourceType.btElm) ...[
@@ -2061,4 +2063,101 @@ class _C3CalSection extends StatelessWidget {
           onPressed: v + st <= mx ? () => on(v + st) : null,
         ),
       ]);
+}
+
+
+// ======================================================================
+//  อัปเดตเฟิร์มแวร์ C3 ทาง Bluetooth
+// ======================================================================
+class _C3OtaSection extends StatelessWidget {
+  const _C3OtaSection({required this.hub});
+  final DataHub hub;
+
+  Future<void> _start(BuildContext context) async {
+    final ota = hub.c3ota;
+    final path = await Native.pickFile(mime: 'application/octet-stream');
+    if (path == null || !context.mounted) return;
+    Uint8List f;
+    try {
+      f = await File(path).readAsBytes();
+    } catch (e) {
+      if (context.mounted) _snack(context, 'อ่านไฟล์ไม่ได้: $e');
+      return;
+    }
+    final err = ota.check(f);
+    if (!context.mounted) return;
+    if (err != null) {
+      await showDialog<void>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('ใช้ไฟล์นี้ไม่ได้'),
+          content: Text(err),
+          actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('ตกลง'))],
+        ),
+      );
+      return;
+    }
+    final name = path.split('/').last;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('อัปเดตเฟิร์มแวร์ C3?'),
+        content: Text('ไฟล์: $name\nขนาด: ${(f.length / 1024).toStringAsFixed(0)} KB\n'
+            'เฟิร์มแวร์ตอนนี้: ${ota.fwVer.isEmpty ? '-' : ota.fwVer}\n\n'
+            'ใช้เวลาราว 1-3 นาที · ระหว่างนี้จอทุกจอจะไม่มีค่า\n'
+            'ห้ามดับเครื่อง/ถอด C3 · ถ้าหลุดกลางทาง เฟิร์มแวร์เดิมยังอยู่ ลองใหม่ได้'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('ยกเลิก')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('เริ่มอัปเดต')),
+        ],
+      ),
+    );
+    if (go == true) await ota.run(f);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ota = hub.c3ota;
+    return ListenableBuilder(
+      listenable: ota,
+      builder: (context, _) {
+        final ver = ota.fwVer.isEmpty
+            ? (ota.linked ? 'ไม่ทราบ (เฟิร์มแวร์เก่า ยังไม่รองรับ — แฟลชผ่าน USB ครั้งแรกก่อน)' : 'ยังไม่ได้ต่อ C3')
+            : '${ota.fwVer}  ·  ลงได้สูงสุด ${(ota.freeSpace / 1024).round()} KB';
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const _Header('อัปเดตเฟิร์มแวร์ C3 (ทาง Bluetooth)'),
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.memory),
+            title: Text('เฟิร์มแวร์ใน C3: $ver'),
+            trailing: ota.running
+                ? OutlinedButton(onPressed: ota.cancel, child: const Text('ยกเลิก'))
+                : FilledButton.icon(
+                    icon: const Icon(Icons.system_update_alt),
+                    label: const Text('เลือกไฟล์ .bin'),
+                    onPressed: ota.linked && ota.fwVer.isNotEmpty ? () => _start(context) : null,
+                  ),
+          ),
+          if (ota.running || ota.msg.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                if (ota.running) LinearProgressIndicator(value: ota.progress, minHeight: 8),
+                const SizedBox(height: 4),
+                Text(
+                  ota.running && ota.kbs > 0
+                      ? '${ota.msg}  ·  ${ota.kbs.toStringAsFixed(1)} KB/s  ·  เหลือ ~${ota.etaS} วิ'
+                      : ota.msg,
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: ota.running ? null : (ota.ok ? kGreen : Colors.orangeAccent)),
+                ),
+              ]),
+            ),
+          const _Hint('ไฟล์: Arduino IDE → Sketch → Export Compiled Binary → ใช้ไฟล์ didi_c3_gateway.ino.bin (ไม่ใช่ .merged.bin)\n'
+              'แอปตรวจไฟล์ให้ก่อน (ต้องเป็นของ ESP32-C3) · C3 ตรวจ MD5 ก่อนเปลี่ยน ไฟล์เสีย/หลุดกลางทาง = ใช้เฟิร์มแวร์เดิมต่อ'),
+        ]);
+      },
+    );
+  }
 }

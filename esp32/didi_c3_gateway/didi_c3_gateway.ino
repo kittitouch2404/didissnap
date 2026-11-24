@@ -14,6 +14,8 @@
 //  ไฟ LED บนบอร์ด (GPIO8): กระพริบเร็ว = กำลังหารถ · ติดค้าง กระพริบดับสั้น ๆ = ได้ค่าจากรถ · กระพริบช้า = DEMO
 #include <Arduino.h>
 #include <Preferences.h>
+#include <Update.h>
+#define FW_VER "c3 2026.11.24"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -343,12 +345,70 @@ static inline float calc(int i, float v) {
   if (v <= -998.f) return v;
   return v * cal.g[i] + cal.o[i];
 }
+// ---- อัปเดตเฟิร์มแวร์ทาง BLE (แอปส่งไฟล์ .bin มาทีละ 160 ไบต์ แบบรอตอบรับ)
+static volatile bool otaOn = false, otaStNew = false, otaReboot = false;
+static volatile uint32_t otaLast = 0;
+static DidiNowOtaSt otaSt = {};
+static void otaStatus(uint8_t st, uint8_t err, const char* msg) {
+  otaSt.magic = DIDINOW_MAGIC; otaSt.type = DN_OTAST; otaSt.state = st; otaSt.err = err;
+  otaSt.off = Update.progress();
+  otaSt.size = st == DN_OTAS_IDLE ? ESP.getFreeSketchSpace() : Update.size();
+  strlcpy(otaSt.msg, msg, sizeof(otaSt.msg));
+  otaStNew = true;   // ส่งจาก loop (ไม่ส่งจากใน callback ของ BLE)
+}
+static void otaFail(const char* why) {
+  char m[40];
+  snprintf(m, sizeof(m), "%s (%u)", why, (unsigned)Update.getError());
+  uint8_t e = Update.getError();
+  Update.abort();
+  otaOn = false;
+  otaStatus(DN_OTAS_ERR, e ? e : 99, m);
+  Serial.printf("[ota] FAILED: %s\n", m);
+}
+static void otaCmd(const DidiNowOta* o, int n) {
+  otaLast = millis();
+  switch (o->op) {
+    case DN_OTA_INFO: if (!otaOn) otaStatus(DN_OTAS_IDLE, 0, FW_VER); break;
+    case DN_OTA_BEGIN: {
+      if (otaOn) Update.abort();
+      uint32_t size = o->off;
+      if (!size || size > ESP.getFreeSketchSpace()) { otaOn = false; otaStatus(DN_OTAS_ERR, 98, "file too big"); break; }
+      if (!Update.begin(size, U_FLASH)) { otaFail("begin"); break; }
+      if (o->len == 32) { char md5[33]; memcpy(md5, o->data, 32); md5[32] = 0; Update.setMD5(md5); }
+      otaOn = true;
+      Serial.printf("[ota] begin %u bytes\n", (unsigned)size);
+      otaStatus(DN_OTAS_RECV, 0, "receiving");
+      break;
+    }
+    case DN_OTA_DATA: {
+      if (!otaOn) break;
+      if (o->off != Update.progress()) { otaFail("offset"); break; }
+      if (o->len > DN_OTA_CHUNK || n < (int)offsetof(DidiNowOta, data) + o->len) { otaFail("short"); break; }
+      if (Update.write((uint8_t*)o->data, o->len) != o->len) { otaFail("write"); break; }
+      if ((Update.progress() & 0x3FFF) < o->len) otaStatus(DN_OTAS_RECV, 0, "receiving");   // ทุก 16 KB
+      break;
+    }
+    case DN_OTA_END:
+      if (!otaOn) break;
+      if (!Update.end(false)) { otaFail(Update.getError() == UPDATE_ERROR_MD5 ? "MD5 mismatch" : "verify"); break; }
+      otaOn = false;
+      otaStatus(DN_OTAS_DONE, 0, "OK - rebooting");
+      Serial.println("[ota] done -> reboot");
+      otaReboot = true;
+      break;
+    case DN_OTA_ABORT:
+      if (otaOn) { Update.abort(); otaOn = false; }
+      otaStatus(DN_OTAS_IDLE, 0, FW_VER);
+      break;
+  }
+}
 // คำสั่งจากจอ/แอป (มาทาง BLE หรือ ESP-NOW)
 static void gotCmd(const uint8_t* d, int n) {
   if (n < (int)sizeof(DidiNowCmd)) return;
   const DidiNowCmd* c = (const DidiNowCmd*)d;
   if (c->magic != DIDINOW_MAGIC) return;
   if (c->type == DN_GWCMD) { pendId = c->id; pendCmd = c->cmd; return; }
+  if (c->type == DN_OTA && n >= (int)offsetof(DidiNowOta, data)) { otaCmd((const DidiNowOta*)d, n); return; }
   if (c->type == DN_RAWREQ && n >= (int)sizeof(DidiNowRaw) && !rawPending) {
     memcpy(&pendRaw, d, sizeof(pendRaw));
     rawPending = true;
@@ -671,6 +731,16 @@ void loop() {
     setDiag(m);
     for (int i = 0; i < 3; i++) { sendInfo(); delay(30); }
     deepSleep(!vbat ? WAKE_NOVBAT_S : vbat < LOWBAT_V ? WAKE_LOWBAT_S : WAKE_S);
+  }
+  // อัปเดตเฟิร์มแวร์อยู่: หยุดส่งค่ารถ (ให้ BLE ว่างรับไฟล์) · ไม่หลับ · ไม่มีไฟล์มา 20 วิ = ยกเลิก
+  if (otaStNew) { otaStNew = false; tx(&otaSt, sizeof(otaSt)); }
+  if (otaReboot) { delay(400); tx(&otaSt, sizeof(otaSt)); delay(300); ESP.restart(); }
+  if (otaOn) {
+    lastCar = now;
+    if (now - otaLast > 20000) otaFail("timeout");
+    digitalWrite(PIN_LED, (now / 80) & 1);
+    delay(2);
+    return;
   }
   if (now - lastSend >= 33) { lastSend = now; sendData(); }   // ~30 ครั้ง/วินาที
   custSave();

@@ -61,8 +61,10 @@ class C3Source implements CarSource {
       if (e == 'connected' && _bleState != 'connected') {
         Timer(const Duration(milliseconds: 600), () => _sendCfg(force: true));
         _hub?.c3cal.sender = _write;
+        _hub?.c3ota.onLink(true);
       } else if (e != 'connected') {
         _hub?.c3cal.sender = null;
+        if (_bleState == 'connected') _hub?.c3ota.onLink(false);
       }
       _bleState = e;
       _status();
@@ -80,6 +82,8 @@ class C3Source implements CarSource {
         _info = String.fromCharCodes(e.sublist(5).takeWhile((c) => c != 0));
       case 8: // DN_RAWRES
         if (e.length >= 8) _complete(b.getUint16(6, Endian.little), e);
+      case 15: // DN_OTAST: สถานะอัปเดตเฟิร์มแวร์ / เวอร์ชัน
+        _hub?.c3ota.onStatus(e);
       case 13: // DN_CAL: ค่าปรับ gain/offset ปัจจุบันใน C3
         if (e.length >= 112 && e[5] == 0) _calIn(b);
       case 10: // DN_CUST: ค่าของทุกช่อง
@@ -135,7 +139,9 @@ class C3Source implements CarSource {
     final hub = _hub;
     if (hub == null || !_running) return;
     final fresh = DateTime.now().difference(_last).inMilliseconds < 1500;
-    if (fresh && (_link == 2 || _link == 0)) {
+    if (hub.c3ota.running) {
+      hub.setLink(this, LinkState.connecting, 'กำลังอัปเดตเฟิร์มแวร์ C3 ${(hub.c3ota.progress * 100).round()}%');
+    } else if (fresh && (_link == 2 || _link == 0)) {
       final p = _proto0 < _proto.length ? _proto[_proto0] : '?';
       hub.setLink(this, LinkState.connected, _link == 0 ? 'C3 DEMO (จำลอง)' : 'C3 · $p · $_rate/s');
     } else if (fresh) {
@@ -370,6 +376,7 @@ class C3Source implements CarSource {
     _running = false;
     _hub?.settings.removeListener(_cfgChanged);
     _hub?.c3cal.sender = null;
+    _hub?.c3ota.onLink(false);
     _watch?.cancel();
     _cust?.cancel();
     await _sub?.cancel();

@@ -62,6 +62,12 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "c3Write" -> result.success(c3?.write(call.argument<ByteArray>("b") ?: ByteArray(0)) ?: false)
+                "c3WriteWait" -> {   // เขียนแล้วรอ C3 ตอบรับ (ใช้ส่งไฟล์เฟิร์มแวร์)
+                    val c = c3
+                    if (c == null) result.success(false)
+                    else c.write(call.argument<ByteArray>("b") ?: ByteArray(0)) { ok -> runOnUiThread { result.success(ok) } }
+                }
+                "c3Mtu" -> result.success(c3?.mtuNow ?: 0)
                 "deviceInfo" -> result.success(
                     "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}) · ${resources.displayMetrics.widthPixels}x${resources.displayMetrics.heightPixels}"
                 )
