@@ -12,6 +12,15 @@ import 'native.dart';
 /// เลข build ของแอปนี้ (ใส่ตอน build บน GitHub: --dart-define=BUILD=<run_number>)
 const int kBuild = int.fromEnvironment('BUILD');
 
+/// เลข build ตัวสุดท้ายก่อนเริ่มนับเวอร์ชันใหม่ (build ถัดไป = 1.0.1)
+const int kVerBase = 159;
+
+/// เลข build (ภายใน ใช้เทียบอัปเดต) -> ชื่อเวอร์ชันที่โชว์ เช่น 160 -> "v1.0.1"
+String verName(int b) => b <= 0 ? '?' : (b <= kVerBase ? 'build-$b' : 'v1.0.${b - kVerBase}');
+
+/// เวอร์ชันของแอปนี้
+String get kVersion => verName(kBuild);
+
 /// เช็ก/โหลดเวอร์ชันใหม่จาก Releases ของ GitHub
 ///  repo เป็น private ได้: ใส่ token (อ่านอย่างเดียว) ในแอป -> เก็บไว้ในเครื่องนี้เท่านั้น ไม่ได้อยู่ในไฟล์ APK
 ///  แอปโหลด APK เองแล้วเปิดหน้าติดตั้ง (ไม่มีลิงก์สาธารณะ)
@@ -75,7 +84,7 @@ class Updater extends ChangeNotifier {
       final assets = (j['assets'] as List?) ?? [];
       assetApi = assets.isNotEmpty ? '${assets.first['url']}' : '';
       s.setUpdateSeen(latest, assetApi);
-      status = hasNew ? 'มีเวอร์ชันใหม่ build-$latest' : 'ล่าสุดแล้ว (build-${kBuild > 0 ? kBuild : '?'})';
+      status = hasNew ? 'มีเวอร์ชันใหม่ ${verName(latest)}' : 'ล่าสุดแล้ว ($kVersion)';
       AppLog.i('เช็กอัปเดต: $status');
     } catch (e) {
       status = 'เช็กไม่ได้ (ไม่มีเน็ต?)';

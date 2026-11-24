@@ -35,7 +35,7 @@ Future<void> main() async {
     final settings = await AppSettings.load();
     langEn.value = settings.langEn;
     final hub = DataHub(settings);
-    AppLog.i('เปิดแอป build-$kBuild');
+    AppLog.i('เปิดแอป $kVersion (build $kBuild)');
     runApp(DashApp(settings: settings, hub: hub));
   }, (err, st) => AppLog.e('Uncaught', err, st));
 }

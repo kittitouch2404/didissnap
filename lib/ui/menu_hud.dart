@@ -154,8 +154,8 @@ class _HudMenuPageState extends State<HudMenuPage> {
             content: SizedBox(
               width: 560,
               child: Row(children: [
-                big(Icons.system_update_alt, u.hasNew ? 'อัปเดต! build-${u.latest}' : 'อัปเดตแอป',
-                    'ตอนนี้ build-${kBuild > 0 ? kBuild : '?'}', _updateDialog),
+                big(Icons.system_update_alt, u.hasNew ? 'อัปเดต! ${verName(u.latest)}' : 'อัปเดตแอป',
+                    'ตอนนี้ $kVersion', _updateDialog),
                 const SizedBox(width: 12),
                 big(Icons.bug_report_outlined, 'ส่ง log ปัญหา', 'ดู / บันทึกไว้ส่งให้ช่วยดู', _logDialog),
               ]),
@@ -270,7 +270,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
               () => _open('เปิดอัตโนมัติ', () => AutoStartTab(settings: s))),
           ('โลโก้ / เสียง', '${switch (s.bootMode) { 2 => 'OYT สุ่ม', 1 => 'คลิป', _ => 'ไม่มีโลโก้' }} · ${KeySound.builtIn[s.keySound.clamp(0, KeySound.builtIn.length - 1)].$1}',
               Icons.auto_awesome, _openDisplay),
-          ('อัปเดต / log', hub.updater.hasNew ? 'มีเวอร์ชันใหม่ build-${hub.updater.latest}' : 'build-${kBuild > 0 ? kBuild : '?'} · ส่ง log ปัญหา',
+          ('อัปเดต / log', hub.updater.hasNew ? 'มีเวอร์ชันใหม่ ${verName(hub.updater.latest)}' : '$kVersion · ส่ง log ปัญหา',
               hub.updater.hasNew ? Icons.new_releases_outlined : Icons.system_update_alt, _toolsDialog),
         ];
         final small = <(String, VoidCallback)>[
@@ -296,11 +296,11 @@ class _HudMenuPageState extends State<HudMenuPage> {
                     ),
                   ),
                   const VerticalDivider(width: 1, color: Color(0xFF1E1E1E)),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 24),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('SETTINGS', style: TextStyle(fontSize: 34, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, letterSpacing: 2, height: 1)),
-                      Text('DIDISSNAP · OBD2 GAUGE · build-$kBuild', style: TextStyle(fontSize: 13, color: Color(0xFF8A8A8A), letterSpacing: 1)),
+                      const Text('SETTINGS', style: TextStyle(fontSize: 34, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, letterSpacing: 2, height: 1)),
+                      Text('DIDISSNAP · OBD2 GAUGE · $kVersion', style: const TextStyle(fontSize: 13, color: Color(0xFF8A8A8A), letterSpacing: 1)),
                     ]),
                   ),
                   const Spacer(),
@@ -423,7 +423,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
                     final cps = [for (var k = 0; k < AppSettings.nCustom; k++) s.customPid(k)].where((c) => c.valid).map((c) => '${c.label}=${c.hdr}/${c.cmd}').join(', ');
                     final head = [
                       'Didissnap log',
-                      'build: $kBuild',
+                      'version: $kVersion (build $kBuild)',
                       'เครื่อง: $dev',
                       'แหล่งข้อมูล: ${s.source.name} · สถานะ: ${hub.state.name} · ${hub.message}',
                       'รถ: ${s.profiles[s.profCur]} (${s.profiles.length} คัน)',
@@ -469,8 +469,8 @@ class _HudMenuPageState extends State<HudMenuPage> {
             content: SizedBox(
               width: 520,
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('เวอร์ชันนี้: build-${kBuild > 0 ? kBuild : '?'}'),
-                Text(u.latest > 0 ? 'ล่าสุดบน GitHub: build-${u.latest}' : 'ล่าสุดบน GitHub: -'),
+                Text('เวอร์ชันนี้: $kVersion'),
+                Text(u.latest > 0 ? 'ล่าสุดบน GitHub: ${verName(u.latest)}' : 'ล่าสุดบน GitHub: -'),
                 const SizedBox(height: 6),
                 Text(u.status, style: TextStyle(color: u.hasNew ? kGreen : Colors.white70, fontWeight: FontWeight.w700)),
                 if (u.progress >= 0) Padding(padding: const EdgeInsets.only(top: 8), child: LinearProgressIndicator(value: u.progress)),
@@ -500,7 +500,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
               TextButton(onPressed: u.busy ? null : () => u.check(), child: const Text('เช็กอีกครั้ง')),
               FilledButton(
                 onPressed: u.busy || u.assetApi.isEmpty ? null : u.downloadAndInstall,
-                child: Text(u.hasNew ? 'โหลด + ติดตั้ง build-${u.latest}' : 'โหลดตัวล่าสุด'),
+                child: Text(u.hasNew ? 'โหลด + ติดตั้ง ${verName(u.latest)}' : 'โหลดตัวล่าสุด'),
               ),
             ],
           ),

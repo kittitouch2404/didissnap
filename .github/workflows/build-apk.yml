@@ -52,9 +52,13 @@ jobs:
           fi
           tail -18 "$f"
 
+      # เวอร์ชันที่โชว์: 1.0.x นับจาก build 160 = 1.0.1 (เลข build ยังใช้ภายในเทียบอัปเดต / ชื่อ tag)
+      - name: Version
+        run: echo "VER=1.0.$(( ${{ github.run_number }} - 159 ))" >> "$GITHUB_ENV"
+
       - name: Build APK
         run: |
-          flutter build apk --release --dart-define=BUILD=${{ github.run_number }}
+          flutter build apk --release --build-name=$VER --build-number=${{ github.run_number }} --dart-define=BUILD=${{ github.run_number }}
           cp build/app/outputs/flutter-apk/app-release.apk Didissnap.apk
           # ตรวจว่าเซ็นด้วยกุญแจคงที่จริง
           "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs Didissnap.apk | head -3 || true
@@ -68,6 +72,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Didissnap (build ${{ github.run_number }})
+          name: Didissnap v${{ env.VER }}
           body: ดาวน์โหลด Didissnap.apk ด้านล่าง แล้วกดติดตั้งบนมือถือ Android
           files: Didissnap.apk
