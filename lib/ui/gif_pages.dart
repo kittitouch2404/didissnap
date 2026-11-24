@@ -465,9 +465,12 @@ class _GifDashPainter extends CustomPainter {
     }
     final warn = (m == 0 && v != null && v >= f.ectWarn && (f.time * 3).floor().isEven) ||
         (m == 2 && v != null && v < 11.8);
+    // หน่วยชิดขวาสุดของช่องก่อน แล้วตัวเลขชิดซ้ายของหน่วย (วัดความกว้างจริง → ไม่ทับกันทุกฟอนต์/ขนาด)
+    final ufs = u * 0.035 * (small ? 0.85 : 1);
+    final uwid = unit.isEmpty ? 0.0 : _labelWidth(unit, ufs);
+    _label(cv, unit, Offset(x1 - uwid, y + bh * 0.42), ufs);
     _anime(cv, v == null ? '--' : v.toStringAsFixed(dec),
-        Offset(x1 - uw * 0.045 * k, y + bh * 0.70), u * 0.13 * k, warn, TextAlign.right);
-    _label(cv, unit, Offset(x1 - uw * 0.04 * k, y + bh * 0.42), u * 0.035 * (small ? 0.85 : 1));
+        Offset(x1 - uwid - (unit.isEmpty ? 0 : ufs * 0.25), y + bh * 0.70), u * 0.13 * k, warn, TextAlign.right);
     final (lo, hi) = _metricRange(f, m);
     final t = v == null ? 0.0 : ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
     final pt = p == null || !c.pk ? -1.0 : ((p - lo) / (hi - lo)).clamp(0.0, 1.0);
@@ -590,6 +593,23 @@ class _GifDashPainter extends CustomPainter {
   /// สีชื่อค่า/หน่วย (ตั้งได้ในหน้าตั้งค่า)
   Color get labC => c.labCol == 0 ? lab : (c.labCol == 1 ? top : Color(c.labCol));
 
+  double _labelWidth(String t, double fs) => _labelTp(t, fs, lab).width;
+
+  TextPainter _labelTp(String t, double fs, Color color) {
+    final lf = kGifLabFonts[c.labFont.clamp(0, kGifLabFonts.length - 1)];
+    return TextPainter(
+      text: TextSpan(
+          text: tr(t),
+          style: TextStyle(
+              color: color,
+              fontSize: fs,
+              fontFamily: lf.$2,
+              fontVariations: lf.$3 ? const [FontVariation('wght', 700)] : null,
+              fontWeight: FontWeight.w600)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+  }
+
   void _label(Canvas cv, String t, Offset at, double fs,
       {Color? color, bool right = false}) {
     final lf = kGifLabFonts[c.labFont.clamp(0, kGifLabFonts.length - 1)];
@@ -628,7 +648,9 @@ class _GifDashPainter extends CustomPainter {
         )..layout();
     final probe = mk(Paint());
     final base = probe.computeDistanceToActualBaseline(TextBaseline.alphabetic);
-    final x = align == TextAlign.right ? at.dx - probe.width : at.dx;
+    // ชิดขวา: เผื่อส่วนที่ล้นออกขวา (ตัวเอียง + ขอบหนา + เงา) ไม่ให้ไปทับหน่วยที่อยู่ถัดไป
+    final over = fs * (c.numItalic && nf.$2 != 'DSEG7' ? 0.2 : 0.1);
+    final x = align == TextAlign.right ? at.dx - probe.width - over : at.dx;
     final o = Offset(x, at.dy - base);
     final c0 = hot ? red : top;
     final c1 = hot ? const Color(0xFFFFDCC8) : white;
