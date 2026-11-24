@@ -30,3 +30,29 @@ flutter:
     - assets/boot_8bit.m4a
     - assets/boot_whoosh.m4a
     - assets/boot_engine.m4a
+  # ฟอนต์หน้า GIF (OFL / DSEG ใช้ฟรี ดู assets/fonts/*.txt)
+  fonts:
+    - family: RussoOne
+      fonts: [{asset: assets/fonts/RussoOne-Regular.ttf}]
+    - family: Audiowide
+      fonts: [{asset: assets/fonts/Audiowide-Regular.ttf}]
+    - family: Orbitron
+      fonts: [{asset: assets/fonts/Orbitron-VF.ttf}]
+    - family: Teko
+      fonts: [{asset: assets/fonts/Teko-VF.ttf}]
+    - family: BebasNeue
+      fonts: [{asset: assets/fonts/BebasNeue-Regular.ttf}]
+    - family: Rajdhani
+      fonts: [{asset: assets/fonts/Rajdhani-Bold.ttf}]
+    - family: BlackOpsOne
+      fonts: [{asset: assets/fonts/BlackOpsOne-Regular.ttf}]
+    - family: ShareTechMono
+      fonts: [{asset: assets/fonts/ShareTechMono-Regular.ttf}]
+    - family: Kanit
+      fonts: [{asset: assets/fonts/Kanit-SemiBold.ttf}]
+    - family: Michroma
+      fonts: [{asset: assets/fonts/Michroma-Regular.ttf}]
+    - family: Bungee
+      fonts: [{asset: assets/fonts/Bungee-Regular.ttf}]
+    - family: DSEG7
+      fonts: [{asset: assets/fonts/DSEG7Classic-BoldItalic.ttf}]

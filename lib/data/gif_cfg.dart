@@ -14,6 +14,11 @@ class GifCfg {
         six = m['six'] == true,
         pk = m['pk'] != false,
         mapBtn = m['map'] != false,
+        numFont = (m['nf'] as num?)?.toInt() ?? 0,
+        numItalic = m['ni'] != false,
+        numScale = ((m['ns'] as num?)?.toDouble() ?? 1.0).clamp(0.6, 1.4),
+        labFont = (m['lf'] as num?)?.toInt() ?? 0,
+        labCol = (m['lc'] as num?)?.toInt() ?? 0,
         hue2 = (m['hue2'] as num?)?.toDouble() ?? -1,
         sat2 = (m['sat2'] as num?)?.toDouble() ?? 0.70,
         rnd = m['rnd'] == true,
@@ -62,6 +67,15 @@ class GifCfg {
   /// ปุ่มแผนที่มุมขวาบน (แบ่งจอกับ Google Maps)
   bool mapBtn;
 
+  /// ฟอนต์ตัวเลข (kGifNumFonts) · ตัวเอียง · ขนาด (0.6-1.4 เท่า)
+  int numFont;
+  bool numItalic;
+  double numScale;
+
+  /// ฟอนต์ชื่อค่า/หน่วย (kGifLabFonts) · สี: 0 = เดิม (ม่วงอ่อน), 1 = สีเดียวกับตัวเลข, อื่น ๆ = ARGB
+  int labFont;
+  int labCol;
+
   /// ค่าที่แสดงตอนนี้ (3 หรือ 6 ช่อง)
   List<int> get shown => six ? slots : slots.sublist(0, 3);
 
@@ -83,8 +97,48 @@ class GifCfg {
         'six': six,
         'pk': pk,
         'map': mapBtn,
+        'nf': numFont,
+        'ni': numItalic,
+        'ns': numScale,
+        'lf': labFont,
+        'lc': labCol,
         'hue2': hue2,
         'sat2': sat2,
         'rnd': rnd,
       };
 }
+
+
+/// ฟอนต์ตัวเลขหน้า GIF: (ชื่อที่โชว์, family ใน pubspec (null = ฟอนต์ระบบ), เป็นฟอนต์ปรับน้ำหนักได้)
+const List<(String, String?, bool)> kGifNumFonts = [
+  ('อนิเมะ (เดิม)', null, false),
+  ('Russo One', 'RussoOne', false),
+  ('Orbitron', 'Orbitron', true),
+  ('Audiowide', 'Audiowide', false),
+  ('Bebas Neue', 'BebasNeue', false),
+  ('Teko', 'Teko', true),
+  ('Black Ops One', 'BlackOpsOne', false),
+  ('Bungee', 'Bungee', false),
+  ('Michroma', 'Michroma', false),
+  ('ดิจิทัล 7 ส่วน', 'DSEG7', false),
+  ('Share Tech Mono', 'ShareTechMono', false),
+  ('Rajdhani', 'Rajdhani', false),
+];
+
+/// ฟอนต์ชื่อค่า / หน่วย
+const List<(String, String?, bool)> kGifLabFonts = [
+  ('ปกติ (เดิม)', null, false),
+  ('Rajdhani', 'Rajdhani', false),
+  ('Orbitron', 'Orbitron', true),
+  ('Teko', 'Teko', true),
+  ('Bebas Neue', 'BebasNeue', false),
+  ('Russo One', 'RussoOne', false),
+  ('Michroma', 'Michroma', false),
+  ('Share Tech Mono', 'ShareTechMono', false),
+  ('Kanit (ไทย)', 'Kanit', false),
+];
+
+/// สีชื่อค่าให้เลือก (0 = เดิม, 1 = ตามตัวเลข)
+const List<int> kGifLabColors = [
+  0, 1, 0xFFFFFFFF, 0xFFB0B0B0, 0xFFFFD84A, 0xFFFF9A3C, 0xFFFF4A5A, 0xFFFF7AD0, 0xFFB07CFF, 0xFF4AC8FF, 0xFF4AFFB0, 0xFF9CFF4A,
+];

@@ -343,23 +343,28 @@ class _GifPageState extends State<GifPage> {
             );
             if (!c.mapBtn) return paint;
             final narrow = size.width < size.height * gifNarrowRatio;
-            final col = _hsv(c.hue, c.sat, 1);
+            // ขนาด/แบบเดียวกับปุ่ม MENU (มุมขวาบน) วางถัดไปทางซ้าย
+            final col = Color(s.menuColor);
             return Stack(children: [
               paint,
               Positioned(
-                right: narrow ? 6 : 10,
-                top: narrow ? 6 : 4,
+                right: 80,
+                top: 6,
                 child: Material(
-                  color: Colors.black.withValues(alpha: 0.55),
+                  color: Colors.black54,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12), side: BorderSide(color: col, width: 1.5)),
+                      borderRadius: BorderRadius.circular(6), side: BorderSide(color: col)),
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(6),
                     onTap: () => _mapTap(narrow),
-                    child: SizedBox(
-                      width: 54,
-                      height: 50,
-                      child: Icon(narrow ? Icons.fullscreen : Icons.map_outlined, color: col, size: 30),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(narrow ? Icons.fullscreen : Icons.map_outlined, color: col, size: 15),
+                        const SizedBox(width: 4),
+                        Text(narrow ? 'FULL' : 'MAP',
+                            style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 12)),
+                      ]),
                     ),
                   ),
                 ),
@@ -582,26 +587,40 @@ class _GifDashPainter extends CustomPainter {
     }
   }
 
+  /// สีชื่อค่า/หน่วย (ตั้งได้ในหน้าตั้งค่า)
+  Color get labC => c.labCol == 0 ? lab : (c.labCol == 1 ? top : Color(c.labCol));
+
   void _label(Canvas cv, String t, Offset at, double fs,
-      {Color color = lab, bool right = false}) {
+      {Color? color, bool right = false}) {
+    final lf = kGifLabFonts[c.labFont.clamp(0, kGifLabFonts.length - 1)];
     final tp = TextPainter(
       text: TextSpan(
           text: tr(t),
-          style: TextStyle(color: color, fontSize: fs, fontWeight: FontWeight.w600)),
+          style: TextStyle(
+              color: color ?? labC,
+              fontSize: fs,
+              fontFamily: lf.$2,
+              fontVariations: lf.$3 ? const [FontVariation('wght', 700)] : null,
+              fontWeight: FontWeight.w600)),
       textDirection: TextDirection.ltr,
     )..layout();
     tp.paint(cv, right ? at - Offset(tp.width, 0) : at);
   }
 
   /// ตัวเลขไตเติลอนิเมะ: เงาเยื้อง -> ขอบเข้ม -> ขอบขาว -> เนื้อไล่สี   (at = จุดเส้นฐาน)
-  void _anime(Canvas cv, String t, Offset at, double fs, bool hot, TextAlign align) {
+  void _anime(Canvas cv, String t, Offset at, double fs0, bool hot, TextAlign align) {
+    final nf = kGifNumFonts[c.numFont.clamp(0, kGifNumFonts.length - 1)];
+    final fs = fs0 * c.numScale * (nf.$2 == 'DSEG7' ? 0.8 : 1);
+    if (nf.$2 == 'DSEG7') t = t.replaceAll(',', '');   // ฟอนต์ 7 ส่วนไม่มีลูกน้ำ
     TextPainter mk(Paint p) => TextPainter(
           text: TextSpan(
             text: t,
             style: TextStyle(
                 fontSize: fs,
+                fontFamily: nf.$2,
+                fontVariations: nf.$3 ? const [FontVariation('wght', 900)] : null,
                 fontWeight: FontWeight.w900,
-                fontStyle: FontStyle.italic,
+                fontStyle: c.numItalic && nf.$2 != 'DSEG7' ? FontStyle.italic : FontStyle.normal,
                 letterSpacing: -fs * 0.02,
                 foreground: p),
           ),
@@ -743,6 +762,83 @@ Future<void> showGifSettings(BuildContext context, AppSettings s, int index) {
                     },
                   ),
                 ]),
+                // ---- ตัวอักษร: ฟอนต์ตัวเลข / ชื่อค่า + สีชื่อค่า
+                const SizedBox(height: 10),
+                const Text('ตัวเลข', style: TextStyle(fontWeight: FontWeight.bold)),
+                SizedBox(
+                  height: 58,
+                  child: ListView(scrollDirection: Axis.horizontal, children: [
+                    for (var i = 0; i < kGifNumFonts.length; i++)
+                      _fontChip(kGifNumFonts[i], '123', c.numFont == i, _hsv(c.hue, c.sat, 1), () {
+                        c.numFont = i;
+                        save();
+                      }, italic: c.numItalic, big: true),
+                  ]),
+                ),
+                Row(children: [
+                  const Text('ตัวเอียง'),
+                  Switch(
+                      value: c.numItalic,
+                      onChanged: (v) {
+                        c.numItalic = v;
+                        save();
+                      }),
+                  const SizedBox(width: 12),
+                  const Text('ขนาด'),
+                  Expanded(
+                    child: Slider(
+                      min: 0.6,
+                      max: 1.4,
+                      divisions: 16,
+                      value: c.numScale,
+                      label: '${(c.numScale * 100).round()}%',
+                      onChanged: (v) {
+                        c.numScale = v;
+                        save();
+                      },
+                    ),
+                  ),
+                  Text('${(c.numScale * 100).round()}%'),
+                ]),
+                const Text('ชื่อค่า / หน่วย', style: TextStyle(fontWeight: FontWeight.bold)),
+                SizedBox(
+                  height: 50,
+                  child: ListView(scrollDirection: Axis.horizontal, children: [
+                    for (var i = 0; i < kGifLabFonts.length; i++)
+                      _fontChip(kGifLabFonts[i], 'COOLANT', c.labFont == i,
+                          c.labCol == 0 ? const Color(0xFFC4B0DC) : (c.labCol == 1 ? _hsv(c.hue, c.sat, 1) : Color(c.labCol)), () {
+                        c.labFont = i;
+                        save();
+                      }),
+                  ]),
+                ),
+                const SizedBox(height: 6),
+                Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  const Text('สีชื่อค่า'),
+                  for (final v in kGifLabColors)
+                    InkWell(
+                      onTap: () {
+                        c.labCol = v;
+                        save();
+                      },
+                      customBorder: const CircleBorder(),
+                      child: Container(
+                        width: 34,
+                        height: 34,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: v == 0 ? const Color(0xFFC4B0DC) : (v == 1 ? _hsv(c.hue, c.sat, 1) : Color(v)),
+                          border: Border.all(color: c.labCol == v ? Colors.white : Colors.white24, width: c.labCol == v ? 3 : 1),
+                        ),
+                        child: v == 0
+                            ? const Text('เดิม', style: TextStyle(fontSize: 10, color: Colors.black87))
+                            : (v == 1 ? const Icon(Icons.link, size: 16, color: Colors.black87) : null),
+                      ),
+                    ),
+                ]),
+                const Text('ปุ่ม "เดิม" = ม่วงอ่อนแบบเดิม · ปุ่มรูปโซ่ = สีเดียวกับตัวเลข',
+                    style: TextStyle(fontSize: 12, color: Colors.white54)),
                 if (c.style == 0) ...[
                   const SizedBox(height: 8),
                   Row(children: [
@@ -963,3 +1059,39 @@ Widget _slRow(String label, double v, double lo, double hi, ValueChanged<double>
       SizedBox(width: 110, child: Text(label, style: const TextStyle(fontSize: 13))),
       Expanded(child: Slider(min: lo, max: hi, value: v.clamp(lo, hi), onChanged: on)),
     ]);
+
+
+/// ปุ่มเลือกฟอนต์ (โชว์ตัวอย่างด้วยฟอนต์นั้น)
+Widget _fontChip((String, String?, bool) f, String sample, bool sel, Color col, VoidCallback on,
+    {bool italic = false, bool big = false}) {
+  return Padding(
+    padding: const EdgeInsets.only(right: 8),
+    child: Material(
+      color: sel ? const Color(0xFF2A2236) : const Color(0xFF1B1724),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: sel ? col : Colors.white12, width: sel ? 2 : 1),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: on,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Text(f.$2 == 'DSEG7' ? sample.replaceAll(',', '') : sample,
+                style: TextStyle(
+                  fontFamily: f.$2,
+                  fontVariations: f.$3 ? const [FontVariation('wght', 900)] : null,
+                  fontWeight: FontWeight.w900,
+                  fontStyle: italic && f.$2 != 'DSEG7' ? FontStyle.italic : FontStyle.normal,
+                  fontSize: big ? 24 : 16,
+                  height: 1.1,
+                  color: col,
+                )),
+            Text(f.$1, style: const TextStyle(fontSize: 10, color: Colors.white60)),
+          ]),
+        ),
+      ),
+    ),
+  );
+}
