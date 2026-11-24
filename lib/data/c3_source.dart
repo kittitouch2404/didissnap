@@ -430,6 +430,21 @@ class C3Source implements CarSource {
     return r != null && r[5] == 1;
   }
 
+  bool get _isCanProto => _proto0 == 2 || _proto0 == 3 || _proto0 == 7 || _proto0 == 8;
+
+  @override
+  Future<List<String>> readPending() async {
+    final r = await raw(0, '07');
+    if (!RegExp(r'^47[0-9A-F]*$').hasMatch(r)) return const [];
+    return ElmSource.parseDtc(r, _isCanProto, '47');
+  }
+
+  @override
+  Future<String?> obdRaw(String hex) async {
+    final r = await raw(0, hex);
+    return RegExp(r'^[0-9A-F]+$').hasMatch(r) ? r : null;
+  }
+
   @override
   Future<void> stop() async {
     _running = false;

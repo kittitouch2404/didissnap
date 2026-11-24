@@ -174,4 +174,10 @@ class Esp32Source implements CarSource {
     final m = await _ask('dtc_clear');
     return m['cleared'] == true;
   }
+
+  @override
+  Future<List<String>> readPending() async => const [];
+
+  @override
+  Future<String?> obdRaw(String hex) async => null;
 }

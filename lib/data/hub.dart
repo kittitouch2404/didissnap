@@ -25,6 +25,12 @@ abstract class CarSource {
   void start(DataHub hub);
   Future<void> stop();
   Future<List<String>> readDtc();
+
+  /// รหัสรอยืนยัน (Mode 07: เกิดแล้วแต่ยังไม่ติดไฟโชว์)
+  Future<List<String>> readPending();
+
+  /// ส่งคำสั่ง OBD ดิบ (เช่น "020C00") → คำตอบเป็นข้อความ hex · null = แหล่งข้อมูลนี้ทำไม่ได้
+  Future<String?> obdRaw(String hex);
   Future<bool> clearDtc();
 }
 
@@ -166,6 +172,26 @@ class DataHub extends ChangeNotifier {
     final s = _src;
     if (s == null) return Future.error(Exception('ยังไม่ได้เชื่อมต่อ'));
     return s.clearDtc();
+  }
+
+  Future<List<String>> readPending() async {
+    final s = _src;
+    if (s == null) return const [];
+    try {
+      return await s.readPending();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<String?> obdRaw(String hex) async {
+    final s = _src;
+    if (s == null || state != LinkState.connected) return null;
+    try {
+      return await s.obdRaw(hex);
+    } catch (_) {
+      return null;
+    }
   }
 
   @override

@@ -147,4 +147,20 @@ class DemoSource implements CarSource {
     await Future<void>.delayed(const Duration(milliseconds: 700));
     return true;
   }
+
+  @override
+  Future<List<String>> readPending() async => const ['P0171'];
+
+  /// จำลอง freeze frame (ไว้ดูหน้าจอโดยไม่ต่อรถ)
+  @override
+  Future<String?> obdRaw(String hex) async {
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    const ff = {
+      '020000': '420000FFFE8001', '022000': '42200080000001', '024000': '42400040000000',
+      '020200': '4202000133', '020C00': '420C001B58', '020D00': '420D0054', '020500': '42050096',
+      '020400': '420400B3', '021100': '421100CC', '020B00': '420B0050', '021000': '421000044C', '020F00': '420F0046',
+      '020600': '42060088', '020700': '42070084', '020E00': '420E0090', '020300': '4203000200', '024200': '42420036B0',
+    };
+    return ff[hex.toUpperCase()];
+  }
 }

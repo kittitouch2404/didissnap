@@ -676,7 +676,7 @@ class ElmSource implements CarSource {
   }
 
   /// แปลงคำตอบ Mode 03 เป็นรายการรหัส DTC
-  static List<String> parseDtc(String r, bool isCan) {
+  static List<String> parseDtc(String r, bool isCan, [String sid = '43']) {
     final lines = r
         .split('\n')
         .map((l) => l.replaceAll(' ', '').trim())
@@ -687,7 +687,7 @@ class ElmSource implements CarSource {
     final multi = lines.where((l) => framed.hasMatch(l)).toList();
     if (multi.isNotEmpty) {
       var s = multi.map((l) => l.substring(2)).join();
-      final i = s.indexOf('43');
+      final i = s.indexOf(sid);
       if (i >= 0) {
         s = s.substring(i + 2);
         if (isCan && s.length >= 2) s = s.substring(2);
@@ -695,7 +695,7 @@ class ElmSource implements CarSource {
       }
     } else {
       for (final l in lines) {
-        if (!l.startsWith('43')) continue;
+        if (!l.startsWith(sid)) continue;
         var s = l.substring(2);
         if (isCan && s.length >= 2) s = s.substring(2);
         chunks.add(s);
@@ -725,6 +725,24 @@ class ElmSource implements CarSource {
         await _x(() => ses.cmd('03', timeout: const Duration(seconds: 10)));
     if (r.contains('NO DATA')) return [];
     return parseDtc(r, _isCan);
+  }
+
+  @override
+  Future<List<String>> readPending() async {
+    final ses = _ses;
+    if (ses == null || ses.dead || _hub?.state != LinkState.connected) return const [];
+    final r = await _x(() => ses.cmd('07', timeout: const Duration(seconds: 10)));
+    if (r.contains('NO DATA') || r.contains('?')) return const [];
+    return parseDtc(r, _isCan, '47');
+  }
+
+  @override
+  Future<String?> obdRaw(String hex) async {
+    final ses = _ses;
+    if (ses == null || ses.dead || _hub?.state != LinkState.connected) return null;
+    final r = await _x(() => ses.cmd(hex, timeout: const Duration(seconds: 3)));
+    if (r.contains('NO DATA') || r.contains('?')) return null;
+    return r;
   }
 
   @override

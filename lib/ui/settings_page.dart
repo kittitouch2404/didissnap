@@ -14,6 +14,9 @@ import '../data/car_data.dart';
 import '../data/custom_pid.dart';
 import '../data/skin.dart';
 import '../data/torque_import.dart';
+import '../data/dtc_th.dart';
+import '../data/freeze.dart';
+import '../data/dyno.dart';
 import '../data/elm_source.dart';
 import '../data/key_sound.dart';
 import 'custom_logo.dart';
@@ -1001,42 +1004,6 @@ class _PicturesTabState extends State<PicturesTab> {
 // ======================================================================
 //  DTC
 // ======================================================================
-const _dtcInfo = <String, String>{
-  'P0101': 'MAF ค่าผิดปกติ',
-  'P0106': 'MAP ค่าผิดปกติ',
-  'P0113': 'เซ็นเซอร์ IAT สัญญาณสูง',
-  'P0118': 'เซ็นเซอร์อุณหภูมิน้ำ สัญญาณสูง',
-  'P0128': 'เครื่องร้อนช้า (เทอร์โมสตัท)',
-  'P0133': 'ออกซิเจนเซ็นเซอร์ตอบสนองช้า',
-  'P0141': 'ฮีตเตอร์ออกซิเจนเซ็นเซอร์ตัวหลัง',
-  'P0171': 'ส่วนผสมบาง',
-  'P0172': 'ส่วนผสมหนา',
-  'P0300': 'จุดระเบิดผิดพลาดหลายสูบ',
-  'P0301': 'จุดระเบิดผิดพลาดสูบ 1',
-  'P0302': 'จุดระเบิดผิดพลาดสูบ 2',
-  'P0303': 'จุดระเบิดผิดพลาดสูบ 3',
-  'P0304': 'จุดระเบิดผิดพลาดสูบ 4',
-  'P0335': 'เซ็นเซอร์ข้อเหวี่ยง (CKP)',
-  'P0340': 'เซ็นเซอร์แคมชาฟท์ (CMP)',
-  'P0420': 'ประสิทธิภาพแคทาไลติกต่ำ',
-  'P0455': 'ระบบไอระเหย (EVAP) รั่วมาก',
-  'P0500': 'เซ็นเซอร์ความเร็วรถ',
-  'P0505': 'ระบบควบคุมรอบเดินเบา',
-};
-
-String _dtcDesc(String c) {
-  final k = _dtcInfo[c];
-  if (k != null) return k;
-  if (c.length < 2) return '';
-  final sys = switch (c[0]) {
-    'P' => 'เครื่องยนต์/เกียร์',
-    'C' => 'ช่วงล่าง/เบรก',
-    'B' => 'ตัวถัง/ไฟฟ้า',
-    _ => 'ระบบสื่อสาร',
-  };
-  return '$sys · ${c[1] == '0' ? 'รหัสมาตรฐาน' : 'รหัสเฉพาะยี่ห้อ'}';
-}
-
 class DtcTab extends StatefulWidget {
   const DtcTab({super.key, required this.hub});
   final DataHub hub;
@@ -1045,22 +1012,46 @@ class DtcTab extends StatefulWidget {
 }
 
 class _DtcTabState extends State<DtcTab> {
-  List<String>? _codes;
+  List<String>? _codes, _pending;
+  FreezeFrame? _ff;
+  bool _ffTried = false;
   String? _err;
   bool _busy = false;
+  String _step = '';
 
   Future<void> _read() async {
     setState(() {
       _busy = true;
       _err = null;
+      _ff = null;
+      _ffTried = false;
+      _step = 'อ่านรหัสที่ทำให้ไฟโชว์...';
     });
     try {
       final c = await widget.hub.readDtc();
-      if (mounted) setState(() => _codes = c);
+      if (!mounted) return;
+      setState(() {
+        _codes = c;
+        _step = 'อ่านรหัสรอยืนยัน...';
+      });
+      final p = await widget.hub.readPending();
+      if (!mounted) return;
+      setState(() {
+        _pending = p.where((e) => !c.contains(e)).toList();
+        _step = 'อ่าน freeze frame (ค่าตอนไฟโชว์ติด)...';
+      });
+      final ff = await readFreezeFrame(widget.hub);
+      if (mounted) setState(() {
+        _ff = ff;
+        _ffTried = true;
+      });
     } catch (e) {
       if (mounted) setState(() => _err = errText(e));
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() {
+        _busy = false;
+        _step = '';
+      });
     }
   }
 
@@ -1070,14 +1061,11 @@ class _DtcTabState extends State<DtcTab> {
       builder: (ctx) => AlertDialog(
         title: const Text('ลบรหัส DTC?'),
         content: const Text(
-            'จะล้างรหัสและดับไฟ Check Engine (ข้อมูล Readiness จะถูกรีเซ็ตด้วย)\nแนะนำให้ดับเครื่อง แต่เปิดสวิตช์กุญแจค้างไว้ที่ ON'),
+            'จะล้างรหัส + freeze frame และดับไฟ Check Engine (ข้อมูล Readiness จะถูกรีเซ็ตด้วย)\n'
+            'แนะนำให้จดรหัส/ถ่ายรูปหน้านี้ไว้ก่อน · ดับเครื่อง แต่เปิดสวิตช์กุญแจค้างไว้ที่ ON'),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('ยกเลิก')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('ลบ')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('ยกเลิก')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('ลบ')),
         ],
       ),
     );
@@ -1090,7 +1078,13 @@ class _DtcTabState extends State<DtcTab> {
       final done = await widget.hub.clearDtc();
       if (!mounted) return;
       _snack(context, done ? 'ลบรหัส DTC แล้ว' : 'ECU ไม่ยืนยันการลบ');
-      if (done) setState(() => _codes = []);
+      if (done) {
+        setState(() {
+          _codes = [];
+          _pending = [];
+          _ff = null;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _err = errText(e));
     } finally {
@@ -1098,11 +1092,33 @@ class _DtcTabState extends State<DtcTab> {
     }
   }
 
+  Widget _codeTile(String c, {bool pending = false}) {
+    final sev = dtcSeverity(c);
+    final col = pending ? Colors.white54 : (sev == 2 ? kRed : kAmber);
+    // ค้นพร้อมรุ่นรถ (ถ้าเคยเลือกรถในหน้าไดโน)
+    final car = widget.hub.settings.dynoCfg.isEmpty ? 'OBD2' : DynoCfg.of(widget.hub.settings).title;
+    return ListTile(
+      leading: Icon(pending ? Icons.schedule : Icons.warning_amber_rounded, color: col),
+      title: Row(children: [
+        Text(c, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+        if (sev == 2 && !pending) ...[
+          const SizedBox(width: 8),
+          const Text('ควรรีบตรวจ', style: TextStyle(fontSize: 12, color: kRed)),
+        ],
+      ]),
+      subtitle: Text(dtcThai(c)),
+      trailing: IconButton(
+        tooltip: tr('ค้นในเว็บ'),
+        icon: const Icon(Icons.travel_explore),
+        onPressed: () => Native.openUrl('https://www.google.com/search?q=${Uri.encodeComponent('$c $car')}'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final codes = _codes;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    final codes = _codes, pend = _pending, ff = _ff;
+    return ListView(
       children: [
         Padding(
           padding: const EdgeInsets.all(12),
@@ -1118,6 +1134,8 @@ class _DtcTabState extends State<DtcTab> {
               icon: const Icon(Icons.delete_sweep_outlined),
               label: const Text('ลบ DTC'),
             ),
+            const SizedBox(width: 16),
+            if (_step.isNotEmpty) Expanded(child: Text(_step, style: const TextStyle(color: Colors.white60))),
           ]),
         ),
         if (_busy) const LinearProgressIndicator(),
@@ -1126,28 +1144,41 @@ class _DtcTabState extends State<DtcTab> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(_err!, style: const TextStyle(color: kRed)),
           ),
-        if (codes != null && codes.isEmpty)
+        if (codes != null && codes.isEmpty && (pend == null || pend.isEmpty))
           const Padding(
             padding: EdgeInsets.all(16),
-            child: Text('ไม่พบรหัส DTC ✓',
-                style: TextStyle(fontSize: 18, color: kGreen)),
+            child: Text('ไม่พบรหัส DTC ✓', style: TextStyle(fontSize: 18, color: kGreen)),
           ),
-        if (codes != null && codes.isNotEmpty)
-          Expanded(
-            child: ListView(
-              children: [
-                for (final c in codes)
-                  ListTile(
-                    leading: const Icon(Icons.warning_amber_rounded,
-                        color: kAmber),
-                    title: Text(c,
-                        style: const TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.w800)),
-                    subtitle: Text(_dtcDesc(c)),
-                  ),
-              ],
-            ),
+        if (codes != null && codes.isNotEmpty) ...[
+          const _Header('รหัสที่ทำให้ไฟโชว์ติด'),
+          for (final c in codes) _codeTile(c),
+        ],
+        if (pend != null && pend.isNotEmpty) ...[
+          const _Header('รหัสรอยืนยัน (เกิดแล้ว แต่ยังไม่ติดไฟโชว์)'),
+          for (final c in pend) _codeTile(c, pending: true),
+          const _Hint('ถ้าเกิดซ้ำในการขับรอบถัดไป กล่องจะยืนยันแล้วไฟโชว์ติด · ถ้าไม่เกิดอีก จะหายไปเอง'),
+        ],
+        if (ff != null) ...[
+          _Header('Freeze frame — ค่าตอนไฟโชว์ติด${ff.code.isEmpty ? '' : ' (จาก ${ff.code})'}'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(spacing: 10, runSpacing: 10, children: [
+              for (final r in ff.rows)
+                Container(
+                  width: 230,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(color: const Color(0xFF15171C), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF262A31))),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(r.name, style: const TextStyle(fontSize: 12, color: Colors.white60), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text('${r.value} ${r.unit}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                  ]),
+                ),
+            ]),
           ),
+          const _Hint('ดูว่าไฟขึ้นตอนขับแบบไหน เช่น รอบสูง/ต่ำ เครื่องร้อน/เย็น ส่วนผสมหนา/บาง (fuel trim บวก = กล่องเติมน้ำมันเพิ่มเพราะบาง)'),
+        ] else if (_ffTried && codes != null && codes.isNotEmpty)
+          const _Hint('รถคันนี้ไม่มี freeze frame ให้อ่าน (หรือถูกลบไปแล้ว)'),
+        const _Hint('คำอธิบายเป็นสาเหตุที่พบบ่อย ไม่ใช่คำวินิจฉัย — ควรตรวจซ้ำก่อนเปลี่ยนอะไหล่ · ปุ่มแว่นขยาย = ค้นรหัสนี้พร้อมรุ่นรถในเว็บ'),
       ],
     );
   }
