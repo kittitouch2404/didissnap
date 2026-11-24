@@ -68,6 +68,12 @@ class MainActivity : FlutterActivity() {
                     else c.write(call.argument<ByteArray>("b") ?: ByteArray(0)) { ok -> runOnUiThread { result.success(ok) } }
                 }
                 "c3Mtu" -> result.success(c3?.mtuNow ?: 0)
+                "mapSplit" -> mapSplit(call.argument<Boolean>("exit") == true, result)
+                "splitHelperOn" -> result.success(SplitService.inst != null)
+                "openAccessibility" -> {
+                    try { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) {}
+                    result.success(true)
+                }
                 "deviceInfo" -> result.success(
                     "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}) · ${resources.displayMetrics.widthPixels}x${resources.displayMetrics.heightPixels}"
                 )
@@ -669,5 +675,52 @@ class MainActivity : FlutterActivity() {
         private const val REQ_TEXT = 4714
         private const val REQ_FILE = 4715
         private const val REQ_GPS = 4716
+    }
+
+    // ---------------- แผนที่แบ่งจอ
+    private fun inMulti(): Boolean = Build.VERSION.SDK_INT >= 24 && isInMultiWindowMode
+
+    private fun mapsIntent(): Intent? {
+        val g = packageManager.getLaunchIntentForPackage("com.google.android.apps.maps")
+        if (g != null) return g
+        val v = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q="))
+        return if (v.resolveActivity(packageManager) != null) v else null
+    }
+
+    private fun launchAdjacent(i: Intent) {
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (Build.VERSION.SDK_INT >= 24) i.addFlags(Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT)
+        startActivity(i)
+    }
+
+    /** เข้าแบ่งจอ (แอปนี้ + Google Maps) หรือออก (exit) */
+    private fun mapSplit(exit: Boolean, result: MethodChannel.Result) {
+        if (exit) {
+            if (!inMulti()) { result.success("exit"); return }
+            result.success(if (SplitService.toggle()) "exit" else "noexit")
+            return
+        }
+        val maps = mapsIntent()
+        if (maps == null) { result.success("nomaps"); return }
+        try {
+            when {
+                inMulti() -> { launchAdjacent(maps); result.success("adjacent") }
+                SplitService.inst != null -> {
+                    // ให้ระบบแบ่งจอก่อน (แอปนี้อยู่ฝั่งหลัก) แล้วเปิดแผนที่ในอีกฝั่ง
+                    SplitService.toggle()
+                    mainHandler.postDelayed({
+                        try { launchAdjacent(maps) } catch (e: Exception) {}
+                        mainHandler.postDelayed({ result.success(if (inMulti()) "split" else "full") }, 900)
+                    }, 700)
+                }
+                else -> {
+                    // ไม่มีตัวช่วย: บางจอ (Android 12L+ จอใหญ่) แบ่งให้เองจาก LAUNCH_ADJACENT ไม่งั้นเปิดเต็มจอ
+                    launchAdjacent(maps)
+                    mainHandler.postDelayed({ result.success(if (inMulti()) "split" else "full") }, 1200)
+                }
+            }
+        } catch (e: Exception) {
+            result.success("nomaps")
+        }
     }
 }

@@ -119,6 +119,31 @@ class Native {
     }
   }
 
+  /// แผนที่แบ่งจอ: exit = ออกจากแบ่งจอ
+  /// คืน 'split' (แบ่งจอแล้ว) · 'adjacent' · 'full' (แบ่งไม่ได้ เปิดเต็มจอ) · 'nomaps' · 'exit' · 'noexit'
+  static Future<String> mapSplit({bool exit = false}) async {
+    try {
+      return await m.invokeMethod<String>('mapSplit', {'exit': exit}) ?? 'full';
+    } catch (_) {
+      return 'full';
+    }
+  }
+
+  /// ตัวช่วยแบ่งจอ (Accessibility service) เปิดอยู่ไหม
+  static Future<bool> splitHelperOn() async {
+    try {
+      return await m.invokeMethod<bool>('splitHelperOn') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> openAccessibility() async {
+    try {
+      await m.invokeMethod('openAccessibility');
+    } catch (_) {}
+  }
+
   /// เลือกไฟล์ใดก็ได้ -> path ไฟล์ที่ก๊อปไว้ใน cache
   static Future<String?> pickFile({String mime = '*/*'}) async {
     try {

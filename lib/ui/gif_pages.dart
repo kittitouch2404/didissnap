@@ -11,6 +11,10 @@ import '../data/gif_cfg.dart';
 import '../data/hub.dart';
 import '../settings.dart';
 import 'live.dart';
+import '../data/native.dart';
+
+/// กว้าง/สูง ต่ำกว่านี้ = จอแคบ (แบ่งจอกับแผนที่) → ใช้หน้าแนวตั้ง
+const double gifNarrowRatio = 1.25;
 
 /// หน้า GIF 1-5 (พอร์ตจากหน้า 9-13 ของจอ CYD)
 ///  แบบ A: กรอบ GIF + แถบรอบ + ความเร็ว/รอบ + ค่า 3 ช่องขวา (แตะช่องเพื่อสลับค่า)
@@ -258,13 +262,25 @@ class _GifPageState extends State<GifPage> {
   void _tapAt(Offset p, Size size) {
     final c = cfg;
     if (c.style != 0) return;
+    if (size.width < size.height * gifNarrowRatio) {
+      for (final (i, r) in _GifDashPainter.narrowCells(size, c.six)) {
+        if (r.contains(p)) {
+          _cycleSlot(c, i);
+          return;
+        }
+      }
+      return;
+    }
     if (p.dx < size.width * 0.63) return;
     final top = size.height * 0.09, h = size.height * 0.86 / 3;
     final row = ((p.dy - top) / h).floor();
     if (row < 0 || row > 2) return;
     // โหมด 6 ค่า: คอลัมน์ซ้าย = ช่อง 0-2, ขวา = ช่อง 3-5
     final right = c.six && p.dx > size.width * (0.645 + 0.985) / 2;
-    final i = row + (right ? 3 : 0);
+    _cycleSlot(c, row + (right ? 3 : 0));
+  }
+
+  void _cycleSlot(GifCfg c, int i) {
     var m = c.slots[i];
     for (var k = 0; k < kGifMetrics.length; k++) {
       m = (m + 1) % kGifMetrics.length;
@@ -273,6 +289,23 @@ class _GifPageState extends State<GifPage> {
     }
     c.slots[i] = m;
     s.setGifCfg(widget.index, c);
+  }
+
+  /// ปุ่มแผนที่: จอเต็ม → แบ่งจอกับ Google Maps · แบ่งจออยู่ → กลับเต็มจอ
+  Future<void> _mapTap(bool narrow) async {
+    final r = await Native.mapSplit(exit: narrow);
+    if (!mounted) return;
+    final msg = switch (r) {
+      'nomaps' => 'ไม่พบแอป Google Maps ในเครื่อง',
+      'full' => 'จอนี้แบ่งจอให้ไม่ได้ — เปิดแผนที่เต็มจอแทน (เปิด "ตัวช่วยแบ่งจอ" ในตั้งค่าหน้านี้ แล้วลองใหม่)',
+      'noexit' => 'ออกจากแบ่งจอ: ลากเส้นกลางจอไปสุดขอบ (หรือเปิด "ตัวช่วยแบ่งจอ" ให้กดปุ่มนี้ได้)',
+      _ => '',
+    };
+    if (msg.isNotEmpty) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 5)));
+    }
   }
 
   @override
@@ -303,11 +336,35 @@ class _GifPageState extends State<GifPage> {
             final img = (g != null && g.frames.isNotEmpty)
                 ? g.frames[_idx.clamp(0, g.frames.length - 1)]
                 : null;
-            return CustomPaint(
+            final paint = CustomPaint(
               painter: _GifDashPainter(f, c.rnd ? _rndCfg(c) : c, img, Map.of(_pk), _loading,
                   widget.index),
               child: const SizedBox.expand(),
             );
+            if (!c.mapBtn) return paint;
+            final narrow = size.width < size.height * gifNarrowRatio;
+            final col = _hsv(c.hue, c.sat, 1);
+            return Stack(children: [
+              paint,
+              Positioned(
+                right: narrow ? 6 : 10,
+                top: narrow ? 6 : 4,
+                child: Material(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12), side: BorderSide(color: col, width: 1.5)),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => _mapTap(narrow),
+                    child: SizedBox(
+                      width: 54,
+                      height: 50,
+                      child: Icon(narrow ? Icons.fullscreen : Icons.map_outlined, color: col, size: 30),
+                    ),
+                  ),
+                ),
+              ),
+            ]);
           },
         ),
       );
@@ -344,6 +401,10 @@ class _GifDashPainter extends CustomPainter {
   void paint(Canvas cv, Size sz) {
     cv.drawRect(Offset.zero & sz, Paint()..color = Colors.black);
     final w = sz.width, h = sz.height;
+    if (w < h * gifNarrowRatio) {   // แบ่งจอกับแผนที่ (จอแคบ) → จัดหน้าแนวตั้ง
+      _paintNarrow(cv, w, h);
+      return;
+    }
     if (c.style == 1) {
       final fr = Rect.fromLTWH(w * 0.015, h * 0.09, w * 0.97, h * 0.66);
       _frame(cv, fr);
@@ -379,30 +440,78 @@ class _GifDashPainter extends CustomPainter {
       final x0 = xa + col * (cw + gap), x1 = x0 + cw;
       final k = c.six ? 0.72 : 1.0; // ตัวเล็กลงในโหมด 6 ค่า
       for (var i = 0; i < 3; i++) {
-        final m = c.slots[i + col * 3];
-        final y = top0 + bh * i;
-        final (name, unit, dec) = gifMetricInfo(f.s, m);
-        _label(cv, name, Offset(x0, y), h * 0.045 * (c.six ? 0.8 : 1));
-        final v = _metricVal(f, m);
-        final isMin = m == 2 || m == 9;
-        final p = pk[m];
-        final pkTxt = '${isMin ? 'MIN' : 'MAX'} ${p == null ? '--' : p.toStringAsFixed(dec)}';
-        if (c.pk && c.six) {
-          _label(cv, pkTxt, Offset(x0, y + bh * 0.80 - h * 0.042), h * 0.026, color: top);
-        } else if (c.pk) {
-          _label(cv, pkTxt, Offset(x1, y + h * 0.006), h * 0.032, color: top, right: true);
-        }
-        final warn = (m == 0 && v != null && v >= f.ectWarn && (f.time * 3).floor().isEven) ||
-            (m == 2 && v != null && v < 11.8);
-        _anime(cv, v == null ? '--' : v.toStringAsFixed(dec),
-            Offset(x1 - w * 0.045 * k, y + bh * 0.70), h * 0.13 * k, warn, TextAlign.right);
-        _label(cv, unit, Offset(x1 - w * 0.04 * k, y + bh * 0.42), h * 0.035 * (c.six ? 0.85 : 1));
-        final (lo, hi) = _metricRange(f, m);
-        final t = v == null ? 0.0 : ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
-        final pt = p == null || !c.pk ? -1.0 : ((p - lo) / (hi - lo)).clamp(0.0, 1.0);
-        _segBar(cv, Rect.fromLTWH(x0, y + bh * 0.80, x1 - x0, h * 0.035), c.six ? 10 : 18, t, 2, peak: pt);
+        _slotCell(cv, c.slots[i + col * 3], x0, x1, top0 + bh * i, bh, k, c.six, h, w);
       }
     }
+  }
+
+  /// ช่องค่า 1 ช่อง (ชื่อ / MAX-MIN / ตัวเลข / หน่วย / แถบ)  u, uw = ขนาดอ้างอิง (ความสูง/กว้างจอแบบเต็ม)
+  void _slotCell(Canvas cv, int m, double x0, double x1, double y, double bh, double k, bool small, double u, double uw) {
+    final (name, unit, dec) = gifMetricInfo(f.s, m);
+    _label(cv, name, Offset(x0, y), u * 0.045 * (small ? 0.8 : 1));
+    final v = _metricVal(f, m);
+    final isMin = m == 2 || m == 9;
+    final p = pk[m];
+    final pkTxt = '${isMin ? 'MIN' : 'MAX'} ${p == null ? '--' : p.toStringAsFixed(dec)}';
+    if (c.pk && small) {
+      _label(cv, pkTxt, Offset(x0, y + bh * 0.80 - u * 0.042), u * 0.026, color: top);
+    } else if (c.pk) {
+      _label(cv, pkTxt, Offset(x1, y + u * 0.006), u * 0.032, color: top, right: true);
+    }
+    final warn = (m == 0 && v != null && v >= f.ectWarn && (f.time * 3).floor().isEven) ||
+        (m == 2 && v != null && v < 11.8);
+    _anime(cv, v == null ? '--' : v.toStringAsFixed(dec),
+        Offset(x1 - uw * 0.045 * k, y + bh * 0.70), u * 0.13 * k, warn, TextAlign.right);
+    _label(cv, unit, Offset(x1 - uw * 0.04 * k, y + bh * 0.42), u * 0.035 * (small ? 0.85 : 1));
+    final (lo, hi) = _metricRange(f, m);
+    final t = v == null ? 0.0 : ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
+    final pt = p == null || !c.pk ? -1.0 : ((p - lo) / (hi - lo)).clamp(0.0, 1.0);
+    _segBar(cv, Rect.fromLTWH(x0, y + bh * 0.80, x1 - x0, u * 0.035), small ? 10 : 18, t, 2, peak: pt);
+  }
+
+  /// จอแคบ (แบ่งจอกับแผนที่): รูปบน · ความเร็ว/รอบกลาง · ช่องค่าเรียง 3 คอลัมน์ล่าง
+  void _paintNarrow(Canvas cv, double w, double h) {
+    if (c.style == 1) {
+      final fr = Rect.fromLTWH(w * 0.03, h * 0.04, w * 0.94, h * 0.62);
+      _frame(cv, fr);
+      _img(cv, fr.deflate(6), big: true);
+      final fs = math.min(h * 0.15, w * 0.2);
+      _anime(cv, f.speed.round().toString(), Offset(w * 0.36, h * 0.93), fs, false, TextAlign.right);
+      _label(cv, 'km/h', Offset(w * 0.37, h * 0.86), fs * 0.25);
+      _anime(cv, _rpmTxt(), Offset(w * 0.84, h * 0.93), fs, f.atRedline, TextAlign.right);
+      _label(cv, 'RPM', Offset(w * 0.85, h * 0.86), fs * 0.25);
+      return;
+    }
+    final fr = Rect.fromLTWH(w * 0.03, h * 0.03, w * 0.94, h * 0.37);
+    _frame(cv, fr);
+    _img(cv, fr.deflate(6), big: true);
+    final maxR = (f.maxRpm).toDouble();
+    _segBar(cv, Rect.fromLTWH(fr.left, fr.bottom + h * 0.018, fr.width, h * 0.026), 30,
+        (f.rpm / maxR).clamp(0.0, 1.0), (f.redline / maxR).clamp(0.0, 1.0),
+        flash: f.atRedline && (f.time * 9).floor().isEven);
+    final fs = math.min(h * 0.11, w * 0.15);
+    _anime(cv, f.speed.round().toString(), Offset(w * 0.36, h * 0.585), fs, false, TextAlign.right);
+    _label(cv, 'km/h', Offset(w * 0.37, h * 0.535), fs * 0.26);
+    _anime(cv, _rpmTxt(), Offset(w * 0.84, h * 0.585), fs, f.atRedline, TextAlign.right);
+    _label(cv, 'RPM', Offset(w * 0.85, h * 0.535), fs * 0.26);
+    for (final g in narrowCells(Size(w, h), c.six)) {
+      final (i, r) = g;
+      final u = r.height / 0.287, uw = r.width / 0.34;
+      _slotCell(cv, c.slots[i], r.left, r.right, r.top, r.height, c.six ? 0.85 : 1.0, true, math.min(u, uw * 0.56), uw);
+    }
+  }
+
+  /// ตำแหน่งช่องค่าในโหมดจอแคบ (ใช้ทั้งวาดและแตะ)
+  static List<(int, Rect)> narrowCells(Size s, bool six) {
+    final w = s.width, h = s.height;
+    final rows = six ? 2 : 1;
+    final y0 = h * 0.63, hh = h * 0.355, gap = w * 0.025;
+    final cw = (w * 0.94 - gap * 2) / 3, rh = hh / rows;
+    return [
+      for (var r = 0; r < rows; r++)
+        for (var col = 0; col < 3; col++)
+          (r == 0 ? col : 3 + col, Rect.fromLTWH(w * 0.03 + col * (cw + gap), y0 + r * rh, cw, rh * 0.92)),
+    ];
   }
 
   String _rpmTxt() => ((f.rpm / 10).round() * 10).toString();
@@ -579,6 +688,41 @@ Future<void> showGifSettings(BuildContext context, AppSettings s, int index) {
               children: [
                 Text('ตั้งค่าหน้า GIF ${index + 1}',
                     style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  secondary: const Icon(Icons.map_outlined),
+                  title: const Text('ปุ่มแผนที่ (แบ่งจอกับ Google Maps)'),
+                  subtitle: const Text('ปุ่มมุมขวาบน: กด = แผนที่ครึ่งจอ หน้านี้อีกครึ่ง · กดอีกที = กลับเต็มจอ'),
+                  value: c.mapBtn,
+                  onChanged: (v) {
+                    c.mapBtn = v;
+                    save();
+                  },
+                ),
+                if (c.mapBtn)
+                  FutureBuilder<bool>(
+                    future: Native.splitHelperOn(),
+                    builder: (_, snap) {
+                      final on = snap.data ?? false;
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        leading: Icon(on ? Icons.check_circle : Icons.info_outline,
+                            color: on ? const Color(0xFF00E05A) : Colors.orangeAccent),
+                        title: Text(on ? 'ตัวช่วยแบ่งจอ: เปิดอยู่' : 'ตัวช่วยแบ่งจอ: ปิดอยู่'),
+                        subtitle: const Text('จอรถส่วนใหญ่ต้องเปิดตัวนี้ แอปถึงสั่งแบ่งจอเองได้ '
+                            '(ตั้งค่า → การช่วยเหลือพิเศษ / Accessibility → Didissnap แบ่งจอ → เปิด)'),
+                        trailing: OutlinedButton(
+                          onPressed: () async {
+                            await Native.openAccessibility();
+                            setSt(() {});
+                          },
+                          child: Text(on ? 'ตั้งค่า' : 'เปิด'),
+                        ),
+                      );
+                    },
+                  ),
                 const SizedBox(height: 8),
                 Row(children: [
                   FilledButton.icon(

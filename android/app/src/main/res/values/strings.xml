@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="split_label">Didissnap แบ่งจอ</string>
+    <string name="split_desc">ให้ปุ่มแผนที่ในแอป Didissnap สั่งแบ่งจอ (แผนที่ครึ่งหนึ่ง หน้าปัดอีกครึ่ง) และกลับเต็มจอได้ — ไม่อ่านหรือเก็บข้อมูลบนหน้าจอ</string>
+</resources>
