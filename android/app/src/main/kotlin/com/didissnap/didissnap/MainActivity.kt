@@ -297,6 +297,19 @@ class MainActivity : FlutterActivity() {
             }
         })
 
+        // GPS เร็ว (จับเวลาสนาม): lat/lon/ทิศ/ความเร็ว ถี่ที่สุดที่เครื่องให้ได้
+        EventChannel(messenger, "didissnap/gpsfast").setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                gpsFastSink = events
+                startGpsFast()
+            }
+
+            override fun onCancel(arguments: Any?) {
+                stopGpsFast()
+                gpsFastSink = null
+            }
+        })
+
         EventChannel(messenger, "didissnap/bt/stream").setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                 sink = events
@@ -393,6 +406,45 @@ class MainActivity : FlutterActivity() {
             gpsListener = l
         } catch (e: Exception) {
             gpsSink?.success(mapOf("err" to (e.message ?: "gps")))
+        }
+    }
+
+    private var gpsFastSink: EventChannel.EventSink? = null
+    private var gpsFastListener: android.location.LocationListener? = null
+
+    @SuppressLint("MissingPermission")
+    private fun startGpsFast() {
+        if (gpsFastListener != null) return
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            gpsFastSink?.success(mapOf("err" to "perm"))
+            return
+        }
+        val lm = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        val l = android.location.LocationListener { loc ->
+            gpsFastSink?.success(mapOf(
+                "lat" to loc.latitude,
+                "lon" to loc.longitude,
+                "spd" to (if (loc.hasSpeed()) loc.speed.toDouble() else -1.0),
+                "brg" to (if (loc.hasBearing()) loc.bearing.toDouble() else -1.0),
+                "alt" to (if (loc.hasAltitude()) loc.altitude else 0.0),
+                "hacc" to (if (loc.hasAccuracy()) loc.accuracy.toDouble() else -1.0),
+                "t" to loc.time
+            ))
+        }
+        try {
+            lm.requestLocationUpdates(android.location.LocationManager.GPS_PROVIDER, 0L, 0f, l, Looper.getMainLooper())
+            gpsFastListener = l
+        } catch (e: Exception) {
+            gpsFastSink?.success(mapOf("err" to (e.message ?: "gps")))
+        }
+    }
+
+    private fun stopGpsFast() {
+        val l = gpsFastListener ?: return
+        gpsFastListener = null
+        try {
+            (getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager).removeUpdates(l)
+        } catch (e: Exception) {
         }
     }
 

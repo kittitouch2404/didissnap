@@ -7,6 +7,7 @@ import '../i18n.dart';
 import '../data/car_data.dart';
 import '../data/hub.dart';
 import '../data/perf.dart';
+import 'lap_page.dart';
 import 'paint_utils.dart';
 
 /// หน้า Record: จับเวลาออกตัว 0-60 ft, 0-100 km/h, 1/4 ไมล์ ฯลฯ
@@ -40,6 +41,50 @@ class _PerfPageState extends State<PerfPage> {
 
   @override
   Widget build(BuildContext context) {
+    final lap = widget.hub.lap;
+    return Stack(children: [
+      Positioned.fill(child: lap.lapMode ? LapView(hub: widget.hub) : _drag(context)),
+      // สลับโหมด: ออกตัว | สนาม GPS
+      Positioned(
+        top: 4,
+        left: 0,
+        right: 0,
+        child: Center(
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFF333333)),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              _mode('ออกตัว', Icons.flag, !lap.lapMode, () => setState(() => lap.lapMode = false)),
+              _mode('สนาม GPS', Icons.route, lap.lapMode, () => setState(() => lap.lapMode = true)),
+            ]),
+          ),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _mode(String t, IconData ic, bool on, VoidCallback tap) => InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: on ? null : tap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+          decoration: BoxDecoration(
+            color: on ? kAccent : Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(ic, size: 16, color: on ? Colors.black : kGrey),
+            const SizedBox(width: 5),
+            Text(t,
+                style: TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w800, color: on ? Colors.black : kGrey)),
+          ]),
+        ),
+      );
+
+  Widget _drag(BuildContext context) {
     final perf = widget.hub.perf;
     return AnimatedBuilder(
       animation: perf,

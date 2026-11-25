@@ -85,6 +85,7 @@ class Native {
   }
 
   static const EventChannel gps = EventChannel('didissnap/gps');
+  static const EventChannel gpsFast = EventChannel('didissnap/gpsfast');
 
   static Future<String> deviceInfo() async {
     try {

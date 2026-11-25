@@ -12,6 +12,7 @@ import 'demo_source.dart';
 import 'elm_source.dart';
 import 'esp32_source.dart';
 import 'perf.dart';
+import 'laptimer.dart';
 import 'services.dart';
 import 'updater.dart';
 import 'app_log.dart';
@@ -102,6 +103,7 @@ class DataHub extends ChangeNotifier {
 
   /// ตัวจับเวลาออกตัว
   late final PerfRecorder perf = PerfRecorder(this);
+  late final LapTimer lap = LapTimer(this);
 
   final AppSettings settings;
   final CarData data = CarData();
@@ -202,6 +204,7 @@ class DataHub extends ChangeNotifier {
     logger.close();
     cyd.dispose();
     perf.dispose();
+    lap.dispose();
     settings.removeListener(_onSettings);
     _src?.stop();
     super.dispose();
