@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.25e"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.25f"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -227,11 +227,31 @@ static String canDiag;   // ผลลอง CAN ล่าสุด (โชว์
 static void setDiag(const char* s) { strlcpy(diag, s, sizeof(diag)); Serial.printf("[diag] %s\n", s); }
 static bool canHeard = false;   // ได้ยินเฟรม CAN วิ่งในบัส = รถคันนี้ใช้ CAN (ไม่ต้องลอง K-line)
 // ลอง ID 11 บิตก่อน (รถส่วนใหญ่) ไม่ตอบ → ลอง ID 29 บิตที่ความเร็วเดียวกัน
+// ขา CRX ของโมดูล CAN: ปกติ GPIO5 · ถ้าไม่ได้ยินอะไรเลยลองฟังที่ GPIO3 ด้วย (ต่อสายไว้ขานั้น) แล้วจำขาที่ใช้ได้
+static int canRx = PIN_CAN_RX;
+static bool canSniff(uint32_t br) {
+  if (!canobd::start(PIN_CAN_TX, canRx, br, true)) return false;
+  bool t = canobd::sniff(300);
+  canobd::stop();
+  if (t || USE_VBAT) return t;                          // GPIO3 ใช้วัดแบตอยู่ → ไม่ลอง
+  int alt = canRx == PIN_CAN_RX ? 3 : PIN_CAN_RX;
+  int r0 = canobd::sniffRx, e0 = canobd::sniffErr;
+  if (!canobd::start(PIN_CAN_TX, alt, br, true)) return false;
+  bool ta = canobd::sniff(300);
+  canobd::stop();
+  if (ta) {
+    Serial.printf("[obd] CAN RX found on GPIO%d (was GPIO%d)\n", alt, canRx);
+    canRx = alt;
+    prefs.putInt("canrx", canRx);
+    return true;
+  }
+  canobd::sniffRx = max(r0, canobd::sniffRx);
+  canobd::sniffErr = max(e0, canobd::sniffErr);
+  return false;
+}
 static bool tryCan(uint32_t br, uint8_t p, uint8_t pExt) {
 #if USE_CAN
-  if (!canobd::start(PIN_CAN_TX, PIN_CAN_RX, br, true)) return false;
-  bool traffic = canobd::sniff(300);                    // ฟังก่อน ไม่ส่งอะไรออกบัส (กันรบกวนรถถ้าความเร็วไม่ตรง)
-  canobd::stop();
+  bool traffic = canSniff(br);                          // ฟังก่อน ไม่ส่งอะไรออกบัส (กันรบกวนรถถ้าความเร็วไม่ตรง)
   char dm[59];
   snprintf(dm, sizeof(dm), "CAN %uk: heard %d frames, rx err %d", (unsigned)(br / 1000), canobd::sniffRx, canobd::sniffErr);
   setDiag(dm);
@@ -240,7 +260,7 @@ static bool tryCan(uint32_t br, uint8_t p, uint8_t pExt) {
   if (!traffic && br != 500000) return false;
   int txErr = 0, busOff = 0;
   for (int e = 0; e < 2; e++) {
-    if (!canobd::start(PIN_CAN_TX, PIN_CAN_RX, br, false, e == 1)) return false;
+    if (!canobd::start(PIN_CAN_TX, canRx, br, false, e == 1)) return false;
     proto = e ? pExt : p;
     if (readMasks()) {
       canobd::physical = true;
@@ -737,8 +757,10 @@ void setup() {
   demo = prefs.getBool("demo", false);
   custLoad();
   calLoad();
+  canRx = prefs.getInt("canrx", PIN_CAN_RX);
+  if (canRx != PIN_CAN_RX && canRx != 3) canRx = PIN_CAN_RX;
   kline::begin(PIN_K_RX, PIN_K_TX);
-  analogSetPinAttenuation(PIN_VBAT, ADC_11db);
+  if (USE_VBAT) analogSetPinAttenuation(PIN_VBAT, ADC_11db);   // ไม่วัดแบต → GPIO3 ว่าง (ใช้เป็นขา CAN RX ได้)
   vbat = readVbat();
   // ตื่นจากหลับ (ไม่มีสายวัดแบต): ยังไม่เปิด WiFi — ลองเรียกรถรอบเดียวก่อน ไม่ตอบ = หลับต่อทันที
   if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER && !vbat && !demo) {
