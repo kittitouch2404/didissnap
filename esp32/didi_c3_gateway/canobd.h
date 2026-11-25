@@ -51,6 +51,7 @@ inline bool start(int pinTx, int pinRx, uint32_t bitrate, bool listenOnly, bool 
 }
 
 // ฟังเฉย ๆ (ไม่ส่งอะไรออกบัส): ถ้าความเร็วบัสถูก จะเห็นเฟรมวิ่ง และไม่มี error
+static int sniffRx = 0, sniffErr = 0;   // ผลการฟังล่าสุด (ไว้บอกสาเหตุ)
 inline bool sniff(uint32_t ms) {
   uint32_t t0 = millis();
   int n = 0;
@@ -58,7 +59,16 @@ inline bool sniff(uint32_t ms) {
   while (millis() - t0 < ms) if (twai_receive(&m, pdMS_TO_TICKS(20)) == ESP_OK) n++;
   twai_status_info_t st;
   twai_get_status_info(&st);
+  sniffRx = n;
+  sniffErr = st.rx_error_counter;
   return n >= 3 && st.rx_error_counter < 16;
+}
+// สถานะการส่ง (หลังถามแล้วไม่มีคำตอบ): tx error สูง = ไม่มีใครรับ (ACK) → สาย/ไฟโมดูล
+inline void txStatus(int* txErr, int* busOff) {
+  twai_status_info_t st = {};
+  twai_get_status_info(&st);
+  *txErr = st.tx_error_counter;
+  *busOff = st.state == TWAI_STATE_BUS_OFF ? 1 : 0;
 }
 
 static void drain() {

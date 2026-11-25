@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.25b"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.25c"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -222,14 +222,23 @@ static bool dtcClear() {
 }
 
 // ---------------------------------------------------------------- หารถ: CAN 500k → CAN 250k → K-line เร็ว → K-line ช้า
+static char diag[59] = "starting";
+static String canDiag;   // ผลลอง CAN ล่าสุด (โชว์ต่อท้ายตอนลอง K-line ด้วย)
+static void setDiag(const char* s) { strlcpy(diag, s, sizeof(diag)); Serial.printf("[diag] %s\n", s); }
+static bool canHeard = false;   // ได้ยินเฟรม CAN วิ่งในบัส = รถคันนี้ใช้ CAN (ไม่ต้องลอง K-line)
 // ลอง ID 11 บิตก่อน (รถส่วนใหญ่) ไม่ตอบ → ลอง ID 29 บิตที่ความเร็วเดียวกัน
 static bool tryCan(uint32_t br, uint8_t p, uint8_t pExt) {
 #if USE_CAN
   if (!canobd::start(PIN_CAN_TX, PIN_CAN_RX, br, true)) return false;
   bool traffic = canobd::sniff(300);                    // ฟังก่อน ไม่ส่งอะไรออกบัส (กันรบกวนรถถ้าความเร็วไม่ตรง)
   canobd::stop();
+  char dm[59];
+  snprintf(dm, sizeof(dm), "CAN %uk: heard %d frames, rx err %d", (unsigned)(br / 1000), canobd::sniffRx, canobd::sniffErr);
+  setDiag(dm);
   // บัสเงียบ (บางรถช่อง OBD ผ่าน gateway) → ลองถามที่ 500k ครั้งเดียว
+  if (traffic || canobd::sniffErr >= 32) canHeard = true;   // มีเฟรมวิ่ง หรือ error เยอะ (สายสลับ/ความเร็วผิด) = มีบัส CAN
   if (!traffic && br != 500000) return false;
+  int txErr = 0, busOff = 0;
   for (int e = 0; e < 2; e++) {
     if (!canobd::start(PIN_CAN_TX, PIN_CAN_RX, br, false, e == 1)) return false;
     proto = e ? pExt : p;
@@ -238,14 +247,25 @@ static bool tryCan(uint32_t br, uint8_t p, uint8_t pExt) {
       Serial.printf("[obd] CAN %u %s ok, ECU 0x%X\n", (unsigned)br, e ? "29-bit" : "11-bit", (unsigned)canobd::ecuRx);
       return true;
     }
+    if (!e) canobd::txStatus(&txErr, &busOff);
     canobd::stop();
   }
   proto = DN_P_NONE;
+  // บอกสาเหตุ (ขึ้นในแอป/จอ S3): ไม่มีใครรับเฟรม = สาย CANH/CANL ขาด/สลับ หรือโมดูลไม่ได้ไฟ 3.3V
+  if (busOff || txErr >= 96) {
+    snprintf(dm, sizeof(dm), "CAN %uk no ACK (tx %d): check CANH/L, 3V3, CTX/CRX", (unsigned)(br / 1000), txErr);
+  } else if (canobd::sniffRx == 0) {
+    snprintf(dm, sizeof(dm), "CAN %uk: bus silent, ECU no reply - key ON? CANH/L?", (unsigned)(br / 1000));
+  } else if (canobd::sniffErr >= 16) {
+    snprintf(dm, sizeof(dm), "CAN %uk: rx errors %d - swap CANH/CANL / remove 120R", (unsigned)(br / 1000), canobd::sniffErr);
+  } else {
+    snprintf(dm, sizeof(dm), "CAN %uk: bus ok (%d frames) but no OBD reply", (unsigned)(br / 1000), canobd::sniffRx);
+  }
+  setDiag(dm);
+  canDiag = dm;
 #endif
   return false;
 }
-static char diag[59] = "starting";
-static void setDiag(const char* s) { strlcpy(diag, s, sizeof(diag)); Serial.printf("[diag] %s\n", s); }
 static bool tryK(bool fast, bool lineIdle = false) {
 #if USE_KLINE
   if (fast || lineIdle) {                                           // ตรวจสายก่อนทุกรอบ (กลับขั้วอัตโนมัติ)
@@ -274,9 +294,13 @@ static void disconnect() {
 }
 static bool connect() {
   carLink = DN_LINK_WAIT;
+  canDiag = "";
+  canHeard = false;
   setDiag("trying CAN 500k");
   if (tryCan(500000, DN_P_CAN500, DN_P_CAN500X)) return true;
   if (tryCan(250000, DN_P_CAN250, DN_P_CAN250X)) return true;
+  // มีเฟรม CAN วิ่งแต่ ECU ไม่ตอบ → เป็นรถ CAN แน่ ๆ ไม่ลอง K-line (ข้อความสาเหตุฝั่ง CAN จะได้ค้างให้เห็น)
+  if (canHeard) { setDiag(canDiag.c_str()); return false; }
   if (tryK(true)) return true;
   if (tryK(false)) return true;
   return false;
