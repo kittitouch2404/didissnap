@@ -138,17 +138,32 @@ class C3Ota extends ChangeNotifier {
       if (_st == 3) throw 'C3: $_stMsg';
       final sw = Stopwatch()..start();
       var lastUi = 0;
+      // ตำแหน่งที่ส่งไป = ค่า Update.progress() ของ C3 (นับเฉพาะที่เขียนลงแฟลชครบ 4 KB)
+      // เฟิร์มแวร์ C3 รุ่นแรกเช็กกับค่านี้ · รุ่นใหม่รับได้ทั้งแบบนี้และแบบนับไบต์
+      var prog = 0, bufLen = 0;
       for (var off = 0; off < f.length; off += chunk) {
         if (_cancel) throw 'ยกเลิกแล้ว';
         if (_st == 3) throw 'C3: $_stMsg';
         final n = (f.length - off) < chunk ? f.length - off : chunk;
-        final p = _pkt(2, off, Uint8List.sublistView(f, off, off + n));
+        final p = _pkt(2, prog, Uint8List.sublistView(f, off, off + n));
         var sent = false;
         for (var t = 0; t < 3 && !sent; t++) {
           sent = await _w(p);
           if (!sent) await Future<void>.delayed(const Duration(milliseconds: 150));
         }
         if (!sent) throw 'ส่งไม่ผ่านที่ ${(off / 1024).round()} KB (สัญญาณหลุด?)';
+        // จำลองบัฟเฟอร์ 4 KB ของ Update ใน C3
+        var left = n;
+        while (bufLen + left > 4096) {
+          left -= 4096 - bufLen;
+          bufLen = 0;
+          prog += 4096;
+        }
+        bufLen += left;
+        if (bufLen == f.length - prog) {
+          prog += bufLen;
+          bufLen = 0;
+        }
         final ms = sw.elapsedMilliseconds;
         if (ms - lastUi > 250) {
           lastUi = ms;

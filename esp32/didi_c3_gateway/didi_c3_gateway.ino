@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.25c"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.25d"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -391,7 +391,7 @@ static volatile uint32_t dynoUntil = 0;
 static inline bool dynoOn() { return dynoUntil && (int32_t)(dynoUntil - millis()) > 0; }
 // ---- อัปเดตเฟิร์มแวร์ทาง BLE (แอปส่งไฟล์ .bin มาทีละ 160 ไบต์ แบบรอตอบรับ)
 static volatile bool otaOn = false, otaStNew = false, otaReboot = false;
-static volatile uint32_t otaLast = 0;
+static volatile uint32_t otaLast = 0, otaGot = 0;   // otaGot = ไบต์ที่รับแล้ว (Update.progress() นับเฉพาะที่เขียนลงแฟลชครบ 4 KB)
 static DidiNowOtaSt otaSt = {};
 static void otaStatus(uint8_t st, uint8_t err, const char* msg) {
   otaSt.magic = DIDINOW_MAGIC; otaSt.type = DN_OTAST; otaSt.state = st; otaSt.err = err;
@@ -420,15 +420,18 @@ static void otaCmd(const DidiNowOta* o, int n) {
       if (!Update.begin(size, U_FLASH)) { otaFail("begin"); break; }
       if (o->len == 32) { char md5[33]; memcpy(md5, o->data, 32); md5[32] = 0; Update.setMD5(md5); }
       otaOn = true;
+      otaGot = 0;
       Serial.printf("[ota] begin %u bytes\n", (unsigned)size);
       otaStatus(DN_OTAS_RECV, 0, "receiving");
       break;
     }
     case DN_OTA_DATA: {
       if (!otaOn) break;
-      if (o->off != Update.progress()) { otaFail("offset"); break; }
+      // ตำแหน่งต้องต่อจากที่รับแล้ว (แอปรุ่นแรกส่งค่าแบบ Update.progress() — รับได้ทั้งสองแบบ)
+      if (o->off != otaGot && o->off != Update.progress()) { otaFail("offset"); break; }
       if (o->len > DN_OTA_CHUNK || n < (int)offsetof(DidiNowOta, data) + o->len) { otaFail("short"); break; }
       if (Update.write((uint8_t*)o->data, o->len) != o->len) { otaFail("write"); break; }
+      otaGot += o->len;
       if ((Update.progress() & 0x3FFF) < o->len) otaStatus(DN_OTAS_RECV, 0, "receiving");   // ทุก 16 KB
       break;
     }
