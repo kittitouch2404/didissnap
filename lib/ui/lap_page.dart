@@ -11,6 +11,7 @@ import '../data/hub.dart';
 import '../data/laptimer.dart';
 import '../data/native.dart';
 import '../i18n.dart';
+import 'map_tiles.dart';
 import 'paint_utils.dart';
 
 const _mono = [FontFeature.tabularFigures()];
@@ -26,23 +27,32 @@ class TrackPainter extends CustomPainter {
     this.line,
     this.pos,
     this.tick = 0,
-  });
+    this.style = MapStyle.none,
+  }) : super(repaint: style.isNone ? null : TileCache.i);
   final List<LapPt> pts;
   final int from, to; // ช่วงที่ไฮไลต์ (index) — to < 0 = ไม่มี
   final LapLine? line;
   final (double, double)? pos; // ตำแหน่งปัจจุบัน
   final int tick;
+  final MapStyle style;
 
   static Color speedColor(double f) =>
       HSVColor.fromAHSV(1, (1 - f.clamp(0.0, 1.0)) * 230, 0.9, 1).toColor();
 
   @override
   void paint(Canvas c, Size size) {
-    if (pts.isEmpty && line == null) return;
-    final proj = pts.isNotEmpty ? GeoProj(pts.first.lat, pts.first.lon) : GeoProj(line!.lat, line!.lon);
-    final xy = [for (final p in pts) proj.xy(p.lat, p.lon)];
-    (Offset, Offset)? le = line?.ends(proj);
-    final pp = pos == null ? null : proj.xy(pos!.$1, pos!.$2);
+    if (pts.isEmpty && line == null && pos == null) return;
+    c.save();
+    c.clipRect(Offset.zero & size);
+    final xy = [for (final p in pts) merc(p.lat, p.lon)];
+    (Offset, Offset)? le;
+    if (line != null) {
+      final g = GeoProj(line!.lat, line!.lon);
+      final (a, b) = line!.ends(g);
+      Offset back(Offset m) => merc(line!.lat + m.dy / GeoProj.ky, line!.lon + m.dx / g.kx);
+      le = (back(a), back(b));
+    }
+    final pp = pos == null ? null : merc(pos!.$1, pos!.$2);
 
     // ขอบเขต
     var minX = double.infinity, minY = double.infinity, maxX = -double.infinity, maxY = -double.infinity;
@@ -61,13 +71,21 @@ class TrackPainter extends CustomPainter {
       inc(le.$2);
     }
     if (pp != null) inc(pp);
-    final w = math.max(maxX - minX, 60.0), h = math.max(maxY - minY, 60.0);
-    const pad = 14.0;
+    final refLat = pts.isNotEmpty ? pts.first.lat : (line?.lat ?? pos!.$1);
+    final minSpan = 250 / mercMeters(refLat); // อย่างน้อย 250 m ให้เห็นแผนที่รอบ ๆ
+    final w = math.max(maxX - minX, minSpan), h = math.max(maxY - minY, minSpan);
+    const pad = 18.0;
     final sc = math.min((size.width - pad * 2) / w, (size.height - pad * 2) / h);
-    final cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-    Offset sp(Offset o) => Offset(size.width / 2 + (o.dx - cx) * sc, size.height / 2 - (o.dy - cy) * sc);
+    final cen = Offset((minX + maxX) / 2, (minY + maxY) / 2);
+    Offset sp(Offset o) => Offset(size.width / 2 + (o.dx - cen.dx) * sc, size.height / 2 + (o.dy - cen.dy) * sc);
 
-    // เส้นทางทั้งหมด (เทา)
+    // แผนที่พื้นหลัง
+    if (!style.isNone) {
+      paintTiles(c, size, style, cen, sc);
+      c.drawRect(Offset.zero & size, Paint()..color = Colors.black.withAlpha(style.name == 'มืด' ? 0 : 70));
+    }
+
+    // เส้นทางทั้งหมด
     if (xy.length > 1) {
       final path = Path()..moveTo(sp(xy.first).dx, sp(xy.first).dy);
       var last = sp(xy.first);
@@ -77,13 +95,20 @@ class TrackPainter extends CustomPainter {
         path.lineTo(s.dx, s.dy);
         last = s;
       }
-      c.drawPath(
-          path,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2
-            ..strokeJoin = StrokeJoin.round
-            ..color = Colors.white24);
+      final st = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeJoin = StrokeJoin.round
+        ..strokeCap = StrokeCap.round;
+      if (!style.isNone) {
+        st
+          ..strokeWidth = 4
+          ..color = Colors.black54;
+        c.drawPath(path, st);
+      }
+      st
+        ..strokeWidth = 2
+        ..color = style.isNone ? Colors.white24 : Colors.white60;
+      c.drawPath(path, st);
     }
 
     // รอบที่ไฮไลต์: สีตามความเร็ว
@@ -97,8 +122,16 @@ class TrackPainter extends CustomPainter {
       final rng = math.max(hi - lo, 1.0);
       final pa = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 4
         ..strokeCap = StrokeCap.round;
+      if (!style.isNone) {
+        pa
+          ..strokeWidth = 7
+          ..color = Colors.black54;
+        for (var i = a; i < b; i++) {
+          c.drawLine(sp(xy[i]), sp(xy[i + 1]), pa);
+        }
+      }
+      pa.strokeWidth = 4;
       for (var i = a; i < b; i++) {
         pa.color = speedColor((pts[i].spd - lo) / rng);
         c.drawLine(sp(xy[i]), sp(xy[i + 1]), pa);
@@ -109,29 +142,79 @@ class TrackPainter extends CustomPainter {
     if (le != null) {
       final a = sp(le.$1), b = sp(le.$2);
       c.drawLine(a, b, Paint()
+        ..color = Colors.black
+        ..strokeWidth = 7
+        ..strokeCap = StrokeCap.round);
+      c.drawLine(a, b, Paint()
         ..color = Colors.white
         ..strokeWidth = 4
         ..strokeCap = StrokeCap.round);
       final mid = (a + b) / 2;
       final d = line!.dir;
-      final tip = mid + Offset(d.dx, -d.dy) * 16;
+      final tip = mid + Offset(d.dx, -d.dy) * 18;
       c.drawLine(mid, tip, Paint()
         ..color = kRed
         ..strokeWidth = 3);
-      c.drawCircle(tip, 3.5, Paint()..color = kRed);
+      c.drawCircle(tip, 4, Paint()..color = kRed);
     }
 
     // ตำแหน่งปัจจุบัน
     if (pp != null) {
       final s = sp(pp);
-      c.drawCircle(s, 9, Paint()..color = kBlue.withAlpha(90));
-      c.drawCircle(s, 5, Paint()..color = Colors.white);
+      c.drawCircle(s, 11, Paint()..color = kBlue.withAlpha(110));
+      c.drawCircle(s, 6, Paint()..color = Colors.white);
+      c.drawCircle(s, 4, Paint()..color = kBlue);
     }
+
+    // เครดิตแผนที่
+    if (!style.isNone) {
+      final tp = TextPainter(
+        text: TextSpan(text: style.attr, style: const TextStyle(fontSize: 9, color: Colors.white70)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final o = Offset(size.width - tp.width - 6, size.height - tp.height - 4);
+      c.drawRect(Rect.fromLTWH(o.dx - 3, o.dy - 1, tp.width + 6, tp.height + 2), Paint()..color = Colors.black54);
+      tp.paint(c, o);
+    }
+    c.restore();
   }
 
   @override
   bool shouldRepaint(TrackPainter o) =>
-      o.tick != tick || o.pts.length != pts.length || o.from != from || o.to != to || o.line != line || o.pos != pos;
+      o.tick != tick ||
+      o.pts.length != pts.length ||
+      o.from != from ||
+      o.to != to ||
+      o.line != line ||
+      o.pos != pos ||
+      o.style != style;
+}
+
+/// ปุ่มเลือกแผนที่ (มุมกรอบ)
+class MapStyleButton extends StatelessWidget {
+  const MapStyleButton({super.key, required this.value, required this.onChanged});
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<int>(
+        tooltip: 'แผนที่',
+        initialValue: value,
+        onSelected: onChanged,
+        itemBuilder: (_) => [
+          for (var i = 0; i < MapStyle.all.length; i++)
+            PopupMenuItem(value: i, child: Text(MapStyle.all[i].name)),
+        ],
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.layers, size: 16, color: Colors.white70),
+            const SizedBox(width: 4),
+            Text(MapStyle.of(value).name, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+          ]),
+        ),
+      );
 }
 
 // ======================================================================
@@ -297,7 +380,7 @@ class _LapViewState extends State<LapView> {
                 icon: const Icon(Icons.history, size: 18),
                 label: const Text('ประวัติ'),
                 onPressed: () => Navigator.of(context)
-                    .push(MaterialPageRoute<void>(builder: (_) => const LapHistoryPage())),
+                    .push(MaterialPageRoute<void>(builder: (_) => LapHistoryPage(mapStyle: widget.hub.settings.lapMap))),
               ),
             ]),
           ]),
@@ -315,20 +398,33 @@ class _LapViewState extends State<LapView> {
                   border: Border.all(color: const Color(0xFF262626)),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: s == null && lt.line == null && !lt.hasFix
-                    ? const Center(
-                        child: Text('เส้นทาง GPS จะขึ้นตรงนี้', style: TextStyle(color: Colors.white38)))
-                    : CustomPaint(
-                        size: Size.infinite,
-                        painter: TrackPainter(
-                          pts: s?.pts ?? const [],
-                          from: lt.curFrom,
-                          to: (s?.pts.length ?? 0) - 1,
-                          line: lt.line,
-                          pos: lt.hasFix ? (lt.lat!, lt.lon!) : null,
-                          tick: s?.pts.length ?? 0,
-                        ),
-                      ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(children: [
+                  Positioned.fill(
+                    child: s == null && lt.line == null && !lt.hasFix
+                        ? const Center(
+                            child: Text('เส้นทาง GPS จะขึ้นตรงนี้', style: TextStyle(color: Colors.white38)))
+                        : CustomPaint(
+                            painter: TrackPainter(
+                              pts: s?.pts ?? const [],
+                              from: lt.curFrom,
+                              to: (s?.pts.length ?? 0) - 1,
+                              line: lt.line,
+                              pos: lt.hasFix ? (lt.lat!, lt.lon!) : null,
+                              tick: s?.pts.length ?? 0,
+                              style: MapStyle.of(widget.hub.settings.lapMap),
+                            ),
+                          ),
+                  ),
+                  Positioned(
+                    top: 6,
+                    left: 6,
+                    child: MapStyleButton(
+                      value: widget.hub.settings.lapMap,
+                      onChanged: (v) => setState(() => widget.hub.settings.lapMap = v),
+                    ),
+                  ),
+                ]),
               ),
             ),
             const SizedBox(height: 6),
@@ -456,7 +552,8 @@ Future<String?> _ask(BuildContext context, String init) {
 //  ประวัติ session
 // ======================================================================
 class LapHistoryPage extends StatefulWidget {
-  const LapHistoryPage({super.key});
+  const LapHistoryPage({super.key, this.mapStyle = 1});
+  final int mapStyle;
   @override
   State<LapHistoryPage> createState() => _LapHistoryPageState();
 }
@@ -508,7 +605,7 @@ class _LapHistoryPageState extends State<LapHistoryPage> {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () async {
                         await Navigator.of(context)
-                            .push(MaterialPageRoute<void>(builder: (_) => LapSessionPage(file: f, s: s)));
+                            .push(MaterialPageRoute<void>(builder: (_) => LapSessionPage(file: f, s: s, mapStyle: widget.mapStyle)));
                         _load();
                       },
                     ),
@@ -521,7 +618,8 @@ class _LapHistoryPageState extends State<LapHistoryPage> {
 //  ดู session ย้อนหลัง: แผนที่ + ตารางรอบ + ส่งออก
 // ======================================================================
 class LapSessionPage extends StatefulWidget {
-  const LapSessionPage({super.key, required this.file, required this.s});
+  const LapSessionPage({super.key, required this.file, required this.s, this.mapStyle = 1});
+  final int mapStyle;
   final File file;
   final LapSession s;
   @override
@@ -530,6 +628,7 @@ class LapSessionPage extends StatefulWidget {
 
 class _LapSessionPageState extends State<LapSessionPage> {
   Lap? sel;
+  late int _map = widget.mapStyle;
 
   @override
   void initState() {
@@ -606,6 +705,7 @@ class _LapSessionPageState extends State<LapSessionPage> {
                 border: Border.all(color: const Color(0xFF262626)),
                 borderRadius: BorderRadius.circular(10),
               ),
+              clipBehavior: Clip.antiAlias,
               child: Stack(children: [
                 Positioned.fill(
                   child: CustomPaint(
@@ -614,8 +714,14 @@ class _LapSessionPageState extends State<LapSessionPage> {
                       from: sel?.i0 ?? 0,
                       to: sel?.i1 ?? (s.laps.isEmpty ? s.pts.length - 1 : -1),
                       line: s.line,
+                      style: MapStyle.of(_map),
                     ),
                   ),
+                ),
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: MapStyleButton(value: _map, onChanged: (v) => setState(() => _map = v)),
                 ),
                 Positioned(
                   left: 10,

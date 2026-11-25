@@ -90,6 +90,10 @@ class AppSettings extends ChangeNotifier {
   }
 
   // ---------- หน้าปัด ----------
+  /// แผนที่หน้าสนาม GPS: 0 ไม่มี · 1 มืด · 2 ถนน · 3 ดาวเทียม
+  int get lapMap => _i('lapMap', 1);
+  set lapMap(int v) => _setI('lapMap', v);
+
   int get maxRpm => _i('maxRpm', 8000);
   set maxRpm(int v) => _setI('maxRpm', v);
 
