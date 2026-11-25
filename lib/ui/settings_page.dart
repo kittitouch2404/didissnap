@@ -47,7 +47,7 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 10,
+      length: 11,
       child: Scaffold(
         appBar: AppBar(
           toolbarHeight: 40,
@@ -61,6 +61,7 @@ class SettingsPage extends StatelessWidget {
               Tab(height: 36, text: tr('บันทึก CSV')),
               Tab(height: 36, text: tr('รถ/สำรอง')),
               Tab(height: 36, text: tr('เกียร์')),
+              Tab(height: 36, text: tr('ปรับค่า')),
               Tab(height: 36, text: tr('รูปพื้นหลัง')),
               Tab(height: 36, text: tr('DTC')),
               Tab(height: 36, text: tr('เปิดอัตโนมัติ')),
@@ -75,6 +76,7 @@ class SettingsPage extends StatelessWidget {
           LogTab(settings: settings, hub: hub),
           ProfileTab(settings: settings),
           GearTab(settings: settings, hub: hub),
+          CalTab(settings: settings, hub: hub),
           PicturesTab(settings: settings, hub: hub),
           DtcTab(hub: hub),
           AutoStartTab(settings: settings),
@@ -275,7 +277,6 @@ class _ConnectionTabState extends State<ConnectionTab> {
             const _Hint(
                 'ให้จอแอนดรอยด์กับจอ CYD ต่อฮอตสปอตมือถือตัวเดียวกัน — แอปต่อ Vgate แล้วส่งค่าให้จอ CYD ราว 20 ครั้ง/วินาที\n'
                 'แอปทำงานเบื้องหลังต่อได้ (เปิดยูทูป/แผนที่ทับได้) — ปิด "ประหยัดแบตเตอรี่" ให้แอปนี้ในเมนู เปิดแอปอัตโนมัติ'),
-            if (s.source == SourceType.c3) _C3CalSection(hub: hub),
             if (s.source == SourceType.c3) _C3OtaSection(hub: hub),
             _CvtTempSection(s: s, hub: hub),
             _CustomPidSection(s: s, hub: hub),
@@ -2126,6 +2127,30 @@ class _PreviewDone extends StatelessWidget {
 }
 
 
+
+/// แท็บ "ปรับค่า" ในเมนูหน้าปัด — gain / offset ที่ C3
+class CalTab extends StatelessWidget {
+  const CalTab({super.key, required this.settings, required this.hub});
+  final AppSettings settings;
+  final DataHub hub;
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: settings,
+        builder: (context, _) => ListView(
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            if (settings.source == SourceType.c3)
+              _C3CalSection(hub: hub)
+            else ...[
+              const _Header('ปรับค่าให้ตรง (gain / offset)'),
+              const _Hint('ใช้ได้เมื่อเชื่อมต่อแบบ C3 (ESP32-C3 ผ่าน Bluetooth) — เลือกได้ที่เมนู การเชื่อมต่อ'),
+            ],
+          ],
+        ),
+      );
+}
+
 // ======================================================================
 //  ปรับค่า (gain / offset) ที่ C3 — มีผลกับทุกจอ (S3 / CYD / แอป)
 // ======================================================================
@@ -2153,31 +2178,46 @@ class _C3CalSection extends StatelessWidget {
           final gi = (cal.g[i] * 1000).round(), oi = (cal.o[i] * div).round();
           final u = C3Cal.units[i];
           final changed = gi != 1000 || oi != 0;
-          rows.add(Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-            child: Row(children: [
-              SizedBox(
-                width: 170,
-                child: Text(C3Cal.names[i],
-                    style: TextStyle(fontSize: 14, color: changed ? kGreen : null, fontWeight: changed ? FontWeight.w700 : null)),
-              ),
-              const Text('gain', style: TextStyle(fontSize: 12, color: Colors.white54)),
-              _mini(gi, 500, 2000, 5, (v) => cal.setGain(i, v / 1000), _pct),
-              const SizedBox(width: 12),
-              const Text('offset', style: TextStyle(fontSize: 12, color: Colors.white54)),
-              _mini(oi, -mx, mx, st, (v) => cal.setOfs(i, v / div),
-                  (v) => '${v >= 0 ? '+' : ''}${div == 1 ? v : (v / div).toStringAsFixed(1)} $u'),
-              if (changed)
-                IconButton(
+          final undo = changed
+              ? IconButton(
                   tooltip: 'คืนค่าเดิม',
                   icon: const Icon(Icons.undo, size: 20),
                   onPressed: () {
                     cal.g[i] = 1;
                     cal.setOfs(i, 0);
                   },
-                ),
-            ]),
-          ));
+                )
+              : const SizedBox(width: 40);
+          final name = Text(C3Cal.names[i],
+              style: TextStyle(fontSize: 15, color: changed ? kGreen : null, fontWeight: changed ? FontWeight.w700 : FontWeight.w600));
+          final gain = Row(mainAxisSize: MainAxisSize.min, children: [
+            const Text('gain', style: TextStyle(fontSize: 12, color: Colors.white54)),
+            _mini(gi, 500, 2000, 5, (v) => cal.setGain(i, v / 1000), _pct),
+          ]);
+          final ofs = Row(mainAxisSize: MainAxisSize.min, children: [
+            const Text('offset', style: TextStyle(fontSize: 12, color: Colors.white54)),
+            _mini(oi, -mx, mx, st, (v) => cal.setOfs(i, v / div),
+                (v) => '${v >= 0 ? '+' : ''}${div == 1 ? v : (v / div).toStringAsFixed(1)} $u'),
+          ]);
+          rows.add(LayoutBuilder(builder: (context, c) {
+            final wide = c.maxWidth >= 760;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              child: wide
+                  ? Row(children: [
+                      SizedBox(width: 190, child: name),
+                      gain,
+                      const SizedBox(width: 16),
+                      ofs,
+                      undo,
+                    ])
+                  : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Padding(padding: const EdgeInsets.only(top: 6), child: name),
+                      Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, children: [gain, ofs, undo]),
+                      const Divider(height: 8),
+                    ]),
+            );
+          }));
         }
         rows.add(Padding(
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),

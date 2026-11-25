@@ -77,7 +77,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
     ));
   }
 
-  /// หน้าที่มีหลายแท็บ (เช่น หน้าปัด | รูปพื้นหลัง | เกียร์)
+  /// หน้าที่มีหลายแท็บ (เช่น หน้าปัด | รูปพื้นหลัง | เกียร์ | ปรับค่า)
   void _openTabs(String title, List<(String, Widget Function())> tabs) {
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => AnimatedBuilder(
@@ -114,6 +114,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
         ('หน้าปัด', () => DisplayTab(settings: s, hub: hub)),
         ('รูปพื้นหลัง', () => PicturesTab(settings: s, hub: hub)),
         ('เกียร์', () => GearTab(settings: s, hub: hub)),
+        ('ปรับค่า', () => CalTab(settings: s, hub: hub)),
       ]);
 
   /// เมนู 09: อัปเดตแอป + ส่ง log ปัญหา
