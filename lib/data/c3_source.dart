@@ -81,7 +81,9 @@ class C3Source implements CarSource {
       case 3: // DN_DTC
         if (e.length >= 10) _complete(b.getUint16(8, Endian.little), e);
       case 6: // DN_GWINFO
-        _info = String.fromCharCodes(e.sublist(5).takeWhile((c) => c != 0));
+        final info = String.fromCharCodes(e.sublist(5).takeWhile((c) => c != 0));
+        if (info != _info) AppLog.i('C3: $info'); // เก็บทุกข้อความตรวจสาย (ดูย้อนหลังใน "ส่ง log ปัญหา")
+        _info = info;
       case 8: // DN_RAWRES
         if (e.length >= 8) _complete(b.getUint16(6, Endian.little), e);
       case 15: // DN_OTAST: สถานะอัปเดตเฟิร์มแวร์ / เวอร์ชัน

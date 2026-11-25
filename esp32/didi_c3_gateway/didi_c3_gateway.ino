@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.25d"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.25e"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -689,7 +689,12 @@ static void obdTask(void*) {
     if (demo) { handleRaw(); vTaskDelay(pdMS_TO_TICKS(100)); continue; }
     if (carLink != DN_LINK_OK) {
       if (connect()) { carLink = DN_LINK_OK; fails = 0; lastOk = millis(); rtcProto = proto; Serial.printf("[obd] connected: %s\n", DN_P_NAME[proto]); }
-      else { Serial.println("[obd] no car — retry"); vTaskDelay(pdMS_TO_TICKS(1500)); }
+      else {
+        // ไม่เจอรถ: โชว์ผลฝั่ง CAN ค้างไว้ 3 วิ (ข้อความ K-line วิ่งผ่านเร็ว ไม่บังสาเหตุฝั่ง CAN)
+        if (canDiag.length()) setDiag(canDiag.c_str());
+        Serial.println("[obd] no car — retry");
+        vTaskDelay(pdMS_TO_TICKS(3000));
+      }
       continue;
     }
     if (pendCmd == DN_CMD_DTC_READ || pendCmd == DN_CMD_DTC_CLEAR) { handleCmd(); continue; }
