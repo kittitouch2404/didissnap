@@ -357,12 +357,11 @@ class C3Source implements CarSource {
     final out = <Uint8List>[];
     for (var k = 0; k < 4; k++) {
       final c = s.customPid(k);
-      final h = CustomPid.cleanHex(c.hdr);
-      out.add(_custPkt(k, c.valid, h.length == 3 && h != '7DF' ? int.parse(h, radix: 16) : 0, c.cmd, c.dec, c.lo, c.hi,
+      out.add(_custPkt(k, c.valid, encodeHdr(c.hdr) ?? 0, c.cmd, c.dec, c.lo, c.hi,
           c.label, c.unit, c.formula));
     }
-    final h = s.cvtHdr;
-    out.add(_custPkt(4, s.cvtTempOn && s.cvtReq.length >= 4, h.length == 3 ? int.parse(h, radix: 16) : 0, s.cvtReq, 0, 40,
+    final h = encodeHdr(s.cvtHdr);
+    out.add(_custPkt(4, s.cvtTempOn && s.cvtReq.length >= 4 && h != null, h ?? 0, s.cvtReq, 0, 40,
         120, 'CVT TEMP', 'C', _cvtFml(s.cvtFml, s.cvtByte)));
     return out;
   }

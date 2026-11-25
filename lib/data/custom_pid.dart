@@ -36,6 +36,17 @@ class CustomPid {
   static String cleanHex(String s) => s.toUpperCase().replaceAll(RegExp(r'[^0-9A-F]'), '');
 }
 
+/// header ที่พิมพ์ → ค่า 16 บิตที่ส่งให้ C3
+/// '' / 7DF = 0 (ถามเครื่องยนต์ปกติ) · 3 หลัก = CAN 11 บิต เช่น 7E1
+/// 8 หลัก 18DAxxF1 = CAN 29 บิต (Honda HDS / ISO) → 0xF0xx · อื่น ๆ = null (ใช้ไม่ได้)
+int? encodeHdr(String h) {
+  h = CustomPid.cleanHex(h);
+  if (h.isEmpty || h == '7DF') return 0;
+  if (h.length == 3) return int.parse(h, radix: 16);
+  if (h.length == 8 && h.startsWith('18DA') && h.endsWith('F1')) return 0xF000 | int.parse(h.substring(4, 6), radix: 16);
+  return null;
+}
+
 /// คิดสูตรแบบ Torque  คืน null ถ้าสูตรผิดหรือไบต์ไม่พอ
 double? evalFormula(String f, List<int> b) {
   try {

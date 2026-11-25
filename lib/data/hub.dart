@@ -186,6 +186,19 @@ class DataHub extends ChangeNotifier {
     }
   }
 
+  /// ถามกล่องที่เลือกเอง (header 16 บิตแบบ encodeHdr) — ตอนนี้ทำได้เฉพาะ C3 · null = ทำไม่ได้
+  Future<String?> rawHdr(int hdr, String hex) async {
+    final s = _src;
+    if (s is! C3Source || state != LinkState.connected) return null;
+    try {
+      return await s.raw(hdr, hex);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool get canRawHdr => _src is C3Source;
+
   Future<String?> obdRaw(String hex) async {
     final s = _src;
     if (s == null || state != LinkState.connected) return null;

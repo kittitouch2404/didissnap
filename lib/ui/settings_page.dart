@@ -28,6 +28,7 @@ import '../data/app_log.dart';
 import 'help_page.dart';
 import '../settings.dart';
 import 'esp32_pics_ui.dart';
+import 'cvt_scan_page.dart';
 import 'paint_utils.dart';
 
 part 'settings_more.dart';
@@ -1751,6 +1752,7 @@ class _CvtTempSection extends StatefulWidget {
 
 class _CvtTempSectionState extends State<_CvtTempSection> {
   Timer? _t;
+  int _gen = 0;
   @override
   void initState() {
     super.initState();
@@ -1782,15 +1784,34 @@ class _CvtTempSectionState extends State<_CvtTempSection> {
         value: s.cvtTempOn,
         onChanged: (v) => s.cvtTempOn = v,
       ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.tonalIcon(
+            icon: const Icon(Icons.search),
+            label: const Text('ค้นหาค่า CVT อัตโนมัติ (สแกนกล่องเกียร์)'),
+            onPressed: () => Navigator.of(context)
+                .push(MaterialPageRoute<void>(builder: (_) => CvtScanPage(hub: widget.hub)))
+                .then((_) {
+              if (mounted) setState(() => _gen++); // โหลดช่อง header/คำสั่งใหม่ (ถ้าเลือกจากหน้าสแกน)
+            }),
+          ),
+        ),
+      ),
       if (s.cvtTempOn) ...[
         Padding(
+          key: ValueKey('cvt-$_gen'),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           child: Row(children: [
             SizedBox(
-              width: 110,
+              width: 150,
               child: TextFormField(
                 initialValue: s.cvtHdr,
-                decoration: const InputDecoration(labelText: 'Header', hintText: '7E1'),
+                decoration: InputDecoration(
+                    labelText: 'Header',
+                    hintText: '7E1 / 18DA1EF1',
+                    errorText: encodeHdr(s.cvtHdr) == null ? tr('ใช้ 3 หลัก หรือ 18DAxxF1') : null),
                 textCapitalization: TextCapitalization.characters,
                 onChanged: (v) => s.cvtHdr = v,
               ),
@@ -1825,7 +1846,7 @@ class _CvtTempSectionState extends State<_CvtTempSection> {
           subtitle: SelectableText(d.cvtRaw.isEmpty ? tr('(ยังไม่มี — ต่อ OBD ติดก่อน)') : d.cvtRaw,
               style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
         ),
-        const _Hint('ทดลอง: ใช้ได้เฉพาะรถ CAN (Jazz GK) — แอปจะสลับไปถามกล่องเกียร์ราว 1-2 วินาทีครั้ง แล้วกลับมาถามเครื่องยนต์\n'
+        const _Hint('ทดลอง: ใช้ได้เฉพาะรถ CAN (GE / GK / FC / FK ฯลฯ) — Honda รุ่นใหม่ กล่องเกียร์มักอยู่ที่ 18DA1EF1 (29 บิต ใช้ได้กับ C3)\n'
             'Honda ไม่เปิดเผย PID นี้ ต้องลองเอง: ถ้าคำตอบขึ้น 7F ... = กล่องไม่รองรับคำสั่งนั้น, NO DATA = ไม่มีใครตอบ\n'
             'ค่าที่ได้ส่งต่อให้จอ CYD ด้วย (เลือก CVT TEMP ในช่องขวาของหน้า GIF)'),
       ],
@@ -2053,7 +2074,7 @@ class _CustomPidSectionState extends State<_CustomPidSection> {
                 tf(unit, 'หน่วย', hint: '°C', w: 70),
               ]),
               Row(children: [
-                tf(hdr, 'Header', hint: '7DF', caps: true, w: 80),
+                tf(hdr, 'Header', hint: '7DF', caps: true, w: 120),
                 const SizedBox(width: 12),
                 Expanded(child: tf(cmd, 'คำสั่ง (hex)', hint: '015C / 221234 / 2101', caps: true)),
               ]),

@@ -87,12 +87,9 @@ String _hdr(String h) {
   final c = CustomPid.cleanHex(h);
   if (c.isEmpty) return '';
   if (c.length == 3) return c;
-  // header แบบ 29 บิต DAxxF1 -> 7E0 / 7E1 (เครื่อง 0x10, เกียร์ 0x18)
+  // header แบบ 29 บิต DAxxF1 (ไฟล์ Torque ของ Honda ใช้บ่อย เช่น DA1EF1 = กล่องเกียร์) -> 18DAxxF1 (C3 ส่งแบบ 29 บิต)
   final m = RegExp(r'^(?:18)?DA([0-9A-F]{2})F1$').firstMatch(c);
-  if (m != null) {
-    final a = int.parse(m[1]!, radix: 16);
-    if (a >= 0x10 && a <= 0x48 && (a - 0x10) % 8 == 0) return (0x7E0 + (a - 0x10) ~/ 8).toRadixString(16).toUpperCase();
-  }
+  if (m != null) return '18DA${m[1]}F1';
   return '?$c';
 }
 

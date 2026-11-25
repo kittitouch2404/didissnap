@@ -12,7 +12,7 @@ static bool ext = false;           // true = CAN ID 29 บิต (ถามท�
 
 // ID ที่ใช้ถามทุกกล่อง / ถามตรงกล่องที่ตอบมาด้วย rx / เป็นคำตอบ OBD ไหม
 inline uint32_t funcId() { return ext ? 0x18DB33F1 : 0x7DF; }
-inline uint32_t physOf(uint32_t rx) { return ext ? (0x18DA00F1 | ((rx & 0xFF) << 8)) : rx - 8; }
+inline uint32_t physOf(uint32_t rx) { return rx > 0x7FF ? (0x18DA00F1 | ((rx & 0xFF) << 8)) : rx - 8; }
 inline uint32_t defTx() { return physical ? physOf(ecuRx) : funcId(); }
 inline bool isResp(const twai_message_t& m) {
   return ext ? (m.extd && (m.identifier & 0xFFFFFF00) == 0x18DAF100) : (!m.extd && m.identifier >= 0x7E8 && m.identifier <= 0x7EF);

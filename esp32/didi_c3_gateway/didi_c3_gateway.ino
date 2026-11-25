@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.25g"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.25h"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -602,6 +602,8 @@ static void sendDtc(uint8_t cmd, uint16_t id, bool ok, char codes[16][6], int n)
   for (int i = 0; i < n && i < 16; i++) { strlcpy(r.codes[i], codes[i], 6); r.n++; }
   for (int k = 0; k < 3; k++) { tx(&r, sizeof(r)); delay(20); }
 }
+// header จากแอป (16 บิต): 0x000-0x7FF = CAN 11 บิต · 0xF0xx = Honda/ISO 29 บิต 18DA xx F1 (xx = กล่อง เช่น 1E เกียร์, 10 เครื่อง)
+static uint32_t hdrOf(uint16_t h) { return (h & 0xFF00) == 0xF000 ? (0x18DA00F1UL | ((uint32_t)(h & 0xFF) << 8)) : h; }
 // ถาม Custom PID ช่องถัดไปที่ถึงคิว แล้วคิดสูตร
 // ช่องที่ไม่มีใครตอบ / ตอบปฏิเสธ (7F) → เว้นระยะถามนานขึ้นเรื่อย ๆ (สูงสุด 10 วิ) ไม่ให้ค่าหลัก (รอบ/ความเร็ว) ช้าลง
 static void pollCust() {
@@ -618,7 +620,7 @@ static void pollCust() {
     DidiNowCustRaw r = {};
     r.magic = DIDINOW_MAGIC; r.type = DN_CUSTRAW; r.slot = i;
     if (dnIsCan(proto)) {
-      uint32_t to = c.hdr ? c.hdr : canobd::defTx();
+      uint32_t to = c.hdr ? hdrOf(c.hdr) : canobd::defTx();
       r.n = canobd::requestTo(to, c.data, c.len, r.data, sizeof(r.data), 150);
     } else if (c.hdr && c.hdr != 0x7DF && c.hdr != 0x7E0) {
       r.n = -2;
@@ -657,7 +659,7 @@ static void handleRaw() {
   } else if (carLink != DN_LINK_OK) {
     r.n = -1;
   } else if (dnIsCan(proto)) {
-    uint32_t to = q.hdr ? q.hdr : canobd::defTx();
+    uint32_t to = q.hdr ? hdrOf(q.hdr) : canobd::defTx();
     r.n = canobd::requestTo(to, q.data, len, r.data, sizeof(r.data), 300);
   } else if (q.hdr && q.hdr != 0x7DF && q.hdr != 0x7E0) {
     r.n = -2;                                            // K-line: ถามกล่องอื่นไม่ได้
