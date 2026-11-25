@@ -1,0 +1,56 @@
+name: Build C3 firmware
+
+# บิลด์เฟิร์มแวร์ ESP32-C3 (didi_c3_gateway) เป็นไฟล์ .bin สำหรับอัปเดตผ่านแอป (OTA) — ไม่ต้องใช้คอม
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'esp32/didi_c3_gateway/**'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Core + libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.2.0
+          arduino-cli lib install "NimBLE-Arduino@2.5.2"
+
+      - name: Compile
+        run: |
+          arduino-cli compile \
+            --fqbn "esp32:esp32:esp32c3:CDCOnBoot=cdc,PartitionScheme=default,FlashMode=dio" \
+            --output-dir out esp32/didi_c3_gateway
+          ls -la out
+          cp out/didi_c3_gateway.ino.bin didi_c3_gateway.bin
+          cp out/didi_c3_gateway.ino.merged.bin didi_c3_gateway_full_usb.bin || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: didi_c3_gateway
+          path: |
+            didi_c3_gateway.bin
+            didi_c3_gateway_full_usb.bin
+
+      - name: Publish (release c3-latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: c3-latest
+          name: C3 firmware (latest)
+          body: |
+            didi_c3_gateway.bin = อัปเดตผ่านแอป (ตั้งค่า → การเชื่อมต่อ → อัปเดตเฟิร์มแวร์ C3)
+            didi_c3_gateway_full_usb.bin = แฟลชผ่าน USB ทั้งชิป (ที่ตำแหน่ง 0x0) ไม่ใช้กับแอป
+          files: |
+            didi_c3_gateway.bin
+            didi_c3_gateway_full_usb.bin
+          make_latest: false
