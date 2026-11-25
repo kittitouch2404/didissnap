@@ -269,8 +269,11 @@ class C3Source implements CarSource {
 
   // ---------------- Custom PID / CVT TEMP: C3 ถามเอง
   String _cfgSig = '';
+  Timer? _cfgDeb;
   void _cfgChanged() {
-    _sendCfg();
+    // พิมพ์ header/คำสั่งทีละตัว → รอให้หยุดพิมพ์ก่อนค่อยส่ง (ไม่ยิง BLE ทุกตัวอักษร)
+    _cfgDeb?.cancel();
+    _cfgDeb = Timer(const Duration(milliseconds: 600), _sendCfg);
     _speedPush();
   }
 
@@ -455,6 +458,7 @@ class C3Source implements CarSource {
     _hub?.c3ota.onLink(false);
     _watch?.cancel();
     _cust?.cancel();
+    _cfgDeb?.cancel();
     _pidT?.cancel();
     await _sub?.cancel();
     _sub = null;

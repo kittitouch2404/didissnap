@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.25f"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.25g"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -368,6 +368,8 @@ static DidiNowCustSet cust[DN_NCUST] = {};
 static volatile float custV[DN_NCUST];
 static volatile uint32_t custT[DN_NCUST];
 static DidiNowCustRaw custRaw[DN_NCUST];
+static uint32_t custNext[DN_NCUST];   // เวลาที่จะถามช่องนี้ครั้งถัดไป
+static uint8_t custBad[DN_NCUST];     // ไม่ได้คำตอบติดกันกี่ครั้ง
 static volatile uint8_t custDirty = 0, custRawNew = 0;   // บิต = ช่องที่ต้องบันทึก / มีคำตอบดิบใหม่
 static portMUX_TYPE custMux = portMUX_INITIALIZER_UNLOCKED;
 static void custLoad() {
@@ -500,6 +502,8 @@ static void gotCmd(const uint8_t* d, int n) {
       memcpy(&cust[cs->slot], cs, sizeof(DidiNowCustSet));
       cust[cs->slot].fml[sizeof(cs->fml) - 1] = 0; cust[cs->slot].name[11] = 0; cust[cs->slot].unit[5] = 0;
       custT[cs->slot] = 0;
+      custBad[cs->slot] = 0;
+      custNext[cs->slot] = 0;
       custDirty |= 1 << cs->slot;
     }
     portEXIT_CRITICAL(&custMux);
@@ -598,30 +602,41 @@ static void sendDtc(uint8_t cmd, uint16_t id, bool ok, char codes[16][6], int n)
   for (int i = 0; i < n && i < 16; i++) { strlcpy(r.codes[i], codes[i], 6); r.n++; }
   for (int k = 0; k < 3; k++) { tx(&r, sizeof(r)); delay(20); }
 }
-// ถาม Custom PID ช่องถัดไปที่เปิดอยู่ (วนทีละช่อง) แล้วคิดสูตร
+// ถาม Custom PID ช่องถัดไปที่ถึงคิว แล้วคิดสูตร
+// ช่องที่ไม่มีใครตอบ / ตอบปฏิเสธ (7F) → เว้นระยะถามนานขึ้นเรื่อย ๆ (สูงสุด 10 วิ) ไม่ให้ค่าหลัก (รอบ/ความเร็ว) ช้าลง
 static void pollCust() {
   static int ci = 0;
+  uint32_t now = millis();
   for (int g = 0; g < DN_NCUST; g++) {
     int i = ci;
     ci = (ci + 1) % DN_NCUST;
     DidiNowCustSet c;
     portENTER_CRITICAL(&custMux); c = cust[i]; portEXIT_CRITICAL(&custMux);
-    if (!c.on || c.len < 1 || c.len > 7) continue;
+    if (!c.on || c.len < 1 || c.len > 7) { custBad[i] = 0; custNext[i] = 0; continue; }
+    if (custT[i] == 0 && custBad[i] == 0) custNext[i] = 0;          // เพิ่งตั้งค่าใหม่ → ถามทันที
+    if ((int32_t)(now - custNext[i]) < 0) continue;
     DidiNowCustRaw r = {};
     r.magic = DIDINOW_MAGIC; r.type = DN_CUSTRAW; r.slot = i;
     if (dnIsCan(proto)) {
       uint32_t to = c.hdr ? c.hdr : canobd::defTx();
-      r.n = canobd::requestTo(to, c.data, c.len, r.data, sizeof(r.data), 250);
+      r.n = canobd::requestTo(to, c.data, c.len, r.data, sizeof(r.data), 150);
     } else if (c.hdr && c.hdr != 0x7DF && c.hdr != 0x7E0) {
       r.n = -2;
     } else {
-      r.n = ask(c.data, c.len, r.data, sizeof(r.data), 300, true);
+      r.n = ask(c.data, c.len, r.data, sizeof(r.data), 250, true);
     }
     if (r.n < -2) r.n = -1;
+    bool ok = false;
     // ข้อมูล = หลัง SID+0x40 และ echo ของคำสั่ง (เหมือน parseUds ในแอป)
     if (r.n > c.len && r.data[0] == (uint8_t)(c.data[0] + 0x40) && !memcmp(r.data + 1, c.data + 1, c.len - 1)) {
       float v;
-      if (custeval::eval(c.fml, r.data + c.len, r.n - c.len, &v)) { custV[i] = v; custT[i] = millis(); }
+      if (custeval::eval(c.fml, r.data + c.len, r.n - c.len, &v)) { custV[i] = v; custT[i] = millis(); ok = true; }
+    }
+    if (ok) { custBad[i] = 0; custNext[i] = millis() + (i == 4 ? 900 : 400); }
+    else {
+      if (custBad[i] < 20) custBad[i]++;
+      uint32_t wait = r.n == -2 ? 10000 : min<uint32_t>(10000, 600UL * custBad[i] * custBad[i]);
+      custNext[i] = millis() + wait;
     }
     custRaw[i] = r;
     custRawNew |= 1 << i;

@@ -91,11 +91,11 @@ inline int request(const uint8_t* req, int rl, uint8_t* resp, int maxLen, uint32
   uint8_t d[8] = {(uint8_t)rl, 0, 0, 0, 0, 0, 0, 0};
   memcpy(d + 1, req, rl);
   if (!sendFrame(defTx(), d)) return -1;
-  uint32_t t0 = millis();
+  uint32_t t0 = millis(), tStart = t0;
   int total = -1, got = 0;
   uint32_t from = 0;
   twai_message_t m;
-  while (millis() - t0 < timeoutMs) {
+  while (millis() - t0 < timeoutMs && millis() - tStart < timeoutMs + 800) {   // "รอสักครู่" (7F..78) ต่อเวลาได้ไม่เกิน 0.8 วิ
     if (twai_receive(&m, pdMS_TO_TICKS(10)) != ESP_OK) continue;
     if (!isResp(m) || m.data_length_code < 2) continue;
     if (from && m.identifier != from) continue;
@@ -142,11 +142,11 @@ inline int requestTo(uint32_t tx, const uint8_t* req, int rl, uint8_t* resp, int
   if (!sendFrame(tx, d)) return -1;
   // ถามตรงกล่อง → รอคำตอบจาก ID คู่กัน (11 บิต: +8 · 29 บิต: 18DAF1xx) · ถามทุกกล่อง → รับจากกล่องไหนก็ได้
   uint32_t want = tx == funcId() ? 0 : (tx > 0x7FF ? (0x18DAF100 | ((tx >> 8) & 0xFF)) : tx + 8);
-  uint32_t t0 = millis();
+  uint32_t t0 = millis(), tStart = t0;
   int total = -1, got = 0;
   uint32_t from = 0;
   twai_message_t m;
-  while (millis() - t0 < timeoutMs) {
+  while (millis() - t0 < timeoutMs && millis() - tStart < timeoutMs + 800) {
     if (twai_receive(&m, pdMS_TO_TICKS(10)) != ESP_OK) continue;
     if (m.data_length_code < 2) continue;
     if (want ? m.identifier != want : !isResp(m)) continue;
