@@ -54,9 +54,12 @@ class MainActivity : FlutterActivity() {
                 "launchReason" -> result.success(intent?.getStringExtra("autoStartReason"))
                 "c3Start" -> {
                     if (c3 == null) c3 = C3Ble(this, { b -> c3Sink?.success(b) }, { st -> c3Sink?.success(st) })
+                    c3?.pairAddr = call.argument<String>("addr")?.takeIf { it.isNotEmpty() }
                     c3?.start()
                     result.success(true)
                 }
+                "c3Reject" -> { c3?.reject(); result.success(true) }
+                "c3SetPair" -> { c3?.setPair(call.argument<String>("addr")?.takeIf { it.isNotEmpty() }); result.success(true) }
                 "c3Stop" -> {
                     c3?.stop()
                     result.success(true)

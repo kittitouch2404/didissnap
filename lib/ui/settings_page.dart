@@ -278,6 +278,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
             const _Hint(
                 'ให้จอแอนดรอยด์กับจอ CYD ต่อฮอตสปอตมือถือตัวเดียวกัน — แอปต่อ Vgate แล้วส่งค่าให้จอ CYD ราว 20 ครั้ง/วินาที\n'
                 'แอปทำงานเบื้องหลังต่อได้ (เปิดยูทูป/แผนที่ทับได้) — ปิด "ประหยัดแบตเตอรี่" ให้แอปนี้ในเมนู เปิดแอปอัตโนมัติ'),
+            if (s.source == SourceType.c3) _C3PairSection(hub: hub),
             if (s.source == SourceType.c3) _C3OtaSection(hub: hub),
             _CvtTempSection(s: s, hub: hub),
             _CustomPidSection(s: s, hub: hub),
@@ -2350,6 +2351,114 @@ class _C3CalSection extends StatelessWidget {
       ]);
 }
 
+
+// ======================================================================
+//  จับคู่ C3 (กันต่อผิดคันตอนจอดรวมกัน)
+// ======================================================================
+class _C3PairSection extends StatefulWidget {
+  const _C3PairSection({required this.hub});
+  final DataHub hub;
+  @override
+  State<_C3PairSection> createState() => _C3PairSectionState();
+}
+
+class _C3PairSectionState extends State<_C3PairSection> {
+  Timer? _t;
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  Future<bool> _confirm(String title, String body) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text(title),
+          content: Text(body),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('ยกเลิก')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('ตกลง')),
+          ],
+        ),
+      ) ??
+      false;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.hub.c3pair;
+    final s = widget.hub.settings;
+    final left = p.openLeft;
+    final String line1 = !p.paired
+        ? 'ยังไม่จับคู่ — แอปจะเลือก C3 ที่รอจับคู่ สัญญาณแรงสุด (ในรถเรา)'
+        : 'จับคู่กับ ${s.c3PairName.isEmpty ? s.c3PairAddr : s.c3PairName}${p.connected ? ' · ต่ออยู่' : ''}';
+    final String line2 = p.legacy
+        ? 'C3 เฟิร์มแวร์เก่า ยังไม่มีระบบจับคู่ — อัปเดต C3 ด้านล่าง'
+        : p.connected
+            ? 'จอที่จับคู่ ${p.screens.length} จอ: ${p.screens.join(', ')}'
+                '${left < 0 ? ' · รอจับคู่ตลอด (ยังไม่มีจอจับคู่)' : left > 0 ? ' · เปิดรับจอใหม่อีก $left วิ' : ''}'
+            : '';
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const _Header('จับคู่ C3 (หลายคันจอดรวมกันไม่ต่อผิดคัน)'),
+      ListTile(
+        dense: true,
+        leading: Icon(p.paired ? Icons.link : Icons.link_off, color: p.paired ? kGreen : kAmber),
+        title: Text(line1),
+        subtitle: line2.isEmpty ? null : Text(line2),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+        child: Wrap(spacing: 8, runSpacing: 6, children: [
+          FilledButton.tonalIcon(
+            icon: const Icon(Icons.add_link),
+            label: const Text('เพิ่มจอใหม่ (เปิดรับ 3 นาที)'),
+            onPressed: !p.connected || p.legacy
+                ? null
+                : () async {
+                    final ok = await p.openPairing();
+                    if (context.mounted) {
+                      _snack(context, ok ? 'C3 เปิดรับจอใหม่ 3 นาที — เปิดจอ S3 / CYD / มือถืออีกเครื่องได้เลย' : 'ส่งคำสั่งไม่ได้');
+                    }
+                  },
+          ),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.link_off),
+            label: const Text('ลืม C3 นี้'),
+            onPressed: !p.paired
+                ? null
+                : () async {
+                    if (!await _confirm('ลืม C3 นี้?',
+                        'แอปจะหา C3 ตัวใหม่ที่รอจับคู่\n(ถอดเสียบ C3 ใหม่ = รอจับคู่ 2 นาที)')) return;
+                    await p.forget();
+                  },
+          ),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.phonelink_erase),
+            label: const Text('ล้างจออื่นทั้งหมด'),
+            onPressed: !p.connected || p.legacy
+                ? null
+                : () async {
+                    if (!await _confirm('ล้างจออื่นที่จับคู่กับ C3?',
+                        'จอ S3 / CYD / มือถืออื่นต้องจับคู่ใหม่ (เหลือแอปนี้เครื่องเดียว)\nใช้ตอนขาย/ย้ายจอ หรือมีจอแปลกปลอม')) return;
+                    final ok = await p.clearOthers();
+                    if (context.mounted) _snack(context, ok ? 'ล้างแล้ว' : 'ส่งคำสั่งไม่ได้');
+                  },
+          ),
+        ]),
+      ),
+      const _Hint('C3 จะส่งค่า/รับคำสั่งเฉพาะจอที่จับคู่แล้ว · จับคู่จอใหม่ได้เมื่อ: ยังไม่เคยจับคู่ใคร / 2 นาทีแรกหลังเสียบ C3 / '
+          'กด "เพิ่มจอใหม่" / กดปุ่ม BOOT ที่ C3 ค้าง 6 วิ (ไฟกะพริบคู่ = รอจับคู่)'),
+    ]);
+  }
+}
 
 // ======================================================================
 //  อัปเดตเฟิร์มแวร์ C3 ทาง Bluetooth

@@ -155,6 +155,15 @@ static void onObdForget() {
   obdble::forget();
   menu::toast("OBD FORGOTTEN");
 }
+static void onC3Pair() {
+  if (!c3link::connected()) { menu::toast("C3 NOT CONNECTED"); return; }
+  c3link::openPairing();
+  menu::toast("C3 PAIRING OPEN 3 MIN");
+}
+static void onC3Forget() {
+  c3link::forgetC3();
+  menu::toast("C3 FORGOTTEN - SEARCHING");
+}
 static bool gwOnly = false;   // ค่ารถมาจาก C3 (Super Mini ที่ช่อง OBD) ทาง ESP-NOW
 static const char* obdStatus() { return gwOnly ? didinow::gwStatus() : obdOn ? obdble::status() : "off"; }
 static void onLcdMode(int m) {
@@ -349,6 +358,8 @@ void setup() {
   menu::obdMode = prefs.getInt("obdBle", 1) & 3;   // 0 ปิด · 1 BLE · 2 C3 · 3 C3 จำลอง
   menu::onObd = onObd;
   menu::onObdForget = onObdForget;
+  menu::onC3Pair = onC3Pair;
+  menu::onC3Forget = onC3Forget;
   menu::obdStatus = obdStatus;
   menu::dtcStart = [](int c) { return gwOnly ? didinow::gwStartDtc(c) : (obdOn && obdble::startDtc(c)); };
   menu::dtcPoll = [](char* b, size_t n) { return gwOnly ? didinow::gwPollDtc(b, n) : obdOn ? obdble::pollDtc(b, n) : 0; };

@@ -42,6 +42,8 @@ static const Item L_OBD[] = {
     {"READ DTC", nullptr, 0, 0, 0, "Read stored fault codes from the car"},
     {"CLEAR DTC", nullptr, 0, 0, 0, "Erase fault codes (engine OFF, key ON)"},
     {"FORGET ADAPTER", nullptr, 0, 0, 0, "Forget the saved adapter and search again"},
+    {"PAIR NEW SCREEN", nullptr, 0, 0, 0, "C3 lets a new screen / phone pair for 3 min"},
+    {"FORGET C3", nullptr, 0, 0, 0, "Unpair, then pair with the C3 in pairing mode"},
     {"BACK", nullptr, 0, 0, 0, "Back to the menu"},
 };
 static const Item L_CAR[] = {
@@ -121,10 +123,13 @@ static void (*onPerfOpt)() = nullptr;
 static bool (*dtcStart)(int) = nullptr;
 static int (*dtcPoll)(char*, size_t) = nullptr;
 static bool obdLive = false;                    // ได้ค่าจากรถอยู่ (ตั้งจาก main ทุกเฟรม)
+static uint32_t c3Arm = 0;
 static uint32_t clearArm = 0;                   // กด CLEAR DTC ครั้งแรก = เตรียม, ครั้งที่สองใน 3 วิ = ลบจริง
 static int obdMode = 1;                        // 1 = ต่อตัวอ่าน OBD แบบ BLE (มีผลหลังรีสตาร์ท)
 static void (*onObd)(int) = nullptr;
 static void (*onObdForget)() = nullptr;
+static void (*onC3Pair)() = nullptr;
+static void (*onC3Forget)() = nullptr;
 static const char* (*obdStatus)() = nullptr;   // ปุ่ม 2 ค้างตอนอยู่หน้าปกติ (หน้า Record = ARM/STOP)
 
 static char toastMsg[32] = "";
@@ -414,6 +419,11 @@ inline void button(int b, bool lng) {
   else if (!strcmp(it.label, "PEAK RESET")) { if (onPeaks) onPeaks(); toast("PEAK RESET"); }
   else if (!strcmp(it.label, "TRIP RESET")) { if (onTrip) onTrip(); toast("TRIP RESET"); }
   else if (!strcmp(it.label, "FORGET ADAPTER")) { if (onObdForget) onObdForget(); }
+  else if (!strcmp(it.label, "PAIR NEW SCREEN")) { if (onC3Pair) onC3Pair(); }
+  else if (!strcmp(it.label, "FORGET C3")) {
+    if (!c3Arm || millis() - c3Arm > 3000) { c3Arm = millis(); toast("HOLD AGAIN TO FORGET C3"); }
+    else { c3Arm = 0; if (onC3Forget) onC3Forget(); }
+  }
   else if (!strcmp(it.label, "READ DTC")) { if (!dtcStart || !dtcStart(1)) toast("OBD NOT CONNECTED"); }
   else if (!strcmp(it.label, "CLEAR DTC")) {
     if (!clearArm || millis() - clearArm > 3000) { clearArm = millis(); toast("HOLD AGAIN TO CLEAR"); }

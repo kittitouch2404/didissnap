@@ -245,7 +245,13 @@ inline void gwLoop() {
 inline const char* gwStatus() {
   static char b[72];
   static const char* const AM[] = {"", "  AFR wide", "  O2 narrow", "  AFR cmd"};
-  if (!gwHeard()) return strncmp(gwInfo, "sleep", 5) ? (c3link::connected() ? "C3 BLE: waiting data" : "C3 BLE: searching...") : "C3 asleep - start engine to wake";
+  if (!gwHeard()) {
+    if (!strncmp(gwInfo, "sleep", 5)) return "C3 asleep - start engine to wake";
+    if (c3link::connected()) return "C3 BLE: waiting data";
+    static char b[48];
+    snprintf(b, sizeof(b), "C3: %s", *c3pair::msg ? c3pair::msg : "searching...");
+    return b;
+  }
   uint8_t p = gwPkt.proto < DN_P_COUNT ? gwPkt.proto : 0;
   if (gwPkt.link == DN_LINK_DEMO) return "C3 DEMO";
   if (gwPkt.link != DN_LINK_OK) {

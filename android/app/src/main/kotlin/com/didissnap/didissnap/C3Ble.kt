@@ -41,6 +41,11 @@ class C3Ble(private val ctx: Context, private val onPacket: (ByteArray) -> Unit,
     private var gatt: BluetoothGatt? = null
     private var cmdC: BluetoothGattCharacteristic? = null
     var mtuNow = 23
+    /** C3 ที่จับคู่ไว้ (null = ยังไม่จับคู่ → เลือกตัวที่เปิดโหมดจับคู่ สัญญาณแรงสุด) */
+    var pairAddr: String? = null
+    private val rejected = HashMap<String, Long>()   // C3 ที่ปฏิเสธเรา (ของคันอื่น) → ข้าม 60 วิ
+    private val seen = HashMap<String, Pair<Int, Int>>()   // ที่อยู่ -> (RSSI, โหมดจับคู่ 1/0/-1)
+    private var curAddr: String? = null
     private val adapter: BluetoothAdapter? get() = (ctx.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
 
     fun start() {
@@ -117,11 +122,49 @@ class C3Ble(private val ctx: Context, private val onPacket: (ByteArray) -> Unit,
         while (queue.isNotEmpty()) queue.removeFirst().second?.invoke(false)
     }
 
+    /** ตัวนี้ไม่ใช่ C3 ของเรา (C3 ปฏิเสธ) → ตัดแล้วหาตัวอื่น */
+    fun reject() {
+        val a = curAddr ?: return
+        rejected[a] = System.currentTimeMillis()
+        try { gatt?.disconnect() } catch (e: Exception) {}
+    }
+
+    /** เปลี่ยน C3 ที่จับคู่ (null = ลืม) แล้วต่อใหม่ */
+    fun setPair(a: String?) {
+        pairAddr = a
+        if (a != null && curAddr != null && !curAddr.equals(a, true)) try { gatt?.disconnect() } catch (e: Exception) {}
+        if (a == null) try { gatt?.disconnect() } catch (e: Exception) {}
+    }
+
+    // manufacturer data FF FF 'D' 'N' flags → 1 เปิดโหมดจับคู่ · 0 ปิด · -1 เฟิร์มแวร์เก่า
+    private fun openFlag(r: ScanResult): Int {
+        val m = r.scanRecord?.getManufacturerSpecificData(0xFFFF) ?: return -1
+        return if (m.size >= 3 && m[0] == 'D'.code.toByte() && m[1] == 'N'.code.toByte()) (m[2].toInt() and 1) else -1
+    }
+
+    private fun pickBest(): String? {
+        val now = System.currentTimeMillis()
+        var best: String? = null
+        var bestR = -999
+        var legacy: String? = null
+        for ((a, v) in seen) {
+            if ((rejected[a] ?: 0L) > now - 60000) continue
+            if (v.second == 1 && v.first > bestR) { best = a; bestR = v.first }
+            if (v.second < 0 && legacy == null) legacy = a
+        }
+        return best ?: legacy
+    }
+
     private val scanCb = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             if (!scanning) return
-            stopScan()
-            connect(result.device)
+            val a = result.device.address
+            val p = pairAddr
+            if (p != null) {
+                if (!a.equals(p, true)) return          // จับคู่แล้ว: ต่อเฉพาะ C3 ตัวเดิม
+                stopScan(); connect(result.device); return
+            }
+            seen[a] = result.rssi to openFlag(result)
         }
         override fun onScanFailed(errorCode: Int) {
             scanning = false
@@ -138,10 +181,19 @@ class C3Ble(private val ctx: Context, private val onPacket: (ByteArray) -> Unit,
         val f = ScanFilter.Builder().setServiceUuid(ParcelUuid(SVC)).build()
         val st = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
         try {
+            seen.clear()
             sc.startScan(listOf(f), st, scanCb)
             scanning = true
+            onState(if (pairAddr == null) "searching C3 (pairing)" else "searching C3")
+            // ยังไม่จับคู่: ฟัง 3 วิ แล้วเลือก C3 ที่เปิดโหมดจับคู่ สัญญาณแรงสุด (= อยู่ในรถเรา)
+            if (pairAddr == null) main.postDelayed({
+                if (scanning && pairAddr == null) {
+                    val b = pickBest()
+                    if (b != null) { stopScan(); adapter?.getRemoteDevice(b)?.let { connect(it) } ?: retry() }
+                }
+            }, 3000)
             // ไม่เจอใน 8 วิ -> หยุดแล้วลองใหม่ (Android ไม่ชอบสแกนค้างนาน)
-            main.postDelayed({ if (scanning) { stopScan(); retry() } }, 8000)
+            main.postDelayed({ if (scanning) { stopScan(); if (pairAddr == null) onState("no C3 in pairing mode"); retry() } }, 8000)
         } catch (e: Exception) {
             onState("scan error: ${e.message}")
             retry()
@@ -159,6 +211,7 @@ class C3Ble(private val ctx: Context, private val onPacket: (ByteArray) -> Unit,
     }
 
     private fun connect(d: BluetoothDevice) {
+        curAddr = d.address
         onState("connecting ${d.address}")
         gatt = if (Build.VERSION.SDK_INT >= 23) d.connectGatt(ctx, false, cb, BluetoothDevice.TRANSPORT_LE)
         else d.connectGatt(ctx, false, cb)
@@ -204,7 +257,7 @@ class C3Ble(private val ctx: Context, private val onPacket: (ByteArray) -> Unit,
                     g.writeDescriptor(d)
                 }
             }
-            main.post { onState("connected") }
+            main.post { onState("addr:${g.device.address}"); onState("connected") }
         }
 
         override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray) {

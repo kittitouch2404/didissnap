@@ -8,7 +8,8 @@
 #define DIDINOW_CHANNEL 1           // ช่อง WiFi ของ S3 (SoftAP "Didissnap" ตั้งช่อง 1)
 
 enum : uint8_t { DN_DATA = 1, DN_CMD = 2, DN_DTC = 3, DN_GW = 4, DN_GWCMD = 5, DN_GWINFO = 6, DN_RAWREQ = 7, DN_RAWRES = 8,
-                 DN_CUSTSET = 9, DN_CUST = 10, DN_CUSTINFO = 11, DN_CUSTRAW = 12, DN_CAL = 13, DN_OTA = 14, DN_OTAST = 15 };
+                 DN_CUSTSET = 9, DN_CUST = 10, DN_CUSTINFO = 11, DN_CUSTRAW = 12, DN_CAL = 13, DN_OTA = 14, DN_OTAST = 15,
+                 DN_AUTH = 16, DN_AUTHST = 17 };
 enum : uint8_t { DN_LINK_DEMO = 0, DN_LINK_WAIT = 1, DN_LINK_OK = 2 };
 enum : uint8_t { DN_CMD_DTC_READ = 1, DN_CMD_DTC_CLEAR = 2, DN_CMD_MODE_AUTO = 3, DN_CMD_MODE_DEMO = 4,
                  DN_CMD_DYNO = 5 };   // DYNO: แอปส่งทุก 1 วิ ตอนวัดแรงม้า → C3 ถามแค่รอบ/ความเร็ว/TPS ให้ถี่ที่สุด (หมดอายุเองใน 2.5 วิ)
@@ -178,4 +179,30 @@ struct __attribute__((packed)) DidiNowOtaSt {
   uint32_t off;       // รับแล้วกี่ไบต์
   uint32_t size;      // ขนาดไฟล์ (IDLE: พื้นที่ที่ลงได้สูงสุด)
   char msg[40];       // IDLE: เวอร์ชันเฟิร์มแวร์ · ERR: สาเหตุ
+};
+
+// ---------------------------------------------------------------- จับคู่จอกับ C3 (กันต่อผิดคันเวลาจอดรวมกัน)
+// จอ/แอปมี "กุญแจ" (token 8 ไบต์ สุ่มครั้งแรก จำไว้ในตัว) → ต่อ BLE แล้วต้องส่ง DN_AUTH ภายใน 5 วิ
+// C3 รู้จักกุญแจ = ส่งค่าให้ · ไม่รู้จัก: ถ้าเปิดโหมดจับคู่อยู่ = จำกุญแจไว้ (จับคู่) · ไม่เปิด = ตัดสาย
+// โหมดจับคู่เปิดเอง: ยังไม่เคยจับคู่ใคร · 2 นาทีแรกหลังเสียบ C3 · จอที่จับคู่แล้วสั่งเปิด 3 นาที (เพิ่มจอใหม่) · กด BOOT ค้าง 6 วิ
+// โฆษณา BLE: manufacturer data = FF FF 'D' 'N' flags (bit0 = เปิดโหมดจับคู่อยู่) · ชื่อ DIDI-C3-xxxx (ไม่ซ้ำกันทุกตัว)
+#define DN_PAIR_MAX 8
+enum : uint8_t { DN_AUTH_LOGIN = 0, DN_AUTH_OPEN = 1, DN_AUTH_CLEAR = 2, DN_AUTH_FORGET = 3 };
+struct __attribute__((packed)) DidiNowAuth {
+  uint32_t magic;
+  uint8_t type;       // DN_AUTH
+  uint8_t op;         // DN_AUTH_*
+  uint8_t pad[2];
+  uint8_t token[8];   // กุญแจของจอนี้
+  char name[8];       // ชื่อจอ เช่น "APP" "S3" "CYD"
+};
+enum : uint8_t { DN_AUTHR_DENIED = 0, DN_AUTHR_OK = 1, DN_AUTHR_NEW = 2 };
+struct __attribute__((packed)) DidiNowAuthSt {
+  uint32_t magic;
+  uint8_t type;       // DN_AUTHST
+  uint8_t res;        // DN_AUTHR_*
+  uint8_t open;       // โหมดจับคู่เหลืออีกกี่วินาที / 2 (0 = ปิด · 255 = เปิดตลอด เพราะยังไม่เคยจับคู่)
+  uint8_t n;          // จำนวนจอที่จับคู่แล้ว
+  char c3[16];        // ชื่อ C3 เช่น DIDI-C3-A1B2
+  char names[DN_PAIR_MAX][8];   // ชื่อจอที่จับคู่แล้ว
 };

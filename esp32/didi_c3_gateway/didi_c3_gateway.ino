@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.25h"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.26a"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -698,23 +698,31 @@ static void led() {
   uint32_t t = millis();
   bool on;
   if (demo) on = (t / 600) % 2;
+  else if (c3ble::pairOpen() && c3ble::pairCount() > 0) { uint32_t k = t % 1000; on = k < 80 || (k > 180 && k < 260); }   // กะพริบคู่ = โหมดจับคู่
   else if (carLink == DN_LINK_OK) on = (t % 1000) > 60;
   else on = (t / 120) % 2;
   digitalWrite(PIN_LED, on ? LOW : HIGH);
 }
+// ปุ่ม BOOT: กดค้าง 2-5 วิแล้วปล่อย = สลับโหมดจำลอง · ค้าง 6 วิ = เปิดโหมดจับคู่จอใหม่ 3 นาที
 static void bootBtn() {
   static uint32_t down = 0;
   static bool done = false;
   if (digitalRead(PIN_BOOT) == LOW) {
     if (!down) down = millis();
-    if (!done && millis() - down > 2000) {
+    if (!done && millis() - down > 6000) {
       done = true;
+      c3ble::openPairing(180);
+      Serial.println("[pair] BOOT button -> pairing open 3 min");
+    }
+  } else {
+    if (down && !done && millis() - down > 2000) {
       demo = !demo;
       prefs.putBool("demo", demo);
       if (demo) disconnect();
       Serial.printf("[mode] %s (BOOT button)\n", demo ? "DEMO" : "CAR");
     }
-  } else { down = 0; done = false; }
+    down = 0; done = false;
+  }
 }
 
 // ---------------------------------------------------------------- งานอ่านรถ (แยก task: ตอน init K-line บล็อกหลายวินาที ไม่ให้ ESP-NOW หยุดส่ง)
@@ -793,7 +801,7 @@ void setup() {
   }
 #if USE_BLE
   c3ble::onCmd = gotCmd;
-  bool ok = c3ble::begin();
+  bool ok = c3ble::begin(esp_reset_reason() == ESP_RST_POWERON);
   Serial.printf("\n[didi_c3] BLE %s · mode %s\n", ok ? "ready" : "FAILED", demo ? "DEMO" : "CAR");
 #endif
 #if USE_ESPNOW
@@ -838,6 +846,7 @@ void loop() {
     for (int i = 0; i < 3; i++) { sendInfo(); delay(30); }
     deepSleep(!vbat ? WAKE_NOVBAT_S : vbat < LOWBAT_V ? WAKE_LOWBAT_S : WAKE_S);
   }
+  c3ble::tick();   // จับคู่จอ: ตอบผล / ตัดจอที่ไม่จับคู่ / โฆษณา
   // อัปเดตเฟิร์มแวร์อยู่: หยุดส่งค่ารถ (ให้ BLE ว่างรับไฟล์) · ไม่หลับ · ไม่มีไฟล์มา 20 วิ = ยกเลิก
   if (otaStNew) { otaStNew = false; tx(&otaSt, sizeof(otaSt)); }
   if (otaReboot) { delay(400); tx(&otaSt, sizeof(otaSt)); delay(300); ESP.restart(); }

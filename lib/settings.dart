@@ -90,6 +90,22 @@ class AppSettings extends ChangeNotifier {
   }
 
   // ---------- หน้าปัด ----------
+  /// จับคู่ C3: ที่อยู่ / ชื่อ C3 ที่จับคู่ ("" = ยังไม่จับคู่) + กุญแจของแอป (hex 16 ตัว)
+  String get c3PairAddr => _s('c3PairAddr', '');
+  set c3PairAddr(String v) {
+    _p.setString('c3PairAddr', v);
+    notifyListeners();
+  }
+
+  String get c3PairName => _s('c3PairName', '');
+  set c3PairName(String v) {
+    _p.setString('c3PairName', v);
+    notifyListeners();
+  }
+
+  String get c3Token => _s('c3Token', '');
+  set c3Token(String v) => _p.setString('c3Token', v);
+
   /// แผนที่หน้าสนาม GPS: 0 ไม่มี · 1 มืด · 2 ถนน · 3 ดาวเทียม
   int get lapMap => _i('lapMap', 1);
   set lapMap(int v) => _setI('lapMap', v);

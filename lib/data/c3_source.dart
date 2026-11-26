@@ -26,6 +26,9 @@ class C3Source implements CarSource {
   Timer? _watch, _cust, _pidT;
   DateTime _last = DateTime.fromMillisecondsSinceEpoch(0);
   String _bleState = '';
+  String _curAddr = '', _pairAddr = '';
+  Timer? _authT;
+  bool _authed = false;
   int _link = 1, _proto0 = 0, _rate = 0;
   String _info = '';
   int _myId = 0x2000;
@@ -48,7 +51,8 @@ class C3Source implements CarSource {
     }
     if (!_running) return;
     _sub = _ev.receiveBroadcastStream().listen(_onEvent);
-    await Native.m.invokeMethod('c3Start');
+    await Native.m.invokeMethod('c3Start', {'addr': hub.settings.c3PairAddr});
+    _pairAddr = hub.settings.c3PairAddr;
     hub.setLink(this, LinkState.connecting, 'กำลังหา C3...');
     _watch = Timer.periodic(const Duration(milliseconds: 500), (_) => _status());
     _pidT = Timer.periodic(const Duration(milliseconds: 250), (_) => _pidTick());
@@ -59,13 +63,32 @@ class C3Source implements CarSource {
 
   void _onEvent(dynamic e) {
     if (e is String) {
+      if (e.startsWith('addr:')) {
+        _curAddr = e.substring(5);
+        return;
+      }
       if (e != _bleState) AppLog.i('C3 BLE: $e');
       if (e == 'connected' && _bleState != 'connected') {
-        Timer(const Duration(milliseconds: 600), () => _sendCfg(force: true));
-        _hub?.c3cal.sender = _write;
-        _hub?.c3ota.onLink(true);
+        // ยืนยันตัวกับ C3 ก่อน (จับคู่) — C3 เฟิร์มแวร์เก่าไม่ตอบใน 3 วิ = ใช้ได้ตามเดิม
+        _authed = false;
+        final pair = _hub?.c3pair;
+        Timer(const Duration(milliseconds: 300), () {
+          if (_bleState == 'connected' && pair != null) _write(pair.packet(0));
+        });
+        _authT?.cancel();
+        _authT = Timer(const Duration(milliseconds: 3300), () {
+          if (_bleState == 'connected' && !_authed) {
+            AppLog.i('C3: no pairing reply (old firmware)');
+            _hub?.c3pair.setLegacy();
+            _linkUp();
+          }
+        });
       } else if (e != 'connected') {
+        _authT?.cancel();
+        _authed = false;
         _hub?.c3cal.sender = null;
+        _hub?.c3pair.sender = null;
+        _hub?.c3pair.linkChanged();
         if (_bleState == 'connected') _hub?.c3ota.onLink(false);
       }
       _bleState = e;
@@ -94,7 +117,46 @@ class C3Source implements CarSource {
         if (e.length >= 28) _custVals(b);
       case 12: // DN_CUSTRAW: คำตอบดิบล่าสุดของช่อง (โชว์ในหน้าทดสอบ)
         if (e.length >= 7) _custRaw(e);
+      case 17: // DN_AUTHST: ผลจับคู่
+        _authIn(e);
     }
+  }
+
+  // ---------------- จับคู่ C3
+  void _authIn(Uint8List e) {
+    final hub = _hub;
+    if (hub == null) return;
+    final r = hub.c3pair.onStatus(e, _curAddr);
+    if (r == 0) {
+      // C3 ตัวนี้จับคู่กับจออื่น (คันอื่น) → ตัดแล้วหาตัวอื่น
+      AppLog.i('C3 $_curAddr denied (paired with another car)');
+      Native.m.invokeMethod('c3Reject');
+      return;
+    }
+    if (r > 0 && !_authed) {
+      AppLog.i('C3 ${hub.c3pair.c3}: ${r == 2 ? 'paired NEW' : 'paired ok'} (${hub.c3pair.screens.join(', ')})');
+      _pairAddr = hub.settings.c3PairAddr;
+      _linkUp();
+    }
+  }
+
+  void _linkUp() {
+    if (_authed) return;
+    _authed = true;
+    _authT?.cancel();
+    Timer(const Duration(milliseconds: 200), () => _sendCfg(force: true));
+    _hub?.c3cal.sender = _write;
+    _hub?.c3pair.sender = _write;
+    _hub?.c3pair.linkChanged();
+    _hub?.c3ota.onLink(true);
+  }
+
+  /// เปลี่ยน/ลืม C3 ที่จับคู่ → บอกตัวต่อ BLE
+  void _pairChanged() {
+    final a = _hub?.settings.c3PairAddr ?? '';
+    if (a == _pairAddr) return;
+    _pairAddr = a;
+    Native.m.invokeMethod('c3SetPair', {'addr': a});
   }
 
   void _gw(ByteData b, int n) {
@@ -166,9 +228,21 @@ class C3Source implements CarSource {
     } else if (fresh) {
       hub.setLink(this, LinkState.connecting, _info.isEmpty ? 'C3 ต่อแล้ว — กำลังหารถ' : 'C3: $_info');
     } else if (_bleState == 'connected') {
-      hub.setLink(this, LinkState.connecting, 'C3 ต่อแล้ว — รอค่า');
+      hub.setLink(this, LinkState.connecting, _authed ? 'C3 ต่อแล้ว — รอค่า' : 'C3 ต่อแล้ว — กำลังยืนยันการจับคู่');
     } else {
-      hub.setLink(this, LinkState.connecting, _bleState == 'Bluetooth off' ? 'เปิด Bluetooth ของเครื่องก่อน' : 'กำลังหา C3...');
+      final denied = DateTime.now().difference(hub.c3pair.deniedAt).inSeconds < 20;
+      hub.setLink(
+          this,
+          LinkState.connecting,
+          _bleState == 'Bluetooth off'
+              ? 'เปิด Bluetooth ของเครื่องก่อน'
+              : denied
+                  ? 'C3 ที่เจอเป็นของคันอื่น — กำลังหาตัวของเรา'
+                  : _bleState == 'no C3 in pairing mode'
+                      ? 'ไม่เจอ C3 ที่รอจับคู่ — ถอดเสียบ C3 ใหม่ หรือกด "เพิ่มจอใหม่" จากจอที่จับคู่แล้ว'
+                      : hub.settings.c3PairAddr.isEmpty
+                          ? 'กำลังหา C3 เพื่อจับคู่...'
+                          : 'กำลังหา C3 (${hub.settings.c3PairName.isEmpty ? hub.settings.c3PairAddr : hub.settings.c3PairName})...');
     }
   }
 
@@ -271,8 +345,11 @@ class C3Source implements CarSource {
   String _cfgSig = '';
   Timer? _cfgDeb;
   void _cfgChanged() {
+    _pairChanged();
     // พิมพ์ header/คำสั่งทีละตัว → รอให้หยุดพิมพ์ก่อนค่อยส่ง (ไม่ยิง BLE ทุกตัวอักษร)
     _cfgDeb?.cancel();
+    _authT?.cancel();
+    _hub?.c3pair.sender = null;
     _cfgDeb = Timer(const Duration(milliseconds: 600), _sendCfg);
     _speedPush();
   }
