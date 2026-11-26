@@ -40,54 +40,6 @@ void _snack(BuildContext context, String msg) {
     ..showSnackBar(SnackBar(content: Text(msg)));
 }
 
-class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.settings, required this.hub});
-  final AppSettings settings;
-  final DataHub hub;
-
-  @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 11,
-      child: Scaffold(
-        appBar: AppBar(
-          toolbarHeight: 40,
-          title: const Text('MENU', style: TextStyle(fontSize: 16)),
-          bottom: TabBar(
-            isScrollable: true,
-            tabs: [
-              Tab(height: 36, text: tr('การเชื่อมต่อ')),
-              Tab(height: 36, text: tr('หน้าปัด')),
-              Tab(height: 36, text: tr('ทริป/เตือน')),
-              Tab(height: 36, text: tr('บันทึก CSV')),
-              Tab(height: 36, text: tr('รถ/สำรอง')),
-              Tab(height: 36, text: tr('เกียร์')),
-              Tab(height: 36, text: tr('ปรับค่า')),
-              Tab(height: 36, text: tr('รูปพื้นหลัง')),
-              Tab(height: 36, text: tr('DTC')),
-              Tab(height: 36, text: tr('เปิดอัตโนมัติ')),
-              Tab(height: 36, text: tr('จอ ESP32')),
-            ],
-          ),
-        ),
-        body: TabBarView(children: [
-          ConnectionTab(settings: settings, hub: hub),
-          DisplayTab(settings: settings, hub: hub),
-          TripAlertTab(settings: settings, hub: hub),
-          LogTab(settings: settings, hub: hub),
-          ProfileTab(settings: settings),
-          GearTab(settings: settings, hub: hub),
-          CalTab(settings: settings, hub: hub),
-          PicturesTab(settings: settings, hub: hub),
-          DtcTab(hub: hub),
-          AutoStartTab(settings: settings),
-          Esp32Tab(settings: settings, hub: hub),
-        ]),
-      ),
-    );
-  }
-}
-
 // ======================================================================
 class _Hint extends StatelessWidget {
   const _Hint(this.text);
@@ -1694,7 +1646,7 @@ class _Esp32TabState extends State<Esp32Tab> {
               (v) => _set('tempAlert', v),
               unit: ' °C'),
           if (_cfg?.containsKey('spdG') ?? false) ...[
-            const _Header('ปรับค่าให้ตรง'),
+            const _Header('ปรับค่าให้ตรง (Superlink WiFi)'),
             const _Hint('ค่าที่โชว์ = ค่าจากรถ × เกน% + บวก/ลบ · ปรับแล้วจอ CYD ตรงตามด้วย'),
             _StepRow('ความเร็ว เกน', _i('spdG', 100), 80, 130, 1, (v) => _set('spdG', v), unit: ' %'),
             _StepRow('รอบ เกน', _i('rpmG', 100), 80, 120, 1, (v) => _set('rpmG', v), unit: ' %'),
@@ -2238,7 +2190,7 @@ class CalTab extends StatelessWidget {
             if (settings.source == SourceType.c3)
               _C3CalSection(hub: hub)
             else ...[
-              const _Header('ปรับค่าให้ตรง (gain / offset)'),
+              const _Header('ปรับค่าให้ตรง (Superlink BLE)'),
               const _Hint('ใช้ได้เมื่อเชื่อมต่อแบบ C3 (ESP32-C3 ผ่าน Bluetooth) — เลือกได้ที่เมนู การเชื่อมต่อ'),
             ],
           ],
@@ -2262,13 +2214,14 @@ class _C3CalSection extends StatelessWidget {
       listenable: cal,
       builder: (context, _) {
         final rows = <Widget>[
-          const _Header('ปรับค่าให้ตรง (gain / offset) ที่ C3'),
+          const _Header('ปรับค่าให้ตรง (Superlink BLE)'),
         ];
         if (!cal.have) {
           rows.add(const _Hint('ยังไม่ได้รับค่าจาก C3 — ต่อ C3 ให้ได้ก่อน (C3 ต้องเป็นเฟิร์มแวร์รุ่นใหม่)'));
           return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
         }
         for (var i = 0; i < C3Cal.n; i++) {
+          if (i == C3Cal.iSpd) continue; // ความเร็ว: ตั้งที่ ทริป / เตือน → ความเร็วให้ตรงจริง (ค่าเดียวกัน)
           final div = C3Cal.ofsDiv(i), st = C3Cal.ofsStep(i), mx = C3Cal.ofsMax(i);
           final gi = (cal.g[i] * 1000).round(), oi = (cal.o[i] * div).round();
           final u = C3Cal.units[i];
@@ -2341,8 +2294,7 @@ class _C3CalSection extends StatelessWidget {
           ]),
         ));
         rows.add(_Hint('ค่าที่โชว์ = ค่าจากรถ x gain + offset · C3 จำไว้ในตัว ทุกจอ (S3 / CYD / แอป) ได้ค่าที่ปรับแล้วเหมือนกัน\n'
-            'ความเร็ว = ค่าเดียวกับ "ชดเชยความเร็ว" ของแอป และ SPEED GAIN ของจอ S3 (แก้ที่ไหนก็ได้)'
-            '${hub.settings.speedCalMode == 1 ? '\nตอนนี้ตั้งชดเชยความเร็วด้วย GPS อัตโนมัติ — แอปจะเขียนค่าความเร็วทับเมื่อเรียนรู้ครบ' : ''}\n'
+            'ความเร็ว: ตั้งที่เมนู ทริป / เตือน → ความเร็วให้ตรงจริง (ตั้งเอง หรือเรียนรู้จาก GPS) — ส่งเข้า C3 ให้ทุกจออัตโนมัติ\n'
             'AFR แบบ narrowband (โวลต์) C3 ไม่ปรับ · ${cal.connected ? 'ต่อ C3 อยู่ (ชุดค่าที่ ${cal.ver})' : 'ยังไม่ได้ต่อ C3 — แก้ค่าแล้วจะส่งไม่ได้'}'));
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
       },

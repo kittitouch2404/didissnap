@@ -839,6 +839,8 @@ const Map<String, String> _en = {
   'อื่น ๆ': 'Others',
   'เกียร์': 'Gear',
   'ปรับค่า': 'Calibrate',
+  'ปรับค่าให้ตรง (Superlink BLE)': 'Calibrate (Superlink BLE)',
+  'ปรับค่าให้ตรง (Superlink WiFi)': 'Calibrate (Superlink WiFi)',
   'ลืม C3 นี้': 'Forget this C3',
   'ล้างจออื่นทั้งหมด': 'Remove other screens',
   'เพิ่มจอใหม่ (เปิดรับ 3 นาที)': 'Pair new screen (3 min)',
