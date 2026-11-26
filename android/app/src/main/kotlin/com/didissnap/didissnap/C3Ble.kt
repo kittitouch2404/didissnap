@@ -175,7 +175,22 @@ class C3Ble(private val ctx: Context, private val onPacket: (ByteArray) -> Unit,
 
     private fun scan() {
         if (!running) return
-        val sc = adapter?.bluetoothLeScanner
+        if (!ctx.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_BLUETOOTH_LE)) {
+            onState("no BLE"); return          // จอนี้ไม่มี Bluetooth BLE ให้แอปใช้
+        }
+        val ad = adapter
+        if (ad == null || !ad.isEnabled) { onState("Bluetooth off"); retry(); return }
+        // Android 6-11: สแกน BLE ต้องมีสิทธิ์ตำแหน่ง + เปิด "ตำแหน่ง" ในเครื่อง (ไม่งั้นสแกนได้ 0 ตัวเงียบ ๆ)
+        if (Build.VERSION.SDK_INT in 23..30) {
+            if (ctx.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                onState("no location permission"); retry(); return
+            }
+            val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+            val locOn = if (Build.VERSION.SDK_INT >= 28) lm.isLocationEnabled
+                else lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) || lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)
+            if (!locOn) { onState("location off"); retry(); return }
+        }
+        val sc = ad.bluetoothLeScanner
         if (sc == null) { onState("Bluetooth off"); retry(); return }
         onState("searching C3")
         val f = ScanFilter.Builder().setServiceUuid(ParcelUuid(SVC)).build()

@@ -579,10 +579,18 @@ class MainActivity : FlutterActivity() {
             pendingPermission?.success(false)
             pendingPermission = result
             requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN), REQ_BT)
+        } else if (Build.VERSION.SDK_INT >= 23 &&
+            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // Android 6-11 (จอรถส่วนใหญ่): สแกน Bluetooth BLE ต้องมีสิทธิ์ตำแหน่ง ไม่งั้นหา C3 ไม่เจอ (ไม่มี error บอก)
+            pendingPermission?.success(true)
+            pendingPermission = result
+            pendingLenient = true
+            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQ_BT)
         } else {
             result.success(true)
         }
     }
+    private var pendingLenient = false
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -593,8 +601,9 @@ class MainActivity : FlutterActivity() {
         if (requestCode == REQ_BT) {
             val ok = grantResults.isNotEmpty() &&
                 grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-            pendingPermission?.success(ok)
+            pendingPermission?.success(ok || pendingLenient)   // Bluetooth แบบเดิม (Vgate) ไม่ต้องใช้ตำแหน่ง
             pendingPermission = null
+            pendingLenient = false
         }
     }
 
