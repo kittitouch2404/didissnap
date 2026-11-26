@@ -280,8 +280,6 @@ class _ConnectionTabState extends State<ConnectionTab> {
                 'แอปทำงานเบื้องหลังต่อได้ (เปิดยูทูป/แผนที่ทับได้) — ปิด "ประหยัดแบตเตอรี่" ให้แอปนี้ในเมนู เปิดแอปอัตโนมัติ'),
             if (s.source == SourceType.c3) _C3PairSection(hub: hub),
             if (s.source == SourceType.c3) _C3OtaSection(hub: hub),
-            _CvtTempSection(s: s, hub: hub),
-            _CustomPidSection(s: s, hub: hub),
             if (s.source == SourceType.btElm) ...[
               const _Header('อุปกรณ์ Bluetooth'),
               ListTile(
@@ -1798,6 +1796,25 @@ const List<String> kCvtFormulas = [
   'A - 50',
   'A*9/5-58 (°F) -> °C',
 ];
+
+/// หน้า Custom PID + CVT TEMP (เมนู Custom PID)
+class CustomPidTab extends StatelessWidget {
+  const CustomPidTab({super.key, required this.settings, required this.hub});
+  final AppSettings settings;
+  final DataHub hub;
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: settings,
+        builder: (context, _) => ListView(
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            _CustomPidSection(s: settings, hub: hub),
+            _CvtTempSection(s: settings, hub: hub),
+          ],
+        ),
+      );
+}
 
 class _CvtTempSection extends StatefulWidget {
   const _CvtTempSection({required this.s, required this.hub});
