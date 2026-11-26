@@ -44,7 +44,7 @@ jobs:
 
       - name: Firmware version
         id: ver
-        run: echo "fw=$(grep -oP '#define FW_VER "\K[^"]+' esp32/didi_c3_gateway/didi_c3_gateway.ino)" >> "$GITHUB_OUTPUT"
+        run: echo "fw=$(grep -oP '#define FW_VER "\Kc3 [^"]+' esp32/didi_c3_gateway/didi_c3_gateway.ino)" >> "$GITHUB_OUTPUT"
 
       - name: Publish (release c3-latest)
         uses: softprops/action-gh-release@v2
@@ -58,4 +58,54 @@ jobs:
           files: |
             didi_c3_gateway.bin
             didi_c3_gateway_full_usb.bin
+          make_latest: false
+
+  # ESP32 ธรรมดา (NodeMCU/DevKit 30 ขา) = ESP32-Superlink: Bluetooth ธรรมดา (SPP) + BLE เปิดค้าง, WiFi เปิด/ปิดได้
+  build-esp32:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Core
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.2.0
+          arduino-cli lib install "NimBLE-Arduino@2.5.2"
+
+      - name: Compile
+        run: |
+          arduino-cli compile \
+            --fqbn "esp32:esp32:esp32:PartitionScheme=min_spiffs" \
+            --output-dir out esp32/didi_c3_gateway
+          ls -la out
+          cp out/didi_c3_gateway.ino.bin didi_sl_esp32.bin
+          cp out/didi_c3_gateway.ino.merged.bin didi_sl_esp32_full_usb.bin || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: didi_sl_esp32
+          path: |
+            didi_sl_esp32.bin
+            didi_sl_esp32_full_usb.bin
+
+      - name: Firmware version
+        id: ver
+        run: echo "fw=$(grep -oP '#define FW_VER "\Ksl [^"]+' esp32/didi_c3_gateway/didi_c3_gateway.ino)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish (release sl-latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: sl-latest
+          name: ESP32-Superlink firmware (latest)
+          body: |
+            FW: ${{ steps.ver.outputs.fw }}
+            didi_sl_esp32.bin = อัปเดตผ่านแอป
+            didi_sl_esp32_full_usb.bin = แฟลชผ่าน USB ทั้งชิป (ที่ตำแหน่ง 0x0)
+          files: |
+            didi_sl_esp32.bin
+            didi_sl_esp32_full_usb.bin
           make_latest: false

@@ -15,7 +15,15 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.26f"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+// โค้ดชุดเดียวใช้ได้ 2 บอร์ด:
+//  ESP32-C3 SuperMini (Board: ESP32C3 Dev Module) = BLE (+ WiFi)
+//  ESP32 รุ่นแรก DevKit / NodeMCU 30 ขา (Board: ESP32 Dev Module · Partition: Minimal SPIFFS 1.9MB APP with OTA)
+//    = Bluetooth ธรรมดา + BLE (+ WiFi เปิด/ปิดได้) สำหรับจอแอนดรอยด์จีนที่ไม่มี BLE ให้แอป
+#if CONFIG_IDF_TARGET_ESP32
+#define FW_VER "sl 2026.11.27a"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต) · sl = ESP32-Superlink (Bluetooth ธรรมดา)
+#else
+#define FW_VER "c3 2026.11.27a"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#endif
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -25,7 +33,11 @@
 #endif
 #include "didinow.h"
 #if USE_BLE
-#include "c3ble.h"
+#if CONFIG_IDF_TARGET_ESP32
+#include "c3bt.h"       // Bluetooth ธรรมดา (SPP) + BLE (Bluedroid ในตัว core)
+#else
+#include "c3ble.h"      // BLE (NimBLE)
+#endif
 #include "c3wifi.h"     // ส่งค่าทาง WiFi (ฮอตสปอตมือถือ) ให้จอแอนดรอยด์ที่ไม่มี BLE
 #endif
 #include "custeval.h"
@@ -35,12 +47,30 @@
 #include "driver/gpio.h"
 
 // ---------------------------------------------------------------- ขา (แก้ตรงนี้ถ้าต่อต่างจากรูป)
+#if CONFIG_IDF_TARGET_ESP32
+// ESP32 DevKit / NodeMCU 30 ขา
+#define PIN_CAN_TX 21   // → CTX ของโมดูล CAN (SN65HVD230)
+#define PIN_CAN_RX 22   // ← CRX
+#define PIN_K_RX 16     // สัญญาณจากรถ (ขาออกของโมดูล K-line)
+#define PIN_K_TX 17     // ส่งไปรถ (ขาเข้าของโมดูล K-line)
+#define PIN_LED 2       // LED บนบอร์ด (ติดเมื่อ HIGH)
+#define LED_ON HIGH
+#define PIN_BOOT 0
+#else
 #define PIN_CAN_TX 4
 #define PIN_CAN_RX 5
 #define PIN_K_RX 20     // สัญญาณจากรถ (ขาออกของโมดูล K-line)
 #define PIN_K_TX 21     // ส่งไปรถ (ขาเข้าของโมดูล K-line)
 #define PIN_LED 8       // LED บนบอร์ด (ติดเมื่อ LOW)
+#define LED_ON LOW
 #define PIN_BOOT 9
+#endif
+#define LED_OFF (LED_ON == LOW ? HIGH : LOW)
+#if CONFIG_IDF_TARGET_ESP32
+#define IS_ESP32 1
+#else
+#define IS_ESP32 0
+#endif
 #define USE_VBAT 0      // 1 = ต่อสายวัดแบตที่ GPIO3 แล้ว (ดู README) · 0 = ไม่ต่อ
 #define PIN_VBAT 3      // วัดแบต: 12V ──[100k]──┬── GPIO3 ──[18k]── GND  (ไม่ต่อ = ใช้ค่าแบตจาก ECU ถ้ามี)
 #define VBAT_RATIO ((100.0f + 18.0f) / 18.0f)
@@ -83,15 +113,17 @@ static void deepSleep(uint32_t sec) {
   esp_now_deinit();
   esp_wifi_stop();
 #endif
-#if USE_BLE
+#if USE_BLE && !IS_ESP32
   NimBLEDevice::deinit(true);
+#elif USE_BLE
+  btStop();
 #endif
   kline::stop();
   canobd::stop();
   pinMode(PIN_K_TX, OUTPUT);
   kline::txLevel(true);                // สาย K ว่างไว้ระหว่างหลับ
   gpio_hold_en((gpio_num_t)PIN_K_TX);
-  digitalWrite(PIN_LED, HIGH);         // ไฟ LED ดับ
+  digitalWrite(PIN_LED, LED_OFF);      // ไฟ LED ดับ
   gpio_hold_en((gpio_num_t)PIN_LED);
   gpio_deep_sleep_hold_en();
   esp_sleep_enable_timer_wakeup((uint64_t)sec * 1000000ULL);
@@ -107,7 +139,7 @@ static void wakeCheck() {
   delay(250);                          // ให้ USB ต่อกับคอมทันก่อนเช็ก
   if (vbat < RUN_V && !usbHost()) {
     pinMode(PIN_LED, OUTPUT);
-    digitalWrite(PIN_LED, HIGH);
+    digitalWrite(PIN_LED, LED_OFF);
     esp_sleep_enable_timer_wakeup((uint64_t)(vbat < LOWBAT_V ? WAKE_LOWBAT_S : WAKE_S) * 1000000ULL);
     gpio_hold_en((gpio_num_t)PIN_LED);
     gpio_deep_sleep_hold_en();
@@ -234,7 +266,7 @@ static bool canSniff(uint32_t br) {
   if (!canobd::start(PIN_CAN_TX, canRx, br, true)) return false;
   bool t = canobd::sniff(300);
   canobd::stop();
-  if (t || USE_VBAT) return t;                          // GPIO3 ใช้วัดแบตอยู่ → ไม่ลอง
+  if (t || USE_VBAT || IS_ESP32) return t;   // GPIO3 ใช้วัดแบตอยู่ / บอร์ด ESP32 (ขาตายตัว) → ไม่ลอง
   int alt = canRx == PIN_CAN_RX ? 3 : PIN_CAN_RX;
   int r0 = canobd::sniffRx, e0 = canobd::sniffErr;
   if (!canobd::start(PIN_CAN_TX, alt, br, true)) return false;
@@ -742,7 +774,7 @@ static void led() {
   else if (c3ble::pairOpen() && c3ble::pairCount() > 0) { uint32_t k = t % 1000; on = k < 80 || (k > 180 && k < 260); }   // กะพริบคู่ = โหมดจับคู่
   else if (carLink == DN_LINK_OK) on = (t % 1000) > 60;
   else on = (t / 120) % 2;
-  digitalWrite(PIN_LED, on ? LOW : HIGH);
+  digitalWrite(PIN_LED, on ? LED_ON : LED_OFF);
 }
 // ปุ่ม BOOT: กดค้าง 2-5 วิแล้วปล่อย = สลับโหมดจำลอง · ค้าง 6 วิ = เปิดโหมดจับคู่จอใหม่ 3 นาที
 static void bootBtn() {
@@ -839,7 +871,7 @@ void setup() {
   custLoad();
   calLoad();
   canRx = prefs.getInt("canrx", PIN_CAN_RX);
-  if (canRx != PIN_CAN_RX && canRx != 3) canRx = PIN_CAN_RX;
+  if (canRx != PIN_CAN_RX && (canRx != 3 || IS_ESP32)) canRx = PIN_CAN_RX;
   kline::begin(PIN_K_RX, PIN_K_TX);
   if (USE_VBAT) analogSetPinAttenuation(PIN_VBAT, ADC_11db);   // ไม่วัดแบต → GPIO3 ว่าง (ใช้เป็นขา CAN RX ได้)
   vbat = readVbat();
@@ -904,6 +936,9 @@ void loop() {
     for (int i = 0; i < 3; i++) { sendInfo(); delay(30); }
     deepSleep(!vbat ? WAKE_NOVBAT_S : vbat < LOWBAT_V ? WAKE_LOWBAT_S : WAKE_S);
   }
+#if CONFIG_IDF_TARGET_ESP32
+  c3ble::sppTick();   // Bluetooth ธรรมดา: รับคำสั่งจากจอ
+#endif
   c3ble::tick();   // จับคู่จอ: ตอบผล / ตัดจอที่ไม่จับคู่ / โฆษณา
   c3wifi::pause = otaOn;   // อัปเดตเฟิร์มแวร์: ปิด WiFi ชั่วคราว (ให้ Bluetooth ใช้คลื่นเต็มที่ ส่งไฟล์ไม่สะดุด)
   c3wifi::tick();  // จอทาง WiFi: รับคำสั่ง / ประกาศตัว

@@ -7,7 +7,7 @@
 #include <WiFiUdp.h>
 #include <Preferences.h>
 #include "didinow.h"
-#include "c3ble.h"
+#include "linkcore.h"
 
 namespace c3wifi {
 
@@ -43,8 +43,7 @@ inline void begin() {
   wp.begin("c3wifi", false);
   ssid = wp.getString("ssid", "");
   pass = wp.getString("pass", "");
-  strlcpy(mac, NimBLEDevice::getAddress().toString().c_str(), sizeof(mac));
-  for (char* c = mac; *c; c++) *c = toupper(*c);
+  strlcpy(mac, c3ble::macStr, sizeof(mac));
   c3ble::udpSend = sendUdp;
   connect();
 }
@@ -118,7 +117,7 @@ inline void tick() {
     udp.stop(); udpOn = false;
     Serial.println("[wifi] lost");
   }
-  if (!up && now - lastTry > 20000) { lastTry = now; WiFi.reconnect(); }
+  if (!up && now - lastTry > 5000) { lastTry = now; WiFi.reconnect(); }
   uint8_t st = state();
   if (st != lastState || now - lastSt > 5000) { lastState = st; lastSt = now; sendStatus(); }
   if (!udpOn) return;
