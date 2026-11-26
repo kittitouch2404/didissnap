@@ -237,6 +237,12 @@ class C3Source implements CarSource {
           LinkState.connecting,
           _bleState == 'Bluetooth off'
               ? 'เปิด Bluetooth ของเครื่องก่อน'
+              : _bleState == 'location off'
+              ? 'จอนี้เป็น Android 11 หรือต่ำกว่า: ต้องเปิด "ตำแหน่ง (Location)" ในตั้งค่าเครื่อง ถึงจะหา C3 เจอ'
+              : _bleState == 'no location permission'
+              ? 'อนุญาต "ตำแหน่ง" ให้แอปนี้ก่อน (Android 11 หรือต่ำกว่าต้องใช้หา Bluetooth BLE) แล้วกด เชื่อมต่อใหม่'
+              : _bleState == 'no BLE'
+              ? 'จอนี้ไม่มี Bluetooth BLE ให้แอปใช้ — ใช้ OBD2 ELM327 WiFi หรือ ESP32-Superlink WiFi แทน'
               : denied
                   ? 'C3 ที่เจอเป็นของคันอื่น — กำลังหาตัวของเรา'
                   : _bleState == 'no C3 in pairing mode'
