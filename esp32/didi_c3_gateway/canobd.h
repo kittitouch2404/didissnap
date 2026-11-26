@@ -36,11 +36,19 @@ inline bool start(int pinTx, int pinRx, uint32_t bitrate, bool listenOnly, bool 
   stop();
   twai_general_config_t g = TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)pinTx, (gpio_num_t)pinRx,
                                                         listenOnly ? TWAI_MODE_LISTEN_ONLY : TWAI_MODE_NORMAL);
-  g.rx_queue_len = 32;
+  g.rx_queue_len = 64;
   g.tx_queue_len = 4;
   twai_timing_config_t t = bitrate == 250000 ? (twai_timing_config_t)TWAI_TIMING_CONFIG_250KBITS()
                                              : (twai_timing_config_t)TWAI_TIMING_CONFIG_500KBITS();
   twai_filter_config_t f = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+  // ถามรถ: รับเฉพาะคำตอบวินิจฉัย (ฮาร์ดแวร์กรองให้) — รถใหม่บัสแน่นมาก (1,000+ เฟรม/วิ) ถ้ารับหมด
+  // คิวเต็มตอน CPU ไปทำ BLE/WiFi แล้วคำตอบหลุด = "bus ok but no OBD reply" / 0/s
+  //  ตัวกรอง 1: ID 11 บิต 0x700-0x7FF (คำตอบ 7E8-7EF + กล่องอื่น เช่น 768) · ตัวกรอง 2: ID 29 บิต 18DAF1xx
+  if (!listenOnly) {
+    f.single_filter = false;
+    f.acceptance_code = ((uint32_t)(0x700 << 5) << 16) | (0x18DAF100u >> 13);
+    f.acceptance_mask = ((uint32_t)((0xFF << 5) | 0x1F) << 16) | 0x0000;
+  }
   if (twai_driver_install(&g, &t, &f) != ESP_OK) return false;
   if (twai_start() != ESP_OK) { twai_driver_uninstall(); return false; }
   on = true;
