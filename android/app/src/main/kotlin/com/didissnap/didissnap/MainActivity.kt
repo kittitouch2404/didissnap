@@ -59,6 +59,16 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "c3Reject" -> { c3?.reject(); result.success(true) }
+                "wifiLock" -> {   // C3 ทาง WiFi: ให้รับ UDP broadcast ได้ (บางเครื่องกรองทิ้งถ้าไม่ล็อก)
+                    try {
+                        val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+                        if (call.argument<Boolean>("on") == true) {
+                            if (mcLock == null) mcLock = wm.createMulticastLock("didissnap-c3").apply { setReferenceCounted(false) }
+                            mcLock?.acquire()
+                        } else mcLock?.release()
+                    } catch (e: Exception) {}
+                    result.success(true)
+                }
                 "c3SetPair" -> { c3?.setPair(call.argument<String>("addr")?.takeIf { it.isNotEmpty() }); result.success(true) }
                 "c3Stop" -> {
                     c3?.stop()
@@ -329,6 +339,7 @@ class MainActivity : FlutterActivity() {
     private var pendingText: MethodChannel.Result? = null
     private var pendingFile: MethodChannel.Result? = null
     private var c3: C3Ble? = null
+    private var mcLock: android.net.wifi.WifiManager.MulticastLock? = null
     private var c3Sink: EventChannel.EventSink? = null
 
     // ---------------- เสียงเตือน ----------------

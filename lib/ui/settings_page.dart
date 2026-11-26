@@ -247,6 +247,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
             const _Hint(
                 'ให้จอแอนดรอยด์กับจอ CYD ต่อฮอตสปอตมือถือตัวเดียวกัน — แอปต่อ Vgate แล้วส่งค่าให้จอ CYD ราว 20 ครั้ง/วินาที\n'
                 'แอปทำงานเบื้องหลังต่อได้ (เปิดยูทูป/แผนที่ทับได้) — ปิด "ประหยัดแบตเตอรี่" ให้แอปนี้ในเมนู เปิดแอปอัตโนมัติ'),
+            if (s.source == SourceType.c3) _C3WifiSection(hub: hub),
             if (s.source == SourceType.c3) _C3PairSection(hub: hub),
             if (s.source == SourceType.c3) _C3OtaSection(hub: hub),
             if (s.source == SourceType.btElm) ...[
@@ -2513,6 +2514,124 @@ class _C3CalSection extends StatelessWidget {
       ]);
 }
 
+
+// ======================================================================
+//  C3 ทาง WiFi (จอรถที่ไม่มี Bluetooth BLE): C3 กับจอต่อฮอตสปอตมือถือเดียวกัน
+// ======================================================================
+class _C3WifiSection extends StatefulWidget {
+  const _C3WifiSection({required this.hub});
+  final DataHub hub;
+  @override
+  State<_C3WifiSection> createState() => _C3WifiSectionState();
+}
+
+class _C3WifiSectionState extends State<_C3WifiSection> {
+  late final _ssid = TextEditingController(text: widget.hub.settings.c3WifiSsid);
+  final _pass = TextEditingController();
+  bool _show = false;
+
+  @override
+  void dispose() {
+    _ssid.dispose();
+    _pass.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hub = widget.hub, s = hub.settings, w = hub.c3wifi;
+    return ListenableBuilder(
+      listenable: w,
+      builder: (context, _) {
+        final st = !w.have
+            ? (w.connected ? 'C3 ไม่ตอบเรื่อง WiFi (เฟิร์มแวร์เก่า — อัปเดต C3)' : 'ยังไม่ได้ต่อ C3')
+            : switch (w.state) {
+                2 => 'C3 ต่อ WiFi "${w.ssid}" แล้ว · ${w.ip} · สัญญาณ ${w.rssi} dBm · จอทาง WiFi ${w.clients} จอ',
+                1 => 'C3 กำลังต่อ WiFi "${w.ssid}"... (เปิดฮอตสปอตมือถือหรือยัง?)',
+                _ => 'C3 ยังไม่ได้ตั้ง WiFi',
+              };
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const _Header('ช่องทางต่อ C3'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, icon: Icon(Icons.bluetooth), label: Text('Bluetooth')),
+                  ButtonSegment(value: true, icon: Icon(Icons.wifi), label: Text('WiFi (ฮอตสปอต)')),
+                ],
+                selected: {s.c3Wifi},
+                onSelectionChanged: (v) {
+                  s.c3Wifi = v.first;
+                  hub.restart();
+                },
+              ),
+            ),
+          ),
+          ListTile(
+            dense: true,
+            leading: Icon(Icons.wifi, color: w.state == 2 ? kGreen : (w.state == 1 ? kAmber : kGrey)),
+            title: Text(st),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              SizedBox(
+                width: 220,
+                child: TextField(
+                  controller: _ssid,
+                  decoration: const InputDecoration(labelText: 'ชื่อฮอตสปอต (WiFi)', isDense: true),
+                ),
+              ),
+              SizedBox(
+                width: 220,
+                child: TextField(
+                  controller: _pass,
+                  obscureText: !_show,
+                  decoration: InputDecoration(
+                    labelText: 'รหัส WiFi',
+                    isDense: true,
+                    suffixIcon: IconButton(
+                      icon: Icon(_show ? Icons.visibility_off : Icons.visibility),
+                      onPressed: () => setState(() => _show = !_show),
+                    ),
+                  ),
+                ),
+              ),
+              FilledButton.tonalIcon(
+                icon: const Icon(Icons.send),
+                label: const Text('ส่งให้ C3'),
+                onPressed: !w.connected
+                    ? null
+                    : () async {
+                        final ssid = _ssid.text.trim();
+                        if (ssid.isEmpty) {
+                          _snack(context, 'ใส่ชื่อฮอตสปอตก่อน');
+                          return;
+                        }
+                        s.c3WifiSsid = ssid;
+                        final ok = await w.set(ssid, _pass.text);
+                        if (context.mounted) _snack(context, ok ? 'ส่งแล้ว — C3 กำลังต่อ "$ssid"' : 'ส่งไม่ได้ (ยังไม่ได้ต่อ C3)');
+                      },
+              ),
+              if (w.have && w.state != 0)
+                TextButton(
+                  onPressed: !w.connected || w.viaWifi ? null : () => w.off(),
+                  child: const Text('ปิด WiFi ของ C3'),
+                ),
+            ]),
+          ),
+          const _Hint('สำหรับจอรถที่หา C3 ทาง Bluetooth ไม่เจอ (จอจีนหลายรุ่นไม่มี BLE ให้แอป):\n'
+              '1) มือถือ: เปิดแอปนี้ ต่อ C3 ทาง Bluetooth → ใส่ชื่อ/รหัสฮอตสปอตของมือถือ → ส่งให้ C3\n'
+              '2) เปิดฮอตสปอตมือถือ · ให้จอรถต่อฮอตสปอตนั้น (จอได้เน็ตจากมือถือด้วย)\n'
+              '3) จอรถ: แหล่งข้อมูล ESP32-Superlink BLE → ช่องทาง WiFi · ครั้งแรกถอดเสียบ C3 ให้รอจับคู่ (2 นาที)\n'
+              'จอ S3 / CYD ยังต่อ C3 ทาง Bluetooth ได้พร้อมกัน · อัปเดตเฟิร์มแวร์ C3 ต้องใช้ทาง Bluetooth'),
+        ]);
+      },
+    );
+  }
+}
 
 // ======================================================================
 //  จับคู่ C3 (กันต่อผิดคันตอนจอดรวมกัน)

@@ -6,6 +6,7 @@ import '../settings.dart';
 import 'c3_cal.dart';
 import 'c3_ota.dart';
 import 'c3_pair.dart';
+import 'c3_wifi.dart';
 import 'c3_source.dart';
 import 'car_data.dart';
 import 'cyd_link.dart';
@@ -106,6 +107,7 @@ class DataHub extends ChangeNotifier {
   late final PerfRecorder perf = PerfRecorder(this);
   late final LapTimer lap = LapTimer(this);
   late final C3Pair c3pair = C3Pair(settings);
+  late final C3Wifi c3wifi = C3Wifi();
 
   final AppSettings settings;
   final CarData data = CarData();

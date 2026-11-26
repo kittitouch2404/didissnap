@@ -103,6 +103,12 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// ต่อ C3 ทาง WiFi แทน Bluetooth (จอรถที่ไม่มี BLE — C3 กับจอต่อฮอตสปอตเดียวกัน)
+  bool get c3Wifi => _b('c3Wifi', false);
+  set c3Wifi(bool v) => _setB('c3Wifi', v);
+  String get c3WifiSsid => _s('c3WifiSsid', '');
+  set c3WifiSsid(String v) => _p.setString('c3WifiSsid', v);
+
   String get c3Token => _s('c3Token', '');
   set c3Token(String v) => _p.setString('c3Token', v);
 

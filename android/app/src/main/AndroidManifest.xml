@@ -3,6 +3,8 @@
     <!-- WiFi: ESP32 / ELM327 WiFi -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- Bluetooth Classic: ELM327 / Vgate iCar Pro -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />

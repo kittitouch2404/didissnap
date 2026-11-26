@@ -8,6 +8,7 @@ import 'app_log.dart';
 import 'car_data.dart';
 import 'c3_cal.dart';
 import 'custom_pid.dart';
+import 'c3_link.dart';
 import 'elm_source.dart';
 import 'hub.dart';
 import 'native.dart';
@@ -17,7 +18,7 @@ import 'pids.dart';
 ///  C3 ส่งค่ารถมาเอง ~30 ครั้ง/วินาที (DidiNowGw) · DTC / Custom PID / CVT TEMP ฝากให้ C3 ถามรถ
 ///  รูปแบบแพ็กเก็ตตรงกับ didinow.h (little-endian)
 class C3Source implements CarSource {
-  static const _ev = EventChannel('didissnap/c3');
+  late final C3Link _tr; // BLE หรือ WiFi (ตามที่ตั้ง)
   static const int _magic = 0x31444944; // "DID1"
   static const _proto = ['search', 'DEMO', 'CAN 500k', 'CAN 250k', 'K ISO9141', 'K KWP fast', 'K KWP slow', 'CAN 500k 29bit', 'CAN 250k 29bit'];
 
@@ -38,20 +39,23 @@ class C3Source implements CarSource {
   @override
   void start(DataHub hub) {
     _hub = hub;
+    _tr = hub.settings.c3Wifi ? C3UdpLink() : C3BleLink();
     _running = true;
     _run();
   }
 
   Future<void> _run() async {
     final hub = _hub!;
-    hub.setLink(this, LinkState.connecting, 'ขอสิทธิ์ Bluetooth...');
-    if (!await BtTransport.ensurePermission()) {
-      hub.setLink(this, LinkState.error, 'ไม่ได้รับสิทธิ์ Bluetooth (อนุญาต "อุปกรณ์ใกล้เคียง" ให้แอป)');
-      return;
+    if (!_tr.isWifi) {
+      hub.setLink(this, LinkState.connecting, 'ขอสิทธิ์ Bluetooth...');
+      if (!await BtTransport.ensurePermission()) {
+        hub.setLink(this, LinkState.error, 'ไม่ได้รับสิทธิ์ Bluetooth (อนุญาต "อุปกรณ์ใกล้เคียง" ให้แอป)');
+        return;
+      }
     }
     if (!_running) return;
-    _sub = _ev.receiveBroadcastStream().listen(_onEvent);
-    await Native.m.invokeMethod('c3Start', {'addr': hub.settings.c3PairAddr});
+    _sub = _tr.events.listen(_onEvent);
+    await _tr.start(hub.settings.c3PairAddr);
     _pairAddr = hub.settings.c3PairAddr;
     hub.setLink(this, LinkState.connecting, 'กำลังหา C3...');
     _watch = Timer.periodic(const Duration(milliseconds: 500), (_) => _status());
@@ -88,6 +92,7 @@ class C3Source implements CarSource {
         _authed = false;
         _hub?.c3cal.sender = null;
         _hub?.c3pair.sender = null;
+        _hub?.c3wifi.sender = null;
         _hub?.c3pair.linkChanged();
         if (_bleState == 'connected') _hub?.c3ota.onLink(false);
       }
@@ -119,6 +124,8 @@ class C3Source implements CarSource {
         if (e.length >= 7) _custRaw(e);
       case 17: // DN_AUTHST: ผลจับคู่
         _authIn(e);
+      case 19: // DN_WIFIST: สถานะ WiFi ของ C3
+        _hub?.c3wifi.onStatus(e);
     }
   }
 
@@ -130,7 +137,7 @@ class C3Source implements CarSource {
     if (r == 0) {
       // C3 ตัวนี้จับคู่กับจออื่น (คันอื่น) → ตัดแล้วหาตัวอื่น
       AppLog.i('C3 $_curAddr denied (paired with another car)');
-      Native.m.invokeMethod('c3Reject');
+      _tr.reject();
       return;
     }
     if (r > 0 && !_authed) {
@@ -147,8 +154,11 @@ class C3Source implements CarSource {
     Timer(const Duration(milliseconds: 200), () => _sendCfg(force: true));
     _hub?.c3cal.sender = _write;
     _hub?.c3pair.sender = _write;
+    _hub?.c3wifi.sender = _write;
+    _hub?.c3wifi.viaWifi = _tr.isWifi;
+    _hub?.c3wifi.query();
     _hub?.c3pair.linkChanged();
-    _hub?.c3ota.onLink(true);
+    _hub?.c3ota.onLink(!_tr.isWifi); // อัปเดตเฟิร์มแวร์ได้เฉพาะทาง Bluetooth
     _hub?.updater.checkC3(); // เทียบเวอร์ชันเฟิร์มแวร์ C3 กับตัวล่าสุดบน GitHub
   }
 
@@ -157,7 +167,7 @@ class C3Source implements CarSource {
     final a = _hub?.settings.c3PairAddr ?? '';
     if (a == _pairAddr) return;
     _pairAddr = a;
-    Native.m.invokeMethod('c3SetPair', {'addr': a});
+    _tr.setPair(a);
   }
 
   void _gw(ByteData b, int n) {
@@ -218,7 +228,7 @@ class C3Source implements CarSource {
       final now = DateTime.now();
       if (now.difference(_dynoSent).inMilliseconds >= 900) {
         _dynoSent = now;
-        Native.m.invokeMethod<bool>('c3Write', {'b': _cmd(5, 0)});
+        _tr.write(_cmd(5, 0));
       }
     }
     if (hub.c3ota.running) {
@@ -237,6 +247,12 @@ class C3Source implements CarSource {
           LinkState.connecting,
           _bleState == 'Bluetooth off'
               ? 'เปิด Bluetooth ของเครื่องก่อน'
+              : _bleState == 'searching C3 (wifi)'
+              ? (hub.settings.c3PairAddr.isEmpty
+                  ? 'กำลังหา C3 ทาง WiFi... (จอกับ C3 ต้องต่อฮอตสปอตเดียวกัน · C3 ต้องรอจับคู่)'
+                  : 'กำลังหา C3 ทาง WiFi... (จอกับ C3 ต้องต่อฮอตสปอตเดียวกัน)')
+              : _bleState == 'wifi error'
+              ? 'เปิดช่อง WiFi ไม่ได้ — ปิดแล้วเปิดแอปใหม่'
               : _bleState == 'location off'
               ? 'จอนี้เป็น Android 11 หรือต่ำกว่า: ต้องเปิด "ตำแหน่ง (Location)" ในตั้งค่าเครื่อง ถึงจะหา C3 เจอ'
               : _bleState == 'no location permission'
@@ -262,7 +278,7 @@ class C3Source implements CarSource {
   Future<Uint8List?> _ask(Uint8List pkt, int id, Duration tmo) async {
     final c = Completer<Uint8List>();
     _wait[id] = c;
-    final ok = await Native.m.invokeMethod<bool>('c3Write', {'b': pkt}) ?? false;
+    final ok = await _tr.write(pkt);
     if (!ok) {
       _wait.remove(id);
       return null;
@@ -355,13 +371,11 @@ class C3Source implements CarSource {
     _pairChanged();
     // พิมพ์ header/คำสั่งทีละตัว → รอให้หยุดพิมพ์ก่อนค่อยส่ง (ไม่ยิง BLE ทุกตัวอักษร)
     _cfgDeb?.cancel();
-    _authT?.cancel();
-    _hub?.c3pair.sender = null;
     _cfgDeb = Timer(const Duration(milliseconds: 600), _sendCfg);
     _speedPush();
   }
 
-  Future<bool> _write(Uint8List p) async => await Native.m.invokeMethod<bool>('c3Write', {'b': p}) ?? false;
+  Future<bool> _write(Uint8List p) => _tr.write(p);
 
   // ---------------- ชดเชยความเร็วของแอป (ตั้งเอง / GPS) = SPEED GAIN ใน C3 (ค่าเดียวกันทุกจอ)
   void _calIn(ByteData b) {
@@ -457,7 +471,7 @@ class C3Source implements CarSource {
     if (!force && sig == _cfgSig) return;
     _cfgSig = sig;
     for (final p in pk) {
-      await Native.m.invokeMethod<bool>('c3Write', {'b': p});
+      await _tr.write(p);
       await Future<void>.delayed(const Duration(milliseconds: 40));
     }
   }
@@ -543,10 +557,11 @@ class C3Source implements CarSource {
     _cust?.cancel();
     _cfgDeb?.cancel();
     _pidT?.cancel();
+    _authT?.cancel();
+    _hub?.c3pair.sender = null;
+    _hub?.c3wifi.sender = null;
     await _sub?.cancel();
     _sub = null;
-    try {
-      await Native.m.invokeMethod('c3Stop');
-    } catch (_) {}
+    await _tr.stop();
   }
 }
