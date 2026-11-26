@@ -142,18 +142,18 @@ class _ConnectionTabState extends State<ConnectionTab> {
 
   static String _title(SourceType t) => switch (t) {
         SourceType.demo => 'จำลอง (Demo)',
-        SourceType.btElm => 'ELM327 Bluetooth (Vgate iCar Pro)',
-        SourceType.wifiElm => 'ELM327 WiFi',
-        SourceType.esp32 => 'ESP32 ผ่าน WiFi',
-        SourceType.c3 => 'ESP32-C3 ที่ช่อง OBD2 (Bluetooth BLE)  ★',
+        SourceType.btElm => 'OBD2 ELM327 Bluetooth',
+        SourceType.wifiElm => 'OBD2 ELM327 WiFi',
+        SourceType.esp32 => 'ESP32-Superlink WiFi',
+        SourceType.c3 => 'ESP32-Superlink BLE  ★',
       };
 
   static String _sub(SourceType t) => switch (t) {
         SourceType.demo => 'ทดสอบหน้าจอโดยไม่ต้องต่อรถ',
-        SourceType.btElm => 'มือถือต่อ OBD2 เอง ไม่ต้องใช้ ESP32',
-        SourceType.wifiElm => 'ตัว OBD2 แบบปล่อย WiFi',
-        SourceType.esp32 => 'ESP32 อ่าน OBD2 แล้วส่งค่าต่อมาที่มือถือ (โชว์พร้อมจอ CYD)',
-        SourceType.c3 => 'C3 อ่าน CAN / K-line เอง แล้วส่งให้แอป + จอ S3 + จอ CYD พร้อมกัน ไม่ต้องใช้ Vgate / WiFi',
+        SourceType.btElm => 'ต่อตรงจากมือถือ ไม่ต้องมีกล่องเสริม (รองรับ Vgate และ ELM327 ทั่วไป)',
+        SourceType.wifiElm => 'ตัวเสียบ OBD2 ที่ปล่อย WiFi เอง — ต่อ WiFi ของตัวนั้นแล้วเปิดแอป',
+        SourceType.esp32 => 'ระบบ Superlink รุ่น WiFi — แอปกับจอ CYD เห็นค่าเดียวกันพร้อมกัน',
+        SourceType.c3 => 'ตัวเสียบ Superlink อ่าน CAN / K-line เอง ส่งให้แอป + จอ S3 + จอ CYD พร้อมกัน ไม่ต้องใช้ WiFi',
       };
 
   Future<void> _pickBt() async {
@@ -298,7 +298,7 @@ class _ConnectionTabState extends State<ConnectionTab> {
                   'Vgate ต่อได้ทีละเครื่อง: ถ้า บอร์ด ESP32 ต่ออยู่ มือถือจะต่อไม่ได้ (ใช้โหมด ESP32 แทน)'),
             ],
             if (s.source == SourceType.wifiElm) ...[
-              const _Header('ELM327 WiFi'),
+              const _Header('OBD2 ELM327 WiFi'),
               _hostPort(_elmH, _elmP, s.setElm),
               const _Hint('ต่อ WiFi ของตัว OBD2 ก่อน (ค่าทั่วไป 192.168.0.10 : 35000)'),
             ],
@@ -1531,7 +1531,7 @@ class _Esp32TabState extends State<Esp32Tab> {
     final hub = widget.hub;
     if (s.source != SourceType.esp32) {
       return ListView(padding: const EdgeInsets.all(16), children: [
-        const Text('ตั้งค่าจอ ESP32 และส่งรูปเข้าจอได้เมื่อใช้แหล่งข้อมูล "ESP32 ผ่าน WiFi"',
+        const Text('ตั้งค่าจอ ESP32 และส่งรูปเข้าจอได้เมื่อใช้แหล่งข้อมูล "ESP32-Superlink WiFi"',
             style: TextStyle(fontSize: 15)),
         const SizedBox(height: 12),
         FilledButton(
