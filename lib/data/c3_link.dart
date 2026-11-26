@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -188,6 +189,128 @@ class C3UdpLink implements C3Link {
     _s = null;
     try {
       await Native.m.invokeMethod('wifiLock', {'on': false});
+    } catch (_) {}
+  }
+}
+
+/// Bluetooth ธรรมดา (SPP) — ESP32-Superlink รุ่น ESP32 (จอแอนดรอยด์จีนที่ไม่มี BLE ให้แอป)
+/// แพ็กเก็ตเดียวกับ BLE ส่งเป็นบรรทัด "~" + base64 + "\n" ทั้งสองทาง
+/// ต้องจับคู่ "DIDI-SL-xxxx" ในตั้งค่า Bluetooth ของเครื่องก่อน แล้วเลือกตัวนั้นในแอป
+class C3SppLink implements C3Link {
+  C3SppLink(this.address);
+  final String address;
+  final _ctrl = StreamController<dynamic>.broadcast();
+  StreamSubscription<dynamic>? _sub;
+  int _gen = -1;
+  bool _run = false, _up = false, _busy = false;
+  String _buf = '';
+  DateTime _retryAt = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _t;
+
+  @override
+  bool get isWifi => false;
+  @override
+  Stream<dynamic> get events => _ctrl.stream;
+
+  @override
+  Future<void> start(String pairAddr) async {
+    _run = true;
+    if (address.isEmpty) {
+      Timer(const Duration(milliseconds: 50), () => _ctrl.add('spp no device'));
+      return;
+    }
+    _sub = const EventChannel('didissnap/bt/stream').receiveBroadcastStream().listen(_onNative);
+    _t = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+    _tick();
+  }
+
+  void _onNative(dynamic ev) {
+    if (ev is! Map || ev['g'] != _gen) return;
+    if (ev['t'] == 'data') {
+      _buf += ev['d'] as String;
+      var i = _buf.indexOf('\n');
+      while (i >= 0) {
+        final line = _buf.substring(0, i).trim();
+        _buf = _buf.substring(i + 1);
+        if (line.length > 1 && line.codeUnitAt(0) == 0x7E) {
+          try {
+            _ctrl.add(Uint8List.fromList(base64.decode(line.substring(1))));
+          } catch (_) {}
+        }
+        i = _buf.indexOf('\n');
+      }
+      if (_buf.length > 2000) _buf = '';
+    } else if (ev['t'] == 'closed') {
+      _lost(2);
+    }
+  }
+
+  void _lost(int waitS) {
+    _gen = -1;
+    _buf = '';
+    _retryAt = DateTime.now().add(Duration(seconds: waitS));
+    if (_up) {
+      _up = false;
+      _ctrl.add('disconnected');
+    }
+  }
+
+  Future<void> _tick() async {
+    if (!_run || _up || _busy || DateTime.now().isBefore(_retryAt)) return;
+    _busy = true;
+    _ctrl.add('spp connecting');
+    try {
+      final g = await Native.m.invokeMethod<int>('connect', {'address': address});
+      if (!_run) {
+        await Native.m.invokeMethod('disconnect');
+        return;
+      }
+      _gen = g ?? -1;
+      _up = true;
+      _ctrl.add('addr:${address.toUpperCase()}');
+      _ctrl.add('connected');
+    } on PlatformException catch (e) {
+      _ctrl.add('spp failed:${e.message ?? ''}');
+      _retryAt = DateTime.now().add(const Duration(seconds: 3));
+    } catch (_) {
+      _retryAt = DateTime.now().add(const Duration(seconds: 3));
+    } finally {
+      _busy = false;
+    }
+  }
+
+  @override
+  Future<bool> write(Uint8List p) async {
+    if (!_up) return false;
+    try {
+      return await Native.m.invokeMethod<bool>('write', {'data': '~${base64.encode(p)}\n'}) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  void reject() {
+    // Superlink ตัวนี้จับคู่กับคันอื่น → ตัดแล้วรอ 10 วิค่อยลองใหม่ (อาจเปิดโหมดจับคู่แล้ว)
+    try {
+      Native.m.invokeMethod('disconnect');
+    } catch (_) {}
+    _lost(10);
+  }
+
+  @override
+  void setPair(String addr) {}
+
+  @override
+  Future<void> stop() async {
+    _run = false;
+    _t?.cancel();
+    await _sub?.cancel();
+    _sub = null;
+    _up = false;
+    _gen = -1;
+    try {
+      await Native.m.invokeMethod('disconnect');
     } catch (_) {}
   }
 }

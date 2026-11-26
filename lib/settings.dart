@@ -104,8 +104,21 @@ class AppSettings extends ChangeNotifier {
   }
 
   /// ต่อ C3 ทาง WiFi แทน Bluetooth (จอรถที่ไม่มี BLE — C3 กับจอต่อฮอตสปอตเดียวกัน)
-  bool get c3Wifi => _b('c3Wifi', false);
-  set c3Wifi(bool v) => _setB('c3Wifi', v);
+  bool get c3Wifi => c3Link == 1;
+  set c3Wifi(bool v) => c3Link = v ? 1 : 0;
+
+  /// ช่องทางต่อ Superlink: 0 = Bluetooth BLE · 1 = WiFi (ฮอตสปอต) · 2 = Bluetooth ธรรมดา (ESP32 รุ่นแรกเท่านั้น)
+  int get c3Link => _p.getInt('c3Link') ?? ((_p.getBool('c3Wifi') ?? false) ? 1 : 0);
+  set c3Link(int v) => _setI('c3Link', v);
+
+  /// ตัว Superlink (ESP32) ที่จับคู่บลูทูธไว้ในเครื่อง — ใช้กับ Bluetooth ธรรมดา
+  String get c3SppAddr => _s('c3SppAddr', '');
+  String get c3SppName => _s('c3SppName', '');
+  void setC3Spp(String name, String addr) {
+    _p.setString('c3SppName', name);
+    _p.setString('c3SppAddr', addr);
+    notifyListeners();
+  }
   String get c3WifiSsid => _s('c3WifiSsid', '');
   set c3WifiSsid(String v) => _p.setString('c3WifiSsid', v);
 

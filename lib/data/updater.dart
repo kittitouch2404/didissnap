@@ -98,7 +98,17 @@ class Updater extends ChangeNotifier {
   }
 
   // ---------------- เฟิร์มแวร์ C3 ล่าสุด (release c3-latest ที่ CI สร้าง)
-  static const _apiC3 = 'https://api.github.com/repos/kittitouch2404/didissnap/releases/tags/c3-latest';
+  static const _apiRel = 'https://api.github.com/repos/kittitouch2404/didissnap/releases/tags/';
+  /// รุ่นของตัวที่ต่ออยู่: 'c3' = ESP32-C3 · 'sl' = ESP32 รุ่นแรก (Bluetooth ธรรมดา) — ใช้ไฟล์คนละตัว
+  String fam = 'c3';
+  void setFam(String fw) {
+    final f = fw.startsWith('sl ') ? 'sl' : (fw.startsWith('c3 ') ? 'c3' : '');
+    if (f.isEmpty || f == fam) return;
+    fam = f;
+    c3Latest = '';
+    c3Asset = '';
+    checkC3(force: true);
+  }
   String c3Latest = ''; // เช่น "c3 2026.11.26b" ("" = ยังไม่รู้)
   String c3Asset = '';
   DateTime _c3At = DateTime.fromMillisecondsSinceEpoch(0);
@@ -110,18 +120,18 @@ class Updater extends ChangeNotifier {
     _c3Busy = true;
     final c = _client();
     try {
-      final rq = await c.getUrl(Uri.parse(_apiC3));
+      final rq = await c.getUrl(Uri.parse('$_apiRel$fam-latest'));
       rq.headers.set('Accept', 'application/vnd.github+json');
       _auth(rq);
       final rs = await rq.close().timeout(const Duration(seconds: 12));
       final body = await rs.transform(utf8.decoder).join();
       if (rs.statusCode != 200) throw Exception('HTTP ${rs.statusCode}');
       final j = jsonDecode(body) as Map<String, dynamic>;
-      final m = RegExp(r'FW:\s*(c3 [0-9.]+[a-z]?)').firstMatch('${j['body'] ?? ''}');
+      final m = RegExp('FW:\\s*($fam [0-9.]+[a-z]?)').firstMatch('${j['body'] ?? ''}');
       c3Latest = m?.group(1) ?? '';
       c3Asset = '';
       for (final a in (j['assets'] as List? ?? [])) {
-        if ('${a['name']}' == 'didi_c3_gateway.bin') c3Asset = '${a['url']}';
+        if ('${a['name']}' == (fam == 'sl' ? 'didi_sl_esp32.bin' : 'didi_c3_gateway.bin')) c3Asset = '${a['url']}';
       }
       _c3At = DateTime.now();
       AppLog.i('C3 firmware latest: ${c3Latest.isEmpty ? '?' : c3Latest}');

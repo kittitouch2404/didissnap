@@ -2556,19 +2556,44 @@ class _C3WifiSectionState extends State<_C3WifiSection> {
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: SegmentedButton<bool>(
+              child: SegmentedButton<int>(
                 segments: const [
-                  ButtonSegment(value: false, icon: Icon(Icons.bluetooth), label: Text('Bluetooth')),
-                  ButtonSegment(value: true, icon: Icon(Icons.wifi), label: Text('WiFi (ฮอตสปอต)')),
+                  ButtonSegment(value: 0, icon: Icon(Icons.bluetooth), label: Text('Bluetooth BLE')),
+                  ButtonSegment(value: 2, icon: Icon(Icons.bluetooth_connected), label: Text('Bluetooth ธรรมดา')),
+                  ButtonSegment(value: 1, icon: Icon(Icons.wifi), label: Text('WiFi (ฮอตสปอต)')),
                 ],
-                selected: {s.c3Wifi},
+                selected: {s.c3Link},
                 onSelectionChanged: (v) {
-                  s.c3Wifi = v.first;
+                  setState(() => s.c3Link = v.first);
                   hub.restart();
                 },
               ),
             ),
           ),
+          if (s.c3Link == 2) ...[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: Text(
+                'ใช้ได้กับ Superlink รุ่น ESP32 (บอร์ด 30 ขา) เท่านั้น — C3 ไม่มี Bluetooth ธรรมดา\n'
+                'จับคู่ "DIDI-SL-..." ในตั้งค่า Bluetooth ของเครื่องก่อน (ไม่ต้องใส่รหัส) แล้วกดเลือกด้านล่าง',
+                style: TextStyle(color: kGrey, fontSize: 12),
+              ),
+            ),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.bluetooth_searching),
+              title: Text(s.c3SppAddr.isEmpty ? 'ยังไม่ได้เลือกตัว Superlink' : '${s.c3SppName} (${s.c3SppAddr})'),
+              trailing: OutlinedButton(
+                onPressed: () async {
+                  final d = await pickBondedDevice(context, 'เลือก Superlink (DIDI-SL-...)');
+                  if (d == null) return;
+                  setState(() => s.setC3Spp(d.name, d.address));
+                  hub.restart();
+                },
+                child: const Text('เลือกอุปกรณ์'),
+              ),
+            ),
+          ],
           ListTile(
             dense: true,
             leading: Icon(Icons.wifi, color: w.state == 2 ? kGreen : (w.state == 1 ? kAmber : kGrey)),

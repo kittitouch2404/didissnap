@@ -39,7 +39,12 @@ class C3Source implements CarSource {
   @override
   void start(DataHub hub) {
     _hub = hub;
-    _tr = hub.settings.c3Wifi ? C3UdpLink() : C3BleLink();
+    _tr = switch (hub.settings.c3Link) {
+      1 => C3UdpLink(),
+      2 => C3SppLink(hub.settings.c3SppAddr),
+      _ => C3BleLink(),
+    };
+    hub.c3ota.writer = _tr is C3SppLink ? _tr.write : null; // OTA ทาง Bluetooth ธรรมดา ส่งผ่านช่องเดียวกัน
     _running = true;
     _run();
   }
@@ -116,6 +121,7 @@ class C3Source implements CarSource {
         if (e.length >= 8) _complete(b.getUint16(6, Endian.little), e);
       case 15: // DN_OTAST: สถานะอัปเดตเฟิร์มแวร์ / เวอร์ชัน
         _hub?.c3ota.onStatus(e);
+        _hub?.updater.setFam(_hub!.c3ota.fwVer);
       case 13: // DN_CAL: ค่าปรับ gain/offset ปัจจุบันใน C3
         if (e.length >= 112 && e[5] == 0) _calIn(b);
       case 10: // DN_CUST: ค่าของทุกช่อง
@@ -145,6 +151,7 @@ class C3Source implements CarSource {
       _pairAddr = hub.settings.c3PairAddr;
       _linkUp();
     }
+    hub.updater.setFam(hub.c3pair.fw);
   }
 
   void _linkUp() {
@@ -257,6 +264,12 @@ class C3Source implements CarSource {
               ? 'จอนี้เป็น Android 11 หรือต่ำกว่า: ต้องเปิด "ตำแหน่ง (Location)" ในตั้งค่าเครื่อง ถึงจะหา C3 เจอ'
               : _bleState == 'no location permission'
               ? 'อนุญาต "ตำแหน่ง" ให้แอปนี้ก่อน (Android 11 หรือต่ำกว่าต้องใช้หา Bluetooth BLE) แล้วกด เชื่อมต่อใหม่'
+              : _bleState == 'spp no device'
+              ? 'ยังไม่ได้เลือกตัว Superlink — จับคู่ "DIDI-SL-..." ในตั้งค่า Bluetooth ของเครื่อง แล้วกด "เลือกอุปกรณ์" ในหน้าการเชื่อมต่อ'
+              : _bleState == 'spp connecting'
+              ? 'กำลังต่อ Bluetooth ${hub.settings.c3SppName.isEmpty ? hub.settings.c3SppAddr : hub.settings.c3SppName}...'
+              : _bleState.startsWith('spp failed')
+              ? 'ต่อ Bluetooth ไม่ได้ — เสียบ Superlink อยู่ไหม? (ESP32 รุ่นแรกเท่านั้น · C3 ใช้ Bluetooth ธรรมดาไม่ได้) จะลองใหม่เรื่อยๆ'
               : _bleState == 'no BLE'
               ? 'จอนี้ไม่มี Bluetooth BLE ให้แอปใช้ — ใช้ OBD2 ELM327 WiFi หรือ ESP32-Superlink WiFi แทน'
               : denied

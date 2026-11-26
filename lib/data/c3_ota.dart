@@ -69,7 +69,12 @@ class C3Ota extends ChangeNotifier {
     return u;
   }
 
-  static Future<bool> _w(Uint8List p) async {
+  /// ช่องส่งแทน BLE (Bluetooth ธรรมดา) — null = BLE ตามเดิม
+  Future<bool> Function(Uint8List p)? writer;
+
+  Future<bool> _w(Uint8List p) async {
+    final w = writer;
+    if (w != null) return w(p);
     try {
       return await Native.m.invokeMethod<bool>('c3WriteWait', {'b': p}) ?? false;
     } catch (_) {
@@ -91,9 +96,11 @@ class C3Ota extends ChangeNotifier {
       return 'นี่คือไฟล์ .merged.bin — ให้ใช้ไฟล์ .ino.bin (ไฟล์ที่ไม่มีคำว่า merged / bootloader / partitions)';
     }
     final chip = f[12] | (f[13] << 8);
-    if (chip != 5) {
-      const names = {0: 'ESP32', 2: 'ESP32-S2', 9: 'ESP32-S3', 12: 'ESP32-C2', 13: 'ESP32-C6', 16: 'ESP32-H2'};
-      return 'ไฟล์นี้สำหรับ ${names[chip] ?? 'ชิปอื่น ($chip)'} ไม่ใช่ ESP32-C3 — เลือกไฟล์ของ didi_c3_gateway';
+    final sl = fwVer.startsWith('sl '); // ESP32-Superlink รุ่น ESP32 (Bluetooth ธรรมดา)
+    final want = sl ? 0 : 5;
+    if (chip != want) {
+      const names = {0: 'ESP32', 2: 'ESP32-S2', 5: 'ESP32-C3', 9: 'ESP32-S3', 12: 'ESP32-C2', 13: 'ESP32-C6', 16: 'ESP32-H2'};
+      return 'ไฟล์นี้สำหรับ ${names[chip] ?? 'ชิปอื่น ($chip)'} แต่ตัวที่ต่ออยู่เป็น ${names[want]} — เลือกไฟล์ ${sl ? 'didi_sl_esp32.bin' : 'didi_c3_gateway.bin'}';
     }
     if (freeSpace > 0 && f.length > freeSpace) {
       return 'ไฟล์ใหญ่ ${(f.length / 1024).round()} KB เกินพื้นที่ใน C3 (${(freeSpace / 1024).round()} KB) — ตั้ง Partition Scheme ให้มี OTA';
