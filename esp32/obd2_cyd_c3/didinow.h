@@ -158,7 +158,8 @@ inline void dnCalDefault(DidiNowCal& c) { for (int i = 0; i < DN_NCAL; i++) { c.
 
 // ---------------------------------------------------------------- อัปเดตเฟิร์มแวร์ C3 ทาง BLE (จากแอป)
 // แอป -> C3 (เขียนแบบรอตอบรับทีละแพ็กเก็ต)
-enum { DN_OTA_INFO = 0, DN_OTA_BEGIN = 1, DN_OTA_DATA = 2, DN_OTA_END = 3, DN_OTA_ABORT = 4 };
+enum { DN_OTA_INFO = 0, DN_OTA_BEGIN = 1, DN_OTA_DATA = 2, DN_OTA_END = 3, DN_OTA_ABORT = 4,
+       DN_OTA_DATA2 = 5 };   // DATA2 = ตำแหน่งเป็นไบต์จริง ส่งซ้ำได้ (C3 ตั้งแต่ 2026.11.26e)
 #define DN_OTA_CHUNK 160
 struct __attribute__((packed)) DidiNowOta {
   uint32_t magic;

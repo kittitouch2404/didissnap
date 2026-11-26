@@ -140,34 +140,52 @@ class C3Ota extends ChangeNotifier {
       var lastUi = 0;
       // ตำแหน่งที่ส่งไป = ค่า Update.progress() ของ C3 (นับเฉพาะที่เขียนลงแฟลชครบ 4 KB)
       // เฟิร์มแวร์ C3 รุ่นแรกเช็กกับค่านี้ · รุ่นใหม่รับได้ทั้งแบบนี้และแบบนับไบต์
-      var prog = 0, bufLen = 0;
-      for (var off = 0; off < f.length; off += chunk) {
+      // C3 ตั้งแต่ 2026.11.26e: ส่งตำแหน่งเป็นไบต์จริง (DATA2) — สะดุดได้ ถามว่ารับถึงไหนแล้วส่งต่อ
+      final byteMode = fwVer.isNotEmpty && fwVer.compareTo('c3 2026.11.26e') >= 0;
+      var prog = 0, bufLen = 0, resync = 0;
+      var off = 0;
+      while (off < f.length) {
         if (_cancel) throw 'ยกเลิกแล้ว';
         if (_st == 3) throw 'C3: $_stMsg';
         final n = (f.length - off) < chunk ? f.length - off : chunk;
-        final p = _pkt(2, prog, Uint8List.sublistView(f, off, off + n));
+        final p = byteMode ? _pkt(5, off, Uint8List.sublistView(f, off, off + n)) : _pkt(2, prog, Uint8List.sublistView(f, off, off + n));
         var sent = false;
-        for (var t = 0; t < 3 && !sent; t++) {
+        for (var t = 0; t < (byteMode ? 4 : 6) && !sent; t++) {
           sent = await _w(p);
-          if (!sent) await Future<void>.delayed(const Duration(milliseconds: 150));
+          if (!sent) await Future<void>.delayed(Duration(milliseconds: 200 + t * 200));
         }
-        if (!sent) throw 'ส่งไม่ผ่านที่ ${(off / 1024).round()} KB (สัญญาณหลุด?)';
-        // จำลองบัฟเฟอร์ 4 KB ของ Update ใน C3
-        var left = n;
-        while (bufLen + left > 4096) {
-          left -= 4096 - bufLen;
-          bufLen = 0;
-          prog += 4096;
+        if (!sent) {
+          if (!byteMode || ++resync > 8) throw 'ส่งไม่ผ่านที่ ${(off / 1024).round()} KB (สัญญาณหลุด?)';
+          // ถาม C3 ว่ารับถึงไหน แล้วส่งต่อจากตรงนั้น
+          _set('สัญญาณสะดุด — ต่อจาก C3...');
+          await Future<void>.delayed(const Duration(seconds: 1));
+          _st = -1;
+          await _w(_pkt(0, 0));
+          if (!await _waitSt({1, 3}, const Duration(seconds: 5))) continue;
+          if (_st == 3) throw 'C3: $_stMsg';
+          off = _off.clamp(0, f.length);
+          AppLog.i('C3 OTA resume at $off');
+          continue;
         }
-        bufLen += left;
-        if (bufLen == f.length - prog) {
-          prog += bufLen;
-          bufLen = 0;
+        if (!byteMode) {
+          // จำลองบัฟเฟอร์ 4 KB ของ Update ใน C3 (C3 รุ่นเก่าเช็กตำแหน่งกับค่า Update.progress())
+          var left = n;
+          while (bufLen + left > 4096) {
+            left -= 4096 - bufLen;
+            bufLen = 0;
+            prog += 4096;
+          }
+          bufLen += left;
+          if (bufLen == f.length - prog) {
+            prog += bufLen;
+            bufLen = 0;
+          }
         }
+        off += n;
         final ms = sw.elapsedMilliseconds;
         if (ms - lastUi > 250) {
           lastUi = ms;
-          final done = off + n;
+          final done = off;
           kbs = ms > 0 ? done / 1.024 / ms : 0;
           etaS = kbs > 0 ? ((f.length - done) / 1024 / kbs).round() : 0;
           _set('กำลังส่ง ${(done / 1024).round()} / ${(f.length / 1024).round()} KB', p: done / f.length);

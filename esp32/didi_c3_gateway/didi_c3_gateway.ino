@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.26d"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.26e"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -461,7 +461,10 @@ static void otaFail(const char* why) {
 static void otaCmd(const DidiNowOta* o, int n) {
   otaLast = millis();
   switch (o->op) {
-    case DN_OTA_INFO: if (!otaOn) otaStatus(DN_OTAS_IDLE, 0, FW_VER); break;
+    case DN_OTA_INFO:   // ระหว่างรับไฟล์: บอกว่ารับไปแล้วกี่ไบต์ (แอปส่งต่อจากตรงนั้นได้ ถ้าสัญญาณสะดุด)
+      if (!otaOn) otaStatus(DN_OTAS_IDLE, 0, FW_VER);
+      else { otaStatus(DN_OTAS_RECV, 0, "receiving"); otaSt.off = otaGot; }
+      break;
     case DN_OTA_BEGIN: {
       if (otaOn) Update.abort();
       uint32_t size = o->off;
@@ -482,6 +485,16 @@ static void otaCmd(const DidiNowOta* o, int n) {
       if (Update.write((uint8_t*)o->data, o->len) != o->len) { otaFail("write"); break; }
       otaGot += o->len;
       if ((Update.progress() & 0x3FFF) < o->len) otaStatus(DN_OTAS_RECV, 0, "receiving");   // ทุก 16 KB
+      break;
+    }
+    case DN_OTA_DATA2: {   // แอปรุ่นใหม่: ตำแหน่งเป็นไบต์จริง · ส่งซ้ำ (ตอบรับหาย) = รับไว้เฉย ๆ ไม่เขียนซ้ำ
+      if (!otaOn) break;
+      if (o->off + o->len <= otaGot) break;
+      if (o->off != otaGot) { otaFail("offset"); break; }
+      if (o->len > DN_OTA_CHUNK || n < (int)offsetof(DidiNowOta, data) + o->len) { otaFail("short"); break; }
+      if (Update.write((uint8_t*)o->data, o->len) != o->len) { otaFail("write"); break; }
+      otaGot += o->len;
+      if ((otaGot & 0x3FFF) < o->len) { otaStatus(DN_OTAS_RECV, 0, "receiving"); otaSt.off = otaGot; }
       break;
     }
     case DN_OTA_END:
@@ -773,6 +786,7 @@ static void obdTask(void*) {
   int slow = 0;
   uint32_t step = 0;
   for (;;) {
+    if (otaOn) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }   // อัปเดตเฟิร์มแวร์อยู่: หยุดถามรถ ให้ CPU/แฟลชว่าง
     if (demo) { handleRaw(); vTaskDelay(pdMS_TO_TICKS(100)); continue; }
     if (carLink != DN_LINK_OK) {
       if (connect()) { carLink = DN_LINK_OK; fails = 0; lastOk = millis(); rtcProto = proto; Serial.printf("[obd] connected: %s\n", DN_P_NAME[proto]); }
@@ -891,13 +905,14 @@ void loop() {
     deepSleep(!vbat ? WAKE_NOVBAT_S : vbat < LOWBAT_V ? WAKE_LOWBAT_S : WAKE_S);
   }
   c3ble::tick();   // จับคู่จอ: ตอบผล / ตัดจอที่ไม่จับคู่ / โฆษณา
+  c3wifi::pause = otaOn;   // อัปเดตเฟิร์มแวร์: ปิด WiFi ชั่วคราว (ให้ Bluetooth ใช้คลื่นเต็มที่ ส่งไฟล์ไม่สะดุด)
   c3wifi::tick();  // จอทาง WiFi: รับคำสั่ง / ประกาศตัว
-  // อัปเดตเฟิร์มแวร์อยู่: หยุดส่งค่ารถ (ให้ BLE ว่างรับไฟล์) · ไม่หลับ · ไม่มีไฟล์มา 20 วิ = ยกเลิก
+  // อัปเดตเฟิร์มแวร์อยู่: หยุดส่งค่ารถ (ให้ BLE ว่างรับไฟล์) · ไม่หลับ · ไม่มีไฟล์มา 45 วิ = ยกเลิก
   if (otaStNew) { otaStNew = false; tx(&otaSt, sizeof(otaSt)); }
   if (otaReboot) { delay(400); tx(&otaSt, sizeof(otaSt)); delay(300); ESP.restart(); }
   if (otaOn) {
     lastCar = now;
-    if (now - otaLast > 20000) otaFail("timeout");
+    if (now - otaLast > 45000) otaFail("timeout");
     digitalWrite(PIN_LED, (now / 80) & 1);
     delay(2);
     return;

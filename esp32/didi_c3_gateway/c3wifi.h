@@ -18,6 +18,8 @@ static bool started = false, udpOn = false;
 static uint32_t lastBeacon = 0, lastSt = 0, lastTry = 0;
 static uint8_t lastState = 255;
 static char mac[18] = "";
+static volatile bool pause = false;   // อัปเดตเฟิร์มแวร์อยู่ → ปิด WiFi ชั่วคราว
+static bool paused = false;
 
 static void sendUdp(uint32_t ip, uint16_t port, const uint8_t* d, int n) {
   if (!udpOn) return;
@@ -99,6 +101,11 @@ static void doCommand() {
 inline void tick() {
   if (pendOn) doCommand();
   uint32_t now = millis();
+  if (pause) {
+    if (started && !paused) { paused = true; udp.stop(); udpOn = false; WiFi.disconnect(false); Serial.println("[wifi] paused (OTA)"); }
+    return;
+  }
+  if (paused) { paused = false; connect(); }
   if (!started) {
     if (now - lastSt > 5000) { lastSt = now; sendStatus(); }
     return;
