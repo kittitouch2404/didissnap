@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.26b"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.26c"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -249,6 +249,31 @@ static bool canSniff(uint32_t br) {
   canobd::sniffErr = max(e0, canobd::sniffErr);
   return false;
 }
+// รถใหม่ (D-Max / Navara / รถยุโรป ฯลฯ) มีหลายกล่องตอบ OBD — เลือกกล่องเครื่อง (รองรับรอบเครื่อง PID 0C · ID ต่ำสุด)
+// แล้วลองถามตรงกล่องนั้น ไม่ตอบ = ถามทุกกล่อง (7DF) แทน
+static void pickEcu() {
+#if USE_CAN
+  uint32_t ids[8], mk[8];
+  int n = canobd::discover(ids, mk, 8);
+  uint32_t best = 0, any = 0;
+  for (int i = 0; i < n; i++) {
+    if (!any || ids[i] < any) any = ids[i];
+    if ((mk[i] & (1u << 20)) && (!best || ids[i] < best)) best = ids[i];   // bit 20 = PID 0C (รอบ)
+  }
+  if (!best) best = any;
+  char m[59];
+  snprintf(m, sizeof(m), "CAN: %d modules answer, engine 0x%X", n, (unsigned)best);
+  setDiag(m);
+  if (best) canobd::ecuRx = best;
+  canobd::physical = true;
+  uint8_t q[2] = {0x01, 0x0C}, r[8];
+  if (ask(q, 2, r, sizeof(r), 250) < 4) {
+    canobd::physical = false;
+    Serial.println("[obd] direct ECU request no reply -> broadcast 7DF");
+  }
+  readMasks();   // PID ที่รองรับ: ของกล่องเครื่องจริง
+#endif
+}
 static bool tryCan(uint32_t br, uint8_t p, uint8_t pExt) {
 #if USE_CAN
   bool traffic = canSniff(br);                          // ฟังก่อน ไม่ส่งอะไรออกบัส (กันรบกวนรถถ้าความเร็วไม่ตรง)
@@ -263,8 +288,9 @@ static bool tryCan(uint32_t br, uint8_t p, uint8_t pExt) {
     if (!canobd::start(PIN_CAN_TX, canRx, br, false, e == 1)) return false;
     proto = e ? pExt : p;
     if (readMasks()) {
-      canobd::physical = true;
-      Serial.printf("[obd] CAN %u %s ok, ECU 0x%X\n", (unsigned)br, e ? "29-bit" : "11-bit", (unsigned)canobd::ecuRx);
+      pickEcu();
+      Serial.printf("[obd] CAN %u %s ok, ECU 0x%X %s\n", (unsigned)br, e ? "29-bit" : "11-bit", (unsigned)canobd::ecuRx,
+                    canobd::physical ? "(direct)" : "(broadcast)");
       return true;
     }
     if (!e) canobd::txStatus(&txErr, &busOff);
@@ -726,6 +752,20 @@ static void bootBtn() {
 }
 
 // ---------------------------------------------------------------- งานอ่านรถ (แยก task: ตอน init K-line บล็อกหลายวินาที ไม่ให้ ESP-NOW หยุดส่ง)
+// ถามแล้วไม่ตอบติดกัน: CAN ที่ถามตรงกล่อง → เปลี่ยนเป็นถามทุกกล่องก่อน · ยังไม่ตอบ = หลุดจากรถ
+static void lostCheck() {
+#if USE_CAN
+  if (dnIsCan(proto) && canobd::physical) {
+    canobd::physical = false;
+    fails = 0;
+    Serial.println("[obd] no reply from ECU -> broadcast 7DF");
+    setDiag("CAN: ECU stopped answering direct -> broadcast");
+    return;
+  }
+#endif
+  Serial.println("[obd] lost car");
+  disconnect();
+}
 static void obdTask(void*) {
   static const uint8_t SLOW[] = {0x0D, 0x05, 0x0F, 0x04, 0x0B, 0x10, 0x2F, 0x06, 0x42, 0x0E, 0x5C};
   int slow = 0;
@@ -749,7 +789,7 @@ static void obdTask(void*) {
       uint8_t p = (dk % 5 == 4) ? 0x11 : (dk % 2 ? 0x0D : 0x0C);
       dk++;
       pid(p);
-      if (fails >= 8) { Serial.println("[obd] lost car"); disconnect(); }
+      if (fails >= 8) lostCheck();
       continue;
     }
     static uint32_t lastCust = 0;
@@ -768,7 +808,7 @@ static void obdTask(void*) {
         }
       }
     } else pid(0x0C);
-    if (fails >= 8) { Serial.println("[obd] lost car"); disconnect(); }
+    if (fails >= 8) lostCheck();
   }
 }
 

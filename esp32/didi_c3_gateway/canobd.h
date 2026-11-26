@@ -132,6 +132,30 @@ inline int request(const uint8_t* req, int rl, uint8_t* resp, int maxLen, uint32
   return total > 0 ? got : -1;
 }
 
+// ถามทุกกล่อง "รองรับ PID อะไรบ้าง" (01 00) แล้วเก็บ "ทุกกล่องที่ตอบ" — รถใหม่มีหลายกล่องตอบ (เครื่อง/เกียร์/ไฮบริด...)
+// คืนจำนวนกล่อง · ids = ID ที่ตอบ · masks = PID 01-20 ที่กล่องนั้นรองรับ
+inline int discover(uint32_t* ids, uint32_t* masks, int maxN, uint32_t ms = 250) {
+  if (!on) return 0;
+  drain();
+  uint8_t d[8] = {2, 0x01, 0x00, 0, 0, 0, 0, 0};
+  if (!sendFrame(funcId(), d)) return 0;
+  int n = 0;
+  uint32_t t0 = millis();
+  twai_message_t m;
+  while (millis() - t0 < ms && n < maxN) {
+    if (twai_receive(&m, pdMS_TO_TICKS(10)) != ESP_OK) continue;
+    if (!isResp(m) || m.data_length_code < 7) continue;
+    if ((m.data[0] >> 4) != 0 || (m.data[0] & 15) < 6 || m.data[1] != 0x41 || m.data[2] != 0x00) continue;
+    bool dup = false;
+    for (int i = 0; i < n; i++) dup |= ids[i] == m.identifier;
+    if (dup) continue;
+    ids[n] = m.identifier;
+    masks[n] = ((uint32_t)m.data[3] << 24) | ((uint32_t)m.data[4] << 16) | ((uint32_t)m.data[5] << 8) | m.data[6];
+    n++;
+  }
+  return n;
+}
+
 // ถามด้วย ID ที่เลือกเอง (Custom PID เช่น 0x7E1 กล่องเกียร์) — คืนคำตอบดิบรวม 7F (ปฏิเสธ) · ไม่เปลี่ยน ecuRx
 inline int requestTo(uint32_t tx, const uint8_t* req, int rl, uint8_t* resp, int maxLen, uint32_t timeoutMs) {
   if (!on || rl < 1 || rl > 7) return -1;
