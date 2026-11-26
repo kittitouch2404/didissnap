@@ -1,0 +1,73 @@
+name: Build screen firmware (S3 4.3" + CYD)
+
+# บิลด์จอ S3 4.3" (Didissnap_S3) และ CYD 2.8" แบบ C3 (obd2_cyd_c3) เป็นไฟล์สำเร็จ
+#  *_full.bin = แฟลชทั้งชิปที่ตำแหน่ง 0x0 (bootloader + partition + โปรแกรม) ไม่ต้องใช้ Arduino IDE
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'esp32/Didissnap_S3/**'
+      - 'esp32/obd2_cyd_c3/**'
+      - '.github/workflows/build-screens.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Core + libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.2.0
+          arduino-cli lib install "NimBLE-Arduino@2.5.2" "AnimatedGIF" "LovyanGFX"
+
+      - name: Compile S3 4.3"
+        run: |
+          arduino-cli compile \
+            --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashMode=dio,FlashSize=16M,PSRAM=opi" \
+            --output-dir out_s3 esp32/Didissnap_S3
+          ls -la out_s3
+          cp out_s3/Didissnap_S3.ino.merged.bin Didissnap_S3_full.bin
+          cp out_s3/Didissnap_S3.ino.bin Didissnap_S3_app.bin
+
+      - name: Compile CYD 2.8" (C3 mode)
+        run: |
+          arduino-cli compile \
+            --fqbn "esp32:esp32:esp32" \
+            --output-dir out_cyd esp32/obd2_cyd_c3
+          ls -la out_cyd
+          cp out_cyd/obd2_cyd_c3.ino.merged.bin CYD_full.bin
+          cp out_cyd/obd2_cyd_c3.ino.bin CYD_app.bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screens
+          path: |
+            Didissnap_S3_full.bin
+            Didissnap_S3_app.bin
+            CYD_full.bin
+            CYD_app.bin
+
+      - name: Publish (release screens-latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: screens-latest
+          name: Screen firmware (latest)
+          body: |
+            Didissnap_S3_full.bin = จอ S3 4.3" แฟลชทั้งชิปที่ 0x0
+            CYD_full.bin = จอ CYD 2.8" (ต่อ C3) แฟลชทั้งชิปที่ 0x0
+            *_app.bin = เฉพาะโปรแกรม (ที่ 0x10000)
+          files: |
+            Didissnap_S3_full.bin
+            Didissnap_S3_app.bin
+            CYD_full.bin
+            CYD_app.bin
+          make_latest: false
