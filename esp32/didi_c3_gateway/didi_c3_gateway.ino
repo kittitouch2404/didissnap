@@ -15,7 +15,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Update.h>
-#define FW_VER "c3 2026.11.26c"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.26d"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
 #if USE_ESPNOW
@@ -26,6 +26,7 @@
 #include "didinow.h"
 #if USE_BLE
 #include "c3ble.h"
+#include "c3wifi.h"     // ส่งค่าทาง WiFi (ฮอตสปอตมือถือ) ให้จอแอนดรอยด์ที่ไม่มี BLE
 #endif
 #include "custeval.h"
 #include "canobd.h"
@@ -502,6 +503,7 @@ static void gotCmd(const uint8_t* d, int n) {
   if (n < (int)sizeof(DidiNowCmd)) return;
   const DidiNowCmd* c = (const DidiNowCmd*)d;
   if (c->magic != DIDINOW_MAGIC) return;
+  if (c->type == DN_WIFI) { c3wifi::command(d, n); return; }
   if (c->type == DN_GWCMD && c->cmd == DN_CMD_DYNO) { dynoUntil = millis() + 2500; return; }
   if (c->type == DN_GWCMD) { pendId = c->id; pendCmd = c->cmd; return; }
   if (c->type == DN_OTA && n >= (int)offsetof(DidiNowOta, data)) { otaCmd((const DidiNowOta*)d, n); return; }
@@ -843,6 +845,7 @@ void setup() {
   c3ble::onCmd = gotCmd;
   c3ble::fwVer = FW_VER;
   bool ok = c3ble::begin(esp_reset_reason() == ESP_RST_POWERON);
+  c3wifi::begin();
   Serial.printf("\n[didi_c3] BLE %s · mode %s\n", ok ? "ready" : "FAILED", demo ? "DEMO" : "CAR");
 #endif
 #if USE_ESPNOW
@@ -888,6 +891,7 @@ void loop() {
     deepSleep(!vbat ? WAKE_NOVBAT_S : vbat < LOWBAT_V ? WAKE_LOWBAT_S : WAKE_S);
   }
   c3ble::tick();   // จับคู่จอ: ตอบผล / ตัดจอที่ไม่จับคู่ / โฆษณา
+  c3wifi::tick();  // จอทาง WiFi: รับคำสั่ง / ประกาศตัว
   // อัปเดตเฟิร์มแวร์อยู่: หยุดส่งค่ารถ (ให้ BLE ว่างรับไฟล์) · ไม่หลับ · ไม่มีไฟล์มา 20 วิ = ยกเลิก
   if (otaStNew) { otaStNew = false; tx(&otaSt, sizeof(otaSt)); }
   if (otaReboot) { delay(400); tx(&otaSt, sizeof(otaSt)); delay(300); ESP.restart(); }

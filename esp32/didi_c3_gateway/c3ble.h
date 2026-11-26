@@ -25,11 +25,20 @@ static void (*onCmd)(const uint8_t* d, int n) = nullptr;
 // ---------------------------------------------------------------- จอที่ต่ออยู่
 struct Conn {
   bool used, auth, kill, reply, gone;
-  uint16_t h;
-  uint32_t t0;
+  bool udp;          // จอที่ต่อทาง WiFi (UDP) — ไม่ใช่ BLE
+  uint16_t h;        // BLE: conn handle · UDP: พอร์ต
+  uint32_t ip;       // UDP: IP ของจอ
+  uint32_t t0, lastRx;
   uint8_t res;
 };
-static Conn conns[4];
+#define C3_NCONN 6
+static Conn conns[C3_NCONN];
+// ส่งแพ็กเก็ตทาง WiFi (c3wifi.h ตั้งให้)
+static void (*udpSend)(uint32_t ip, uint16_t port, const uint8_t* d, int n) = nullptr;
+static void sendTo(Conn& c, const uint8_t* d, int n) {
+  if (c.udp) { if (udpSend) udpSend(c.ip, c.h, d, n); }
+  else if (dataC) dataC->notify(d, n, c.h);
+}
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
 // ---------------------------------------------------------------- จอที่จับคู่แล้ว (จำในแฟลช)
@@ -157,7 +166,7 @@ class SrvCb : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* s, NimBLEConnInfo& ci) override {
     clients = s->getConnectedCount();
     portENTER_CRITICAL(&mux);
-    for (auto& c : conns) if (!c.used) { c = {}; c.used = true; c.h = ci.getConnHandle(); c.t0 = millis(); break; }
+    for (auto& c : conns) if (!c.used) { c = {}; c.used = true; c.h = ci.getConnHandle(); c.t0 = c.lastRx = millis(); break; }
     portEXIT_CRITICAL(&mux);
     Serial.printf("[ble] client connected (%d) %s\n", (int)clients, ci.getAddress().toString().c_str());
     // ช่วงส่งข้อมูลถี่ ๆ (15-30 ms) ค่าวิ่งลื่น
@@ -167,27 +176,57 @@ class SrvCb : public NimBLEServerCallbacks {
   void onDisconnect(NimBLEServer* s, NimBLEConnInfo& ci, int reason) override {
     clients = s->getConnectedCount();
     portENTER_CRITICAL(&mux);
-    for (auto& c : conns) if (c.used && c.h == ci.getConnHandle()) c.used = false;
+    for (auto& c : conns) if (c.used && !c.udp && c.h == ci.getConnHandle()) c.used = false;
     portEXIT_CRITICAL(&mux);
     Serial.printf("[ble] client left (%d) reason %d\n", (int)clients, reason);
     NimBLEDevice::startAdvertising();
   }
 };
+// แพ็กเก็ตจากจอ (BLE หรือ WiFi): ยืนยันตัว หรือส่งต่อคำสั่ง (เฉพาะจอที่จับคู่แล้ว)
+static void onPacket(int k, const uint8_t* d, int n) {
+  conns[k].lastRx = millis();
+  if (n >= (int)sizeof(DidiNowAuth) && ((const DidiNowAuth*)d)->magic == DIDINOW_MAGIC && d[4] == DN_AUTH) {
+    doAuth(k, (const DidiNowAuth*)d);
+    return;
+  }
+  if (conns[k].auth && onCmd) onCmd(d, n);   // ยังไม่จับคู่ = ไม่รับคำสั่ง
+}
 class CmdCb : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* ch, NimBLEConnInfo& ci) override {
     NimBLEAttValue v = ch->getValue();
-    const uint8_t* d = v.data();
-    int n = (int)v.length();
     int k = -1;
-    for (int i = 0; i < 4; i++) if (conns[i].used && conns[i].h == ci.getConnHandle()) k = i;
+    for (int i = 0; i < C3_NCONN; i++) if (conns[i].used && !conns[i].udp && conns[i].h == ci.getConnHandle()) k = i;
     if (k < 0) return;
-    if (n >= (int)sizeof(DidiNowAuth) && ((const DidiNowAuth*)d)->magic == DIDINOW_MAGIC && d[4] == DN_AUTH) {
-      doAuth(k, (const DidiNowAuth*)d);
-      return;
-    }
-    if (conns[k].auth && onCmd) onCmd(d, n);   // ยังไม่จับคู่ = ไม่รับคำสั่ง
+    onPacket(k, v.data(), (int)v.length());
   }
 };
+
+// แพ็กเก็ตทาง WiFi จาก ip:port → หา/สร้างช่องของจอนั้น (เรียกจาก loop)
+inline void udpIn(uint32_t ip, uint16_t port, const uint8_t* d, int n) {
+  int k = -1, freeK = -1;
+  for (int i = 0; i < C3_NCONN; i++) {
+    if (conns[i].used && conns[i].udp && conns[i].ip == ip && conns[i].h == port) k = i;
+    if (!conns[i].used && freeK < 0) freeK = i;
+  }
+  if (k < 0) {
+    if (freeK < 0) return;
+    portENTER_CRITICAL(&mux);
+    conns[freeK] = {};
+    conns[freeK].used = true; conns[freeK].udp = true; conns[freeK].ip = ip; conns[freeK].h = port;
+    conns[freeK].t0 = millis();
+    portEXIT_CRITICAL(&mux);
+    k = freeK;
+    Serial.printf("[wifi] screen %u.%u.%u.%u:%u\n", (unsigned)(ip & 255), (unsigned)((ip >> 8) & 255), (unsigned)((ip >> 16) & 255),
+                  (unsigned)(ip >> 24), port);
+  }
+  if (conns[k].gone) return;
+  onPacket(k, d, n);
+}
+inline int udpClients() {
+  int n = 0;
+  for (auto& c : conns) if (c.used && c.udp && c.auth) n++;
+  return n;
+}
 
 // โฆษณา: ชื่อไม่ซ้ำ + บอกว่าเปิดโหมดจับคู่อยู่ไหม
 static void advSet(bool open) {
@@ -233,9 +272,8 @@ inline bool begin(bool coldBoot) {
 
 // ส่งแพ็กเก็ตให้ทุกจอที่จับคู่แล้ว
 inline void send(const void* p, size_t n) {
-  if (!dataC || !clients) return;
   for (auto& c : conns)
-    if (c.used && c.auth) dataC->notify((const uint8_t*)p, n, c.h);
+    if (c.used && c.auth && !c.gone) sendTo(c, (const uint8_t*)p, (int)n);
 }
 
 // เรียกใน loop(): ตอบผลจับคู่ · ตัดจอที่ไม่จับคู่ · อัปเดตโฆษณา · บันทึก
@@ -247,8 +285,10 @@ inline void tick() {
       c.reply = false;
       DidiNowAuthSt m;
       fillSt(m, c.res);
-      if (dataC) dataC->notify((const uint8_t*)&m, sizeof(m), c.h);
+      sendTo(c, (const uint8_t*)&m, sizeof(m));
     }
+    // จอทาง WiFi: เงียบเกิน 6 วิ (แอปส่ง ping ทุก 1.5 วิ) = ไปแล้ว
+    if (c.udp && now - c.lastRx > 6000) { c.used = false; continue; }
     // ไม่ยืนยันตัวใน 5 วิ / ถูกปฏิเสธ (รอ 0.4 วิ ให้ได้รับคำตอบก่อน) → ตัด
     if (!c.gone && ((!c.auth && now - c.t0 > 5000) || (c.kill && now - c.t0 > 400))) {
       if (!c.kill) {        // ไม่ยืนยันตัวเลย = จอรุ่นเก่า (ไม่มีระบบจับคู่)
@@ -258,6 +298,7 @@ inline void tick() {
         Serial.println("[pair] old screen (no pairing) tried to connect");
       }
       c.gone = true;        // กันสั่งตัดซ้ำ
+      if (c.udp) { c.used = false; continue; }
       if (srv) srv->disconnect(c.h);
     }
   }

@@ -9,7 +9,7 @@
 
 enum : uint8_t { DN_DATA = 1, DN_CMD = 2, DN_DTC = 3, DN_GW = 4, DN_GWCMD = 5, DN_GWINFO = 6, DN_RAWREQ = 7, DN_RAWRES = 8,
                  DN_CUSTSET = 9, DN_CUST = 10, DN_CUSTINFO = 11, DN_CUSTRAW = 12, DN_CAL = 13, DN_OTA = 14, DN_OTAST = 15,
-                 DN_AUTH = 16, DN_AUTHST = 17 };
+                 DN_AUTH = 16, DN_AUTHST = 17, DN_WIFI = 18, DN_WIFIST = 19, DN_BEACON = 20 };
 enum : uint8_t { DN_LINK_DEMO = 0, DN_LINK_WAIT = 1, DN_LINK_OK = 2 };
 enum : uint8_t { DN_CMD_DTC_READ = 1, DN_CMD_DTC_CLEAR = 2, DN_CMD_MODE_AUTO = 3, DN_CMD_MODE_DEMO = 4,
                  DN_CMD_DYNO = 5 };   // DYNO: แอปส่งทุก 1 วิ ตอนวัดแรงม้า → C3 ถามแค่รอบ/ความเร็ว/TPS ให้ถี่ที่สุด (หมดอายุเองใน 2.5 วิ)
@@ -210,4 +210,37 @@ struct __attribute__((packed)) DidiNowAuthSt {
   uint8_t proto[DN_PAIR_MAX];   // รุ่นโปรโตคอลของแต่ละจอ (ล่าสุดที่ต่อ · 0 = ยังไม่รู้/รุ่นแรก)
   uint8_t legacy;     // จอรุ่นเก่า (ไม่มีระบบจับคู่) พยายามต่อใน 10 นาทีล่าสุด กี่ครั้ง
   char fw[16];        // เวอร์ชันเฟิร์มแวร์ C3
+};
+
+// ---------------------------------------------------------------- C3 ทาง WiFi (จอแอนดรอยด์ที่ไม่มี BLE)
+// C3 ต่อฮอตสปอตมือถือ (ตั้งชื่อ/รหัสจากแอปทาง BLE) · จอที่ต่อฮอตสปอตเดียวกันคุยกับ C3 ทาง UDP
+//  C3 ประกาศตัว (DN_BEACON) ทุก 1 วิ ไปที่ broadcast:DN_UDP_APP · จอส่งแพ็กเก็ตเดียวกับ BLE ไปที่ C3:DN_UDP_C3
+//  C3 ส่งค่ารถกลับไปที่ ip:พอร์ต ที่จอส่งมา · จอต้องส่งอะไรสักอย่างทุก ~1.5 วิ (ไม่งั้น C3 ลืมใน 6 วิ) · จับคู่เหมือน BLE
+#define DN_UDP_C3 35100
+#define DN_UDP_APP 35101
+enum : uint8_t { DN_WIFI_GET = 0, DN_WIFI_SET = 1, DN_WIFI_OFF = 2 };
+struct __attribute__((packed)) DidiNowWifi {    // จอ -> C3 (ต้องจับคู่แล้ว)
+  uint32_t magic;
+  uint8_t type;       // DN_WIFI
+  uint8_t op;         // DN_WIFI_*
+  uint8_t pad[2];
+  char ssid[33];
+  char pass[65];
+};
+struct __attribute__((packed)) DidiNowWifiSt {  // C3 -> จอ: สถานะ WiFi
+  uint32_t magic;
+  uint8_t type;       // DN_WIFIST
+  uint8_t state;      // 0 ปิด/ยังไม่ตั้ง · 1 กำลังต่อ · 2 ต่อแล้ว
+  int8_t rssi;
+  uint8_t clients;    // จอที่ต่อทาง WiFi อยู่
+  uint8_t ip[4];
+  char ssid[33];
+};
+struct __attribute__((packed)) DidiNowBeacon {  // C3 -> broadcast
+  uint32_t magic;
+  uint8_t type;       // DN_BEACON
+  uint8_t open;       // 1 = เปิดโหมดจับคู่
+  uint8_t pad[2];
+  char mac[18];       // ที่อยู่ BLE ของ C3 (ใช้จับคู่ตัวเดียวกับทาง BLE)
+  char name[16];      // DIDI-C3-xxxx
 };
