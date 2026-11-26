@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -93,6 +94,76 @@ class Updater extends ChangeNotifier {
       c.close(force: true);
       busy = false;
       notifyListeners();
+    }
+  }
+
+  // ---------------- เฟิร์มแวร์ C3 ล่าสุด (release c3-latest ที่ CI สร้าง)
+  static const _apiC3 = 'https://api.github.com/repos/kittitouch2404/didissnap/releases/tags/c3-latest';
+  String c3Latest = ''; // เช่น "c3 2026.11.26b" ("" = ยังไม่รู้)
+  String c3Asset = '';
+  DateTime _c3At = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _c3Busy = false;
+
+  /// เช็กเวอร์ชันเฟิร์มแวร์ C3 ล่าสุด (ไม่เกินทุก 1 ชม. ยกเว้น force)
+  Future<void> checkC3({bool force = false}) async {
+    if (_c3Busy || (!force && DateTime.now().difference(_c3At).inMinutes < 60)) return;
+    _c3Busy = true;
+    final c = _client();
+    try {
+      final rq = await c.getUrl(Uri.parse(_apiC3));
+      rq.headers.set('Accept', 'application/vnd.github+json');
+      _auth(rq);
+      final rs = await rq.close().timeout(const Duration(seconds: 12));
+      final body = await rs.transform(utf8.decoder).join();
+      if (rs.statusCode != 200) throw Exception('HTTP ${rs.statusCode}');
+      final j = jsonDecode(body) as Map<String, dynamic>;
+      final m = RegExp(r'FW:\s*(c3 [0-9.]+[a-z]?)').firstMatch('${j['body'] ?? ''}');
+      c3Latest = m?.group(1) ?? '';
+      c3Asset = '';
+      for (final a in (j['assets'] as List? ?? [])) {
+        if ('${a['name']}' == 'didi_c3_gateway.bin') c3Asset = '${a['url']}';
+      }
+      _c3At = DateTime.now();
+      AppLog.i('C3 firmware latest: ${c3Latest.isEmpty ? '?' : c3Latest}');
+      notifyListeners();
+    } catch (e) {
+      AppLog.e('เช็กเฟิร์มแวร์ C3 ไม่ได้', e);
+    } finally {
+      c.close(force: true);
+      _c3Busy = false;
+    }
+  }
+
+  /// โหลดไฟล์เฟิร์มแวร์ C3 ล่าสุด (สำหรับอัปเดตผ่าน Bluetooth)
+  Future<Uint8List?> downloadC3() async {
+    if (c3Asset.isEmpty) await checkC3(force: true);
+    if (c3Asset.isEmpty) return null;
+    final c = _client()..autoUncompress = false;
+    try {
+      final rq = await c.getUrl(Uri.parse(c3Asset));
+      rq.followRedirects = false;
+      rq.headers.set('Accept', 'application/octet-stream');
+      _auth(rq);
+      var rs = await rq.close();
+      if (rs.isRedirect || rs.statusCode == 302 || rs.statusCode == 301) {
+        final loc = rs.headers.value(HttpHeaders.locationHeader);
+        await rs.drain<void>();
+        if (loc == null) return null;
+        final rq2 = await c.getUrl(Uri.parse(loc));
+        rq2.headers.set('User-Agent', 'didissnap-app');
+        rs = await rq2.close();
+      }
+      if (rs.statusCode != 200) return null;
+      final b = <int>[];
+      await for (final ch in rs) {
+        b.addAll(ch);
+      }
+      return Uint8List.fromList(b);
+    } catch (e) {
+      AppLog.e('โหลดเฟิร์มแวร์ C3 ไม่ได้', e);
+      return null;
+    } finally {
+      c.close(force: true);
     }
   }
 

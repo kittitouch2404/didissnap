@@ -87,8 +87,9 @@ inline const NimBLEAdvertisedDevice* pick(NimBLEScanResults& r) {
 
 // แพ็กเก็ตจาก C3: ถ้าเป็นผลจับคู่ เก็บไว้แล้วคืน true (ไม่ต้องส่งต่อ)
 inline bool onPacket(const uint8_t* d, int n) {
-  if (n < 6 || d[4] != DN_AUTHST || n < (int)sizeof(DidiNowAuthSt)) return false;
-  memcpy(&st, d, sizeof(st));
+  if (n < 6 || d[4] != DN_AUTHST || n < (int)offsetof(DidiNowAuthSt, proto)) return false;   // C3 รุ่นแรกส่งสั้นกว่า
+  memset(&st, 0, sizeof(st));
+  memcpy(&st, d, min((size_t)n, sizeof(st)));
   st.c3[15] = 0;
   res = st.res;
   stAt = millis();
@@ -98,7 +99,7 @@ inline bool onPacket(const uint8_t* d, int n) {
 static bool sendAuth(NimBLERemoteCharacteristic* c, uint8_t op) {
   if (!c) return false;
   DidiNowAuth a = {};
-  a.magic = DIDINOW_MAGIC; a.type = DN_AUTH; a.op = op;
+  a.magic = DIDINOW_MAGIC; a.type = DN_AUTH; a.op = op; a.proto = DN_PROTO;
   memcpy(a.token, tok, 8);
   strlcpy(a.name, myName, sizeof(a.name));
   return c->writeValue((const uint8_t*)&a, sizeof(a), true);

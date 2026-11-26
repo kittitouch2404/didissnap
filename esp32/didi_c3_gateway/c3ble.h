@@ -14,6 +14,11 @@ static NimBLECharacteristic* dataC = nullptr;
 static NimBLECharacteristic* cmdC = nullptr;
 static volatile int clients = 0;
 static char devName[16] = "DIDI-C3";
+static const char* fwVer = "";          // ตั้งจากไฟล์หลักก่อน begin()
+static uint8_t pairProto[DN_PAIR_MAX];  // รุ่นโปรโตคอลของจอแต่ละช่อง (ไม่เก็บลงแฟลช)
+static uint8_t legacyHits = 0;          // จอรุ่นเก่าพยายามต่อ (ล้างทุก 10 นาที)
+static uint32_t legacyAt = 0;
+static volatile bool stChanged = false; // แจ้งสถานะใหม่ให้ทุกจอ
 // คำสั่งที่เข้ามา (ให้ไฟล์หลักเอาไปทำ) — เฉพาะจอที่จับคู่แล้ว
 static void (*onCmd)(const uint8_t* d, int n) = nullptr;
 
@@ -81,8 +86,16 @@ static void fillSt(DidiNowAuthSt& m, uint8_t res) {
   m.open = nPairs == 0 ? 255 : left > 0 ? (uint8_t)min<int32_t>(254, left / 2000 + 1) : 0;
   strlcpy(m.c3, devName, sizeof(m.c3));
   int k = 0;
-  for (auto& p : pairs) if (p.seq && k < DN_PAIR_MAX) { memcpy(m.names[k], p.name, 8); m.names[k][7] = 0; k++; }
+  for (int i = 0; i < DN_PAIR_MAX; i++) {
+    const Pair& p = pairs[i];
+    if (!p.seq || k >= DN_PAIR_MAX) continue;
+    memcpy(m.names[k], p.name, 8); m.names[k][7] = 0;
+    m.proto[k] = pairProto[i];
+    k++;
+  }
   m.n = k;
+  m.legacy = legacyHits;
+  strlcpy(m.fw, fwVer, sizeof(m.fw));
 }
 
 // ทำคำสั่งจับคู่ (เรียกจาก callback ของ BLE)
@@ -94,6 +107,8 @@ static void doAuth(int ci, const DidiNowAuth* a) {
       if (i >= 0) {
         c.auth = true; c.res = DN_AUTHR_OK; pairs[i].seq = pairSeq++;
         memcpy(pairs[i].name, a->name, 7); pairs[i].name[7] = 0;
+        pairProto[i] = a->proto ? a->proto : 1;
+        stChanged = true;
       } else if (pairOpen()) {
         int slot = -1;
         uint32_t old = UINT32_MAX;
@@ -104,7 +119,9 @@ static void doAuth(int ci, const DidiNowAuth* a) {
         memcpy(pairs[slot].tok, a->token, 8);
         memcpy(pairs[slot].name, a->name, 7); pairs[slot].name[7] = 0;
         pairs[slot].seq = pairSeq++;
+        pairProto[slot] = a->proto ? a->proto : 1;
         pairsDirty = true;
+        stChanged = true;
         int n = 0;
         for (auto& p : pairs) if (p.seq) n++;
         nPairs = n;
@@ -124,11 +141,12 @@ static void doAuth(int ci, const DidiNowAuth* a) {
         for (int k = 0; k < DN_PAIR_MAX; k++) if (k != i) memset(&pairs[k], 0, sizeof(Pair));
         pairsDirty = true;
         nPairs = i >= 0 ? 1 : 0;
+        stChanged = true;
       }
       c.res = c.auth ? DN_AUTHR_OK : DN_AUTHR_DENIED;
       break;
     case DN_AUTH_FORGET:  // จอนี้ขอเลิกจับคู่
-      if (c.auth && i >= 0) { memset(&pairs[i], 0, sizeof(Pair)); pairsDirty = true; nPairs--; }
+      if (c.auth && i >= 0) { memset(&pairs[i], 0, sizeof(Pair)); pairsDirty = true; nPairs--; stChanged = true; }
       c.auth = false; c.kill = true; c.t0 = millis(); c.res = DN_AUTHR_DENIED;
       break;
   }
@@ -233,12 +251,24 @@ inline void tick() {
     }
     // ไม่ยืนยันตัวใน 5 วิ / ถูกปฏิเสธ (รอ 0.4 วิ ให้ได้รับคำตอบก่อน) → ตัด
     if (!c.gone && ((!c.auth && now - c.t0 > 5000) || (c.kill && now - c.t0 > 400))) {
+      if (!c.kill) {        // ไม่ยืนยันตัวเลย = จอรุ่นเก่า (ไม่มีระบบจับคู่)
+        if (legacyHits < 255) legacyHits++;
+        legacyAt = now;
+        stChanged = true;
+        Serial.println("[pair] old screen (no pairing) tried to connect");
+      }
       c.gone = true;        // กันสั่งตัดซ้ำ
       if (srv) srv->disconnect(c.h);
     }
   }
+  if (legacyHits && now - legacyAt > 600000) { legacyHits = 0; stChanged = true; }
   bool open = pairOpen();
-  if (open != advOpen) advSet(open);
+  if (open != advOpen) { advSet(open); stChanged = true; }
+  // สถานะเปลี่ยน (จอใหม่ / จอเก่าพยายามต่อ / โหมดจับคู่) → บอกทุกจอที่จับคู่แล้ว
+  if (stChanged) {
+    stChanged = false;
+    for (auto& c : conns) if (c.used && c.auth && !c.reply) { c.res = DN_AUTHR_OK; c.reply = true; }
+  }
   pairsSave();
 }
 

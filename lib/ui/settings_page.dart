@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' hide Text;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../i18n.dart';
 import 'package:archive/archive.dart';
 import 'package:image_picker/image_picker.dart';
@@ -182,8 +183,9 @@ class _ConnectionTabState extends State<ConnectionTab> {
     final s = widget.settings;
     final hub = widget.hub;
     return AnimatedBuilder(
-      animation: Listenable.merge([s, hub]),
+      animation: Listenable.merge([s, hub, hub.c3pair, hub.updater, hub.c3ota]),
       builder: (context, _) {
+        final warns = hub.fwWarnings;
         final stCol = switch (hub.state) {
           LinkState.connected => kGreen,
           LinkState.connecting => kAmber,
@@ -201,6 +203,21 @@ class _ConnectionTabState extends State<ConnectionTab> {
                 child: const Text('เชื่อมต่อใหม่'),
               ),
             ),
+            for (final w in warns)
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 2, 16, 2),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: kAmber.withAlpha(30),
+                  border: Border.all(color: kAmber),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.warning_amber_rounded, color: kAmber),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(w, style: const TextStyle(fontWeight: FontWeight.w600))),
+                ]),
+              ),
             const _Header('แหล่งข้อมูล'),
             for (final t in SourceType.values)
               RadioListTile<SourceType>(
@@ -1740,6 +1757,35 @@ class _Esp32TabState extends State<Esp32Tab> {
 
 
 /// อุณหภูมิน้ำมันเกียร์ CVT (ทดลอง): PID เฉพาะยี่ห้อ ตั้ง header/คำสั่ง/ไบต์/สูตรเองได้ + ดูคำตอบดิบสด ๆ
+/// ค่า CVT TEMP สำเร็จรูป (ใส่เฉพาะที่ยืนยันกับรถจริงแล้ว)
+class CvtPreset {
+  const CvtPreset(this.name, this.hdr, this.req, this.byte, this.fml);
+  final String name, hdr, req;
+  final int byte, fml;
+  Map<String, dynamic> toJson() => {'n': name, 'h': hdr, 'r': req, 'b': byte, 'f': fml};
+  static CvtPreset? fromJson(Object? j) {
+    if (j is! Map) return null;
+    final r = CustomPid.cleanHex('${j['r'] ?? ''}');
+    if (r.length < 4) return null;
+    return CvtPreset('${j['n'] ?? 'CVT'}', CustomPid.cleanHex('${j['h'] ?? '7E1'}'), r,
+        ((j['b'] as num?) ?? 0).toInt(), ((j['f'] as num?) ?? 0).toInt());
+  }
+
+  /// รหัสแชร์ (ส่งให้เพื่อนรุ่นเดียวกันวางได้เลย)
+  String get code => 'DCVT1:${base64Url.encode(utf8.encode(jsonEncode(toJson())))}';
+  static CvtPreset? fromCode(String c) {
+    final m = RegExp(r'DCVT1:([A-Za-z0-9_=-]+)').firstMatch(c.trim());
+    if (m == null) return null;
+    try {
+      return fromJson(jsonDecode(utf8.decode(base64Url.decode(m[1]!))));
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+const List<CvtPreset> kCvtPresets = [];
+
 const List<String> kCvtFormulas = [
   'A - 40',
   'A',
@@ -1793,6 +1839,138 @@ class _CvtTempSectionState extends State<_CvtTempSection> {
     super.dispose();
   }
 
+  List<CvtPreset> get _mine {
+    try {
+      return [for (final j in jsonDecode(widget.s.cvtMine) as List) CvtPreset.fromJson(j)].whereType<CvtPreset>().toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void _setMine(List<CvtPreset> l) => widget.s.cvtMine = jsonEncode([for (final p in l) p.toJson()]);
+
+  CvtPreset _current(String name) {
+    final s = widget.s;
+    return CvtPreset(name, s.cvtHdr, s.cvtReq, s.cvtByte, s.cvtFml);
+  }
+
+  void _apply(CvtPreset p) {
+    final s = widget.s;
+    s.cvtHdr = p.hdr;
+    s.cvtReq = p.req;
+    s.cvtByte = p.byte;
+    s.cvtFml = p.fml.clamp(0, kCvtFormulas.length - 1);
+    s.cvtTempOn = true;
+    setState(() => _gen++);
+    _snack(context, 'ใช้ค่า "${p.name}" แล้ว');
+  }
+
+  Future<void> _pickPreset() async {
+    final mine = _mine;
+    await showDialog<void>(
+      context: context,
+      builder: (c) => StatefulBuilder(builder: (c, set) {
+        final m = _mine;
+        return SimpleDialog(title: const Text('ค่า CVT TEMP สำเร็จรูป'), children: [
+          if (kCvtPresets.isEmpty && mine.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Text('ยังไม่มี — ใช้ปุ่ม "ค้นหาค่า CVT อัตโนมัติ" หาค่าของรถคันนี้ แล้วกด "บันทึกค่านี้"\n'
+                  'หรือ "วางรหัส" ที่เพื่อนรุ่นเดียวกันแชร์มา\n'
+                  '(ค่าที่ยืนยันกับรถจริงแล้ว ส่งมาให้ใส่เป็นค่าสำเร็จรูปในแอปได้)'),
+            ),
+          if (kCvtPresets.isNotEmpty) const Padding(padding: EdgeInsets.fromLTRB(24, 4, 24, 0), child: Text('ในแอป')),
+          for (final p in kCvtPresets)
+            SimpleDialogOption(
+              onPressed: () {
+                Navigator.pop(c);
+                _apply(p);
+              },
+              child: ListTile(dense: true, title: Text(p.name), subtitle: Text('${p.hdr} · ${p.req} · ไบต์ ${p.byte}')),
+            ),
+          if (m.isNotEmpty) const Padding(padding: EdgeInsets.fromLTRB(24, 4, 24, 0), child: Text('ที่บันทึกไว้เอง')),
+          for (var i = 0; i < m.length; i++)
+            SimpleDialogOption(
+              onPressed: () {
+                Navigator.pop(c);
+                _apply(m[i]);
+              },
+              child: ListTile(
+                dense: true,
+                title: Text(m[i].name),
+                subtitle: Text('${m[i].hdr} · ${m[i].req} · ไบต์ ${m[i].byte}'),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () {
+                    _setMine([...m]..removeAt(i));
+                    set(() {});
+                  },
+                ),
+              ),
+            ),
+        ]);
+      }),
+    );
+  }
+
+  Future<void> _saveMine() async {
+    final s = widget.s;
+    final c = TextEditingController(text: s.profiles[s.profCur]);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ตั้งชื่อ (รุ่นรถ)'),
+        content: TextField(controller: c, autofocus: true, decoration: const InputDecoration(hintText: 'เช่น Jazz GK 2017')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ยกเลิก')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('บันทึก')),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+    _setMine([..._mine.where((p) => p.name != name), _current(name)]);
+    if (mounted) _snack(context, 'บันทึก "$name" แล้ว');
+  }
+
+  Future<void> _share() async {
+    final code = _current(widget.s.profiles[widget.s.profCur]).code;
+    await Clipboard.setData(ClipboardData(text: code));
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('รหัสแชร์ค่า CVT (คัดลอกแล้ว)'),
+        content: SelectableText(code, style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('ปิด'))],
+      ),
+    );
+  }
+
+  Future<void> _paste() async {
+    final clip = (await Clipboard.getData('text/plain'))?.text ?? '';
+    final c = TextEditingController(text: clip.contains('DCVT1:') ? clip.trim() : '');
+    if (!mounted) return;
+    final txt = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('วางรหัสแชร์ค่า CVT'),
+        content: TextField(controller: c, maxLines: 3, decoration: const InputDecoration(hintText: 'DCVT1:...')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ยกเลิก')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text('ใช้ค่านี้')),
+        ],
+      ),
+    );
+    if (txt == null) return;
+    final p = CvtPreset.fromCode(txt);
+    if (p == null) {
+      if (mounted) _snack(context, 'รหัสไม่ถูกต้อง');
+      return;
+    }
+    _setMine([..._mine.where((x) => x.name != p.name), p]);
+    _apply(p);
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = widget.s, d = widget.hub.data;
@@ -1824,6 +2002,21 @@ class _CvtTempSectionState extends State<_CvtTempSection> {
             }),
           ),
         ),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+        child: Wrap(spacing: 8, runSpacing: 6, children: [
+          OutlinedButton.icon(icon: const Icon(Icons.list_alt), label: const Text('ค่าสำเร็จรูป'), onPressed: _pickPreset),
+          OutlinedButton.icon(
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('บันทึกค่านี้'),
+              onPressed: s.cvtReq.length >= 4 ? _saveMine : null),
+          OutlinedButton.icon(
+              icon: const Icon(Icons.share),
+              label: const Text('แชร์รหัส'),
+              onPressed: s.cvtReq.length >= 4 ? _share : null),
+          OutlinedButton.icon(icon: const Icon(Icons.content_paste), label: const Text('วางรหัส'), onPressed: _paste),
+        ]),
       ),
       if (s.cvtTempOn) ...[
         Padding(
@@ -2437,7 +2630,6 @@ class _C3OtaSection extends StatelessWidget {
   final DataHub hub;
 
   Future<void> _start(BuildContext context) async {
-    final ota = hub.c3ota;
     final path = await Native.pickFile(mime: 'application/octet-stream');
     if (path == null || !context.mounted) return;
     Uint8List f;
@@ -2447,6 +2639,26 @@ class _C3OtaSection extends StatelessWidget {
       if (context.mounted) _snack(context, 'อ่านไฟล์ไม่ได้: $e');
       return;
     }
+    if (!context.mounted) return;
+    await _go(context, f, path.split('/').last);
+  }
+
+  /// โหลดเฟิร์มแวร์ล่าสุดจาก GitHub แล้วอัปเดต (ไม่ต้องใช้คอม)
+  Future<void> _fromGithub(BuildContext context) async {
+    _snack(context, 'กำลังโหลดเฟิร์มแวร์ C3 ล่าสุด...');
+    final f = await hub.updater.downloadC3();
+    if (!context.mounted) return;
+    if (f == null) {
+      _snack(context, hub.settings.ghToken.trim().isEmpty
+          ? 'โหลดไม่ได้ — repo เป็นส่วนตัว: ใส่ GitHub token ในเมนู อัปเดต / log ก่อน'
+          : 'โหลดไม่ได้ (ไม่มีเน็ต / token หมดอายุ?)');
+      return;
+    }
+    await _go(context, f, 'GitHub ${hub.updater.c3Latest}');
+  }
+
+  Future<void> _go(BuildContext context, Uint8List f, String name) async {
+    final ota = hub.c3ota;
     final err = ota.check(f);
     if (!context.mounted) return;
     if (err != null) {
@@ -2460,7 +2672,6 @@ class _C3OtaSection extends StatelessWidget {
       );
       return;
     }
-    final name = path.split('/').last;
     final go = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -2500,6 +2711,33 @@ class _C3OtaSection extends StatelessWidget {
                     label: const Text('เลือกไฟล์ .bin'),
                     onPressed: ota.linked && ota.fwVer.isNotEmpty ? () => _start(context) : null,
                   ),
+          ),
+          ListenableBuilder(
+            listenable: hub.updater,
+            builder: (context, _) {
+              final latest = hub.updater.c3Latest;
+              final newer = latest.isNotEmpty && ota.fwVer.isNotEmpty && ota.fwVer.compareTo(latest) < 0;
+              return ListTile(
+                dense: true,
+                leading: Icon(newer ? Icons.new_releases_outlined : Icons.cloud_done_outlined, color: newer ? kAmber : null),
+                title: Text(latest.isEmpty
+                    ? 'ล่าสุดบน GitHub: ยังไม่ได้เช็ก'
+                    : newer
+                        ? 'มีเวอร์ชันใหม่: $latest'
+                        : 'ล่าสุดบน GitHub: $latest${ota.fwVer == latest ? ' (ตรงกับใน C3 แล้ว)' : ''}'),
+                trailing: ota.running
+                    ? null
+                    : Wrap(spacing: 6, children: [
+                        if (latest.isEmpty)
+                          OutlinedButton(onPressed: () => hub.updater.checkC3(force: true), child: const Text('เช็ก')),
+                        FilledButton.tonalIcon(
+                          icon: const Icon(Icons.cloud_download_outlined),
+                          label: const Text('อัปเดตจาก GitHub'),
+                          onPressed: ota.linked && ota.fwVer.isNotEmpty ? () => _fromGithub(context) : null,
+                        ),
+                      ]),
+              );
+            },
           ),
           if (ota.running || ota.msg.isNotEmpty)
             Padding(

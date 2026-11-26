@@ -42,12 +42,17 @@ jobs:
             didi_c3_gateway.bin
             didi_c3_gateway_full_usb.bin
 
+      - name: Firmware version
+        id: ver
+        run: echo "fw=$(grep -oP '#define FW_VER "\K[^"]+' esp32/didi_c3_gateway/didi_c3_gateway.ino)" >> "$GITHUB_OUTPUT"
+
       - name: Publish (release c3-latest)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: c3-latest
           name: C3 firmware (latest)
           body: |
+            FW: ${{ steps.ver.outputs.fw }}
             didi_c3_gateway.bin = อัปเดตผ่านแอป (ตั้งค่า → การเชื่อมต่อ → อัปเดตเฟิร์มแวร์ C3)
             didi_c3_gateway_full_usb.bin = แฟลชผ่าน USB ทั้งชิป (ที่ตำแหน่ง 0x0) ไม่ใช้กับแอป
           files: |

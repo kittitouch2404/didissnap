@@ -149,6 +149,7 @@ class C3Source implements CarSource {
     _hub?.c3pair.sender = _write;
     _hub?.c3pair.linkChanged();
     _hub?.c3ota.onLink(true);
+    _hub?.updater.checkC3(); // เทียบเวอร์ชันเฟิร์มแวร์ C3 กับตัวล่าสุดบน GitHub
   }
 
   /// เปลี่ยน/ลืม C3 ที่จับคู่ → บอกตัวต่อ BLE

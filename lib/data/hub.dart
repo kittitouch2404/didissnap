@@ -201,6 +201,19 @@ class DataHub extends ChangeNotifier {
 
   bool get canRawHdr => _src is C3Source;
 
+  /// เตือนเฟิร์มแวร์ไม่ตรงกัน (โชว์ในเมนูการเชื่อมต่อ)
+  List<String> get fwWarnings {
+    if (settings.source != SourceType.c3) return const [];
+    final w = <String>[];
+    final p = c3pair;
+    final fw = p.fw.isNotEmpty ? p.fw : c3ota.fwVer;
+    final latest = updater.c3Latest;
+    if (p.legacy) w.add('C3 เฟิร์มแวร์เก่า ยังไม่มีระบบจับคู่ — อัปเดต C3');
+    if (fw.isNotEmpty && latest.isNotEmpty && fw.compareTo(latest) < 0) w.add('C3 มีเวอร์ชันใหม่ $latest (ตอนนี้ $fw)');
+    if (p.legacyN > 0) w.add('มีจอรุ่นเก่า (ไม่มีระบบจับคู่) พยายามต่อ C3 ${p.legacyN} ครั้ง — อัปโหลดโค้ดจอ S3 / CYD ชุดใหม่');
+    return w;
+  }
+
   Future<String?> obdRaw(String hex) async {
     final s = _src;
     if (s == null || state != LinkState.connected) return null;

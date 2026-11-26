@@ -235,6 +235,13 @@ class AppSettings extends ChangeNotifier {
     _p.setString('cvtReq', v.toUpperCase().replaceAll(RegExp(r'[^0-9A-F]'), ''));
     notifyListeners();
   }
+  /// ค่า CVT ที่บันทึกไว้เอง (JSON list: n ชื่อ, h header, r คำสั่ง, b ไบต์, f สูตร)
+  String get cvtMine => _s('cvtMine', '[]');
+  set cvtMine(String v) {
+    _p.setString('cvtMine', v);
+    notifyListeners();
+  }
+
   /// ไบต์ที่เป็น A (นับจาก 0 หลัง echo ของคำสั่ง)
   int get cvtByte => _i('cvtByte', 0);
   set cvtByte(int v) => _setI('cvtByte', v);

@@ -187,12 +187,14 @@ struct __attribute__((packed)) DidiNowOtaSt {
 // โหมดจับคู่เปิดเอง: ยังไม่เคยจับคู่ใคร · 2 นาทีแรกหลังเสียบ C3 · จอที่จับคู่แล้วสั่งเปิด 3 นาที (เพิ่มจอใหม่) · กด BOOT ค้าง 6 วิ
 // โฆษณา BLE: manufacturer data = FF FF 'D' 'N' flags (bit0 = เปิดโหมดจับคู่อยู่) · ชื่อ DIDI-C3-xxxx (ไม่ซ้ำกันทุกตัว)
 #define DN_PAIR_MAX 8
+#define DN_PROTO 2      // รุ่นโปรโตคอลของจอ (ส่งใน DidiNowAuth.proto) · 0/1 = รุ่นแรกที่มีจับคู่
 enum : uint8_t { DN_AUTH_LOGIN = 0, DN_AUTH_OPEN = 1, DN_AUTH_CLEAR = 2, DN_AUTH_FORGET = 3 };
 struct __attribute__((packed)) DidiNowAuth {
   uint32_t magic;
   uint8_t type;       // DN_AUTH
   uint8_t op;         // DN_AUTH_*
-  uint8_t pad[2];
+  uint8_t proto;      // DN_PROTO ของจอ (จอรุ่นแรกส่ง 0)
+  uint8_t pad;
   uint8_t token[8];   // กุญแจของจอนี้
   char name[8];       // ชื่อจอ เช่น "APP" "S3" "CYD"
 };
@@ -205,4 +207,7 @@ struct __attribute__((packed)) DidiNowAuthSt {
   uint8_t n;          // จำนวนจอที่จับคู่แล้ว
   char c3[16];        // ชื่อ C3 เช่น DIDI-C3-A1B2
   char names[DN_PAIR_MAX][8];   // ชื่อจอที่จับคู่แล้ว
+  uint8_t proto[DN_PAIR_MAX];   // รุ่นโปรโตคอลของแต่ละจอ (ล่าสุดที่ต่อ · 0 = ยังไม่รู้/รุ่นแรก)
+  uint8_t legacy;     // จอรุ่นเก่า (ไม่มีระบบจับคู่) พยายามต่อใน 10 นาทีล่าสุด กี่ครั้ง
+  char fw[16];        // เวอร์ชันเฟิร์มแวร์ C3
 };

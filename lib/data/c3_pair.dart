@@ -22,6 +22,10 @@ class C3Pair extends ChangeNotifier {
   int open = 0; // วินาทีที่โหมดจับคู่เหลือ (-1 = เปิดตลอด เพราะยังไม่เคยจับคู่)
   DateTime openAt = DateTime.fromMillisecondsSinceEpoch(0);
   List<String> screens = const [];
+  List<int> screenProto = const [];
+  int legacyN = 0; // จอรุ่นเก่า (ไม่มีจับคู่) พยายามต่อใน 10 นาทีล่าสุด
+  String fw = ''; // เวอร์ชันเฟิร์มแวร์ C3 (จากผลจับคู่)
+  static const proto = 2; // DN_PROTO
   DateTime deniedAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   bool get paired => s.c3PairAddr.isNotEmpty;
@@ -48,6 +52,7 @@ class C3Pair extends ChangeNotifier {
     b.setUint32(0, _magic, Endian.little);
     b.setUint8(4, 16); // DN_AUTH
     b.setUint8(5, op);
+    b.setUint8(6, proto);
     final t = token;
     for (var i = 0; i < 8; i++) {
       b.setUint8(8 + i, t[i]);
@@ -72,6 +77,9 @@ class C3Pair extends ChangeNotifier {
     final n = e[7];
     c3 = _str(e, 8, 16);
     screens = [for (var i = 0; i < n && 24 + i * 8 < e.length; i++) _str(e, 24 + i * 8, 8)];
+    screenProto = e.length >= 96 ? [for (var i = 0; i < n; i++) e[88 + i]] : const [];
+    legacyN = e.length >= 97 ? e[96] : 0;
+    if (e.length >= 113) fw = _str(e, 97, 16);
     legacy = false;
     if (res == 0) {
       deniedAt = DateTime.now();

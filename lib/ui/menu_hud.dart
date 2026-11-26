@@ -237,7 +237,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: s,
+      animation: Listenable.merge([s, hub.c3pair, hub.updater]),
       builder: (context, _) {
         final a = Color(s.menuColor);
         final conn = hub.state == LinkState.connected;
@@ -256,7 +256,7 @@ class _HudMenuPageState extends State<HudMenuPage> {
         }
         final rec = s.logOn && conn;
         final cards = <(String, String, IconData, VoidCallback)>[
-          ('การเชื่อมต่อ', '$src · ${conn ? 'ต่อแล้ว' : 'ยังไม่ต่อ'}${s.cydLink ? ' · CYD' : ''}', Icons.wifi_tethering,
+          ('การเชื่อมต่อ', hub.fwWarnings.isNotEmpty ? '⚠ ${hub.fwWarnings.first}' : '$src · ${conn ? 'ต่อแล้ว' : 'ยังไม่ต่อ'}${s.cydLink ? ' · CYD' : ''}', Icons.wifi_tethering,
               () => _open('การเชื่อมต่อ', () => ConnectionTab(settings: s, hub: hub))),
           ('หน้าปัด', 'redline ${s.redline} · ${s.pages.length} หน้า · รูป · เกียร์', Icons.speed, _openDisplay),
           ('ทริป / เตือน', 'A ${s.live('tripA').toStringAsFixed(1)} km$avg', Icons.warning_amber_rounded,

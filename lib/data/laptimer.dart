@@ -28,9 +28,11 @@ class GeoProj {
 
 /// เส้นสตาร์ท/เส้นชัย: จุดกลาง + ทิศที่วิ่งผ่าน (องศา จากทิศเหนือ ตามเข็ม) + ความกว้าง
 class LapLine {
-  LapLine(this.lat, this.lon, this.hdg, {this.w = 30, this.name = ''});
+  LapLine(this.lat, this.lon, this.hdg, {this.w = 30, this.name = '', List<LapLine>? splits}) : splits = splits ?? [];
   final double lat, lon, hdg, w;
   String name;
+  /// จุดแบ่งช่วง (sector) ตามลำดับที่วิ่งผ่าน — สูงสุด 3 จุด = 4 ช่วง
+  final List<LapLine> splits;
 
   Offset get dir => Offset(math.sin(hdg * math.pi / 180), math.cos(hdg * math.pi / 180));
 
@@ -42,10 +44,30 @@ class LapLine {
     return (c - perp, c + perp);
   }
 
-  Map<String, dynamic> toJson() => {'name': name, 'lat': lat, 'lon': lon, 'hdg': hdg, 'w': w};
+  /// วิ่งจาก prev -> cur ตัดเส้นนี้ (ทิศเดียวกัน) ไหม · คืนสัดส่วนตำแหน่งที่ตัด 0..1 (null = ไม่ตัด)
+  double? cross(double la0, double lo0, double la1, double lo1) {
+    final pr = GeoProj(la0, lo0);
+    final b = pr.xy(la1, lo1);
+    final (p1, p2) = ends(pr);
+    final sv = p2 - p1;
+    final den = b.dx * sv.dy - b.dy * sv.dx;
+    if (den.abs() < 1e-9) return null;
+    final tt = (p1.dx * sv.dy - p1.dy * sv.dx) / den;
+    final uu = (p1.dx * b.dy - p1.dy * b.dx) / den;
+    if (tt < 0 || tt > 1 || uu < 0 || uu > 1) return null;
+    if (b.dx * dir.dx + b.dy * dir.dy <= 0) return null; // วิ่งสวนทาง
+    return tt;
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': name, 'lat': lat, 'lon': lon, 'hdg': hdg, 'w': w,
+        if (splits.isNotEmpty) 'splits': [for (final x in splits) x.toJson()],
+      };
   static LapLine fromJson(Map<String, dynamic> j) => LapLine(
       (j['lat'] as num).toDouble(), (j['lon'] as num).toDouble(), (j['hdg'] as num).toDouble(),
-      w: (j['w'] as num?)?.toDouble() ?? 30, name: '${j['name'] ?? ''}');
+      w: (j['w'] as num?)?.toDouble() ?? 30,
+      name: '${j['name'] ?? ''}',
+      splits: [for (final x in (j['splits'] as List? ?? [])) LapLine.fromJson((x as Map).cast<String, dynamic>())]);
 }
 
 /// จุด GPS 1 จุด (t = ms นับจากเริ่ม session)
@@ -61,13 +83,30 @@ class LapPt {
 
 /// รอบที่วิ่งครบ: เวลาเริ่ม/จบ (ms จาก session, เฉลี่ยตรงจุดตัดเส้น) + ช่วง index ของจุด
 class Lap {
-  Lap(this.n, this.t0, this.t1, this.i0, this.i1, this.top);
+  Lap(this.n, this.t0, this.t1, this.i0, this.i1, this.top, [this.splits = const []]);
   final int n, t0, t1, i0, i1;
   final double top;
+  /// เวลาที่ผ่านจุดแบ่งแต่ละจุด (ms นับจากเริ่มรอบ) — ครบทุกจุด = มีเวลาแต่ละช่วง
+  final List<int> splits;
   int get ms => t1 - t0;
-  List<num> toJson() => [n, t0, t1, i0, i1, double.parse(top.toStringAsFixed(1))];
+
+  /// เวลาแต่ละช่วง (ms) — null ถ้าผ่านจุดแบ่งไม่ครบ
+  List<int>? sectors(int nSplits) {
+    if (nSplits == 0 || splits.length != nSplits) return null;
+    final out = <int>[];
+    var prev = 0;
+    for (final x in splits) {
+      out.add(x - prev);
+      prev = x;
+    }
+    out.add(ms - prev);
+    return out;
+  }
+
+  List<dynamic> toJson() => [n, t0, t1, i0, i1, double.parse(top.toStringAsFixed(1)), if (splits.isNotEmpty) splits];
   static Lap fromJson(List<dynamic> a) => Lap((a[0] as num).toInt(), (a[1] as num).toInt(), (a[2] as num).toInt(),
-      (a[3] as num).toInt(), (a[4] as num).toInt(), (a[5] as num).toDouble());
+      (a[3] as num).toInt(), (a[4] as num).toInt(), (a[5] as num).toDouble(),
+      a.length > 6 ? [for (final x in a[6] as List) (x as num).toInt()] : const []);
 }
 
 /// session = การลงสนาม 1 ครั้ง
@@ -80,6 +119,23 @@ class LapSession {
   String file = '';
 
   Lap? get best => laps.isEmpty ? null : laps.reduce((a, b) => a.ms <= b.ms ? a : b);
+  int get nSplits => line?.splits.length ?? 0;
+
+  /// เวลาดีสุดของแต่ละช่วง (ทุกรอบที่ผ่านจุดแบ่งครบ)
+  List<int>? get bestSectors {
+    final n = nSplits;
+    if (n == 0) return null;
+    List<int>? b;
+    for (final l in laps) {
+      final sc = l.sectors(n);
+      if (sc == null) continue;
+      b = b == null ? List.of(sc) : [for (var i = 0; i < sc.length; i++) math.min(b[i], sc[i])];
+    }
+    return b;
+  }
+
+  /// รอบในอุดมคติ = เอาช่วงที่ดีที่สุดของแต่ละช่วงมารวมกัน
+  int? get theoretical => bestSectors?.fold<int>(0, (a, b) => a + b);
   double get top => pts.fold(0.0, (m, p) => math.max(m, p.spd));
   String get trackName => line?.name.isNotEmpty == true ? line!.name : 'ไม่มีชื่อสนาม';
 
@@ -132,12 +188,16 @@ class LapSession {
   }
 
   String toCsv() {
-    final b = StringBuffer('lap,time_s,time,top_kmh\n');
+    final ns = nSplits;
+    final b = StringBuffer('lap,time_s,time,top_kmh,best${[for (var i = 0; i <= ns && ns > 0; i++) ',s${i + 1}_s'].join()}\n');
     final bl = best;
     for (final l in laps) {
-      b.writeln('${l.n},${(l.ms / 1000).toStringAsFixed(3)},${fmtLap(l.ms)},${l.top.toStringAsFixed(0)}'
-          '${identical(l, bl) ? ',best' : ''}');
+      final sc = l.sectors(ns);
+      b.writeln('${l.n},${(l.ms / 1000).toStringAsFixed(3)},${fmtLap(l.ms)},${l.top.toStringAsFixed(0)},'
+          '${identical(l, bl) ? 'best' : ''}${sc == null ? '' : sc.map((x) => ',${(x / 1000).toStringAsFixed(3)}').join()}');
     }
+    final th = theoretical;
+    if (th != null) b.writeln('theoretical,${(th / 1000).toStringAsFixed(3)},${fmtLap(th)}');
     b.writeln();
     b.writeln('t_s,lat,lon,speed_kmh,rpm');
     for (final p in pts) {
@@ -195,7 +255,9 @@ class LapTimer extends ChangeNotifier {
   double _curDist = 0, _curTop = 0;
   final _curTrace = <(double, int)>[]; // (ระยะ m, เวลา ms จากเริ่มรอบ)
   List<(double, int)> _bestTrace = [];
+  final _curSplits = <int>[]; // เวลาที่ผ่านจุดแบ่งในรอบนี้ (ms จากเริ่มรอบ)
   int? lastLapMs;
+  List<int> get curSplits => _curSplits;
   double? lastLapDelta; // เทียบรอบที่ดีที่สุด (ก่อนรอบนี้)
   DateTime _lastCross = DateTime.fromMillisecondsSinceEpoch(0);
   int _gpsT0 = 0; // เวลา GPS ตอนเริ่ม session
@@ -285,7 +347,7 @@ class LapTimer extends ChangeNotifier {
     s.pts.add(p);
     if (prev == null) return;
     final pr = GeoProj(prev.lat, prev.lon);
-    final a = Offset.zero, b = pr.xy(la, lo);
+    final b = pr.xy(la, lo);
     final seg = b.distance;
     if (_curT0 != null) {
       _curDist += seg;
@@ -294,15 +356,16 @@ class LapTimer extends ChangeNotifier {
     }
     final ln = line;
     if (ln == null) return;
-    final (p1, p2) = ln.ends(pr);
-    final r = b - a, sv = p2 - p1;
-    final den = r.dx * sv.dy - r.dy * sv.dx;
-    if (den.abs() < 1e-9) return;
-    final q = p1 - a;
-    final tt = (q.dx * sv.dy - q.dy * sv.dx) / den;
-    final uu = (q.dx * r.dy - q.dy * r.dx) / den;
-    if (tt < 0 || tt > 1 || uu < 0 || uu > 1) return;
-    if (r.dx * ln.dir.dx + r.dy * ln.dir.dy <= 0) return; // วิ่งสวนทาง
+    // จุดแบ่งช่วง: ต้องผ่านตามลำดับ
+    if (_curT0 != null && _curSplits.length < ln.splits.length) {
+      final f = ln.splits[_curSplits.length].cross(prev.lat, prev.lon, la, lo);
+      if (f != null) {
+        final st = (prev.t + (t - prev.t) * f).round() - _curT0!;
+        if (st > 3000) _curSplits.add(st);
+      }
+    }
+    final tt = ln.cross(prev.lat, prev.lon, la, lo);
+    if (tt == null) return;
     if (DateTime.now().difference(_lastCross).inSeconds < 10) return; // กันตัดซ้ำ
     _lastCross = DateTime.now();
     final ct = (prev.t + (t - prev.t) * tt).round();
@@ -310,7 +373,7 @@ class LapTimer extends ChangeNotifier {
     if (_curT0 != null) {
       final ms = ct - _curT0!;
       final bestBefore = s.best;
-      final lap = Lap(s.laps.length + 1, _curT0!, ct, _curI0, idx - 1, _curTop);
+      final lap = Lap(s.laps.length + 1, _curT0!, ct, _curI0, idx - 1, _curTop, List.of(_curSplits));
       s.laps.add(lap);
       lastLapMs = ms;
       lastLapDelta = bestBefore == null ? null : (ms - bestBefore.ms) / 1000;
@@ -323,6 +386,7 @@ class LapTimer extends ChangeNotifier {
     }
     _curT0 = ct;
     _curI0 = idx;
+    _curSplits.clear();
     _curDist = b.distance * (1 - tt);
     _curTop = p.spd;
     _curTrace
@@ -342,6 +406,22 @@ class LapTimer extends ChangeNotifier {
   int get curFrom => _curT0 != null ? _curI0 : 0;
 
   int get lapNo => (cur?.laps.length ?? 0) + (_curT0 != null ? 1 : 0);
+
+  /// คาดเวลารอบนี้ = รอบดีสุด + ช้า/เร็วกว่าตอนนี้
+  int? get predicted {
+    final b = cur?.best, d = liveDelta;
+    if (b == null || d == null) return null;
+    return b.ms + (d * 1000).round();
+  }
+
+  /// ช่วงที่กำลังวิ่งอยู่ (0 = ช่วงแรก)
+  int get curSector => _curSplits.length;
+
+  /// index ช่วงของรอบดีสุด (ไว้วาดเส้นเทียบบนแผนที่)
+  (int, int)? get bestRange {
+    final b = cur?.best;
+    return b == null ? null : (b.i0, b.i1);
+  }
 
   /// ต่าง/ช้ากว่ารอบที่ดีที่สุด ณ ระยะเดียวกัน (วินาที, + = ช้ากว่า)
   double? get liveDelta {
@@ -401,19 +481,44 @@ class LapTimer extends ChangeNotifier {
     final near = _nearest(lat!, lon!, 300);
     final name = near?.name ?? 'สนาม $n';
     if (near != null) tracks.remove(near);
-    line = LapLine(lat!, lon!, heading!, name: name);
+    line = LapLine(lat!, lon!, heading!, name: name, splits: near?.splits);
     tracks.add(line!);
     _saveTracks();
     cur?.line = line;
     _curT0 = null; // เริ่มนับใหม่ตอนผ่านเส้นครั้งถัดไป
+    _curSplits.clear();
     _curTrace.clear();
     _bestTrace = [];
     notifyListeners();
     return null;
   }
 
+  /// เพิ่มจุดแบ่งช่วงตรงนี้ (ต้องมีเส้นสตาร์ทก่อน · สูงสุด 3 จุด)
+  String? addSplitHere() {
+    final ln = line;
+    if (ln == null) return 'ตั้งเส้นสตาร์ทก่อน';
+    if (ln.splits.length >= 3) return 'จุดแบ่งครบ 3 จุดแล้ว (4 ช่วง)';
+    if (!hasFix) return 'ยังไม่มีสัญญาณ GPS';
+    if (heading == null || DateTime.now().difference(_lastHdgAt).inSeconds > 30) {
+      return 'ยังไม่รู้ทิศ — กดตอนรถกำลังวิ่งผ่านจุดนั้น';
+    }
+    if (GeoProj(ln.lat, ln.lon).xy(lat!, lon!).distance < 60) return 'ใกล้เส้นสตาร์ทเกินไป';
+    ln.splits.add(LapLine(lat!, lon!, heading!));
+    _saveTracks();
+    notifyListeners();
+    return null;
+  }
+
+  void clearSplits(LapLine t) {
+    t.splits.clear();
+    _curSplits.clear();
+    _saveTracks();
+    notifyListeners();
+  }
+
   void useTrack(LapLine? t) {
     line = t;
+    _curSplits.clear();
     cur?.line = t;
     _curT0 = null;
     _curTrace.clear();

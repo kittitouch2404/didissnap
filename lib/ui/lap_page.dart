@@ -28,6 +28,7 @@ class TrackPainter extends CustomPainter {
     this.pos,
     this.tick = 0,
     this.style = MapStyle.none,
+    this.cmp,
   }) : super(repaint: style.isNone ? null : TileCache.i);
   final List<LapPt> pts;
   final int from, to; // ช่วงที่ไฮไลต์ (index) — to < 0 = ไม่มี
@@ -35,6 +36,7 @@ class TrackPainter extends CustomPainter {
   final (double, double)? pos; // ตำแหน่งปัจจุบัน
   final int tick;
   final MapStyle style;
+  final (int, int)? cmp; // ช่วงของรอบดีสุด วาดเส้นม่วงไว้เทียบ
 
   static Color speedColor(double f) =>
       HSVColor.fromAHSV(1, (1 - f.clamp(0.0, 1.0)) * 230, 0.9, 1).toColor();
@@ -111,6 +113,24 @@ class TrackPainter extends CustomPainter {
       c.drawPath(path, st);
     }
 
+    // รอบดีสุด (เส้นม่วงบาง ๆ ไว้เทียบไลน์)
+    final cm = cmp;
+    if (cm != null && cm.$2 > cm.$1 && cm.$1 >= 0 && cm.$2 < pts.length && !(cm.$1 == from && cm.$2 == to)) {
+      final path = Path();
+      final a = math.max(0, cm.$1 - 1), b = math.min(pts.length - 1, cm.$2 + 1);
+      path.moveTo(sp(xy[a]).dx, sp(xy[a]).dy);
+      for (var i = a + 1; i <= b; i++) {
+        path.lineTo(sp(xy[i]).dx, sp(xy[i]).dy);
+      }
+      c.drawPath(
+          path,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3
+            ..strokeJoin = StrokeJoin.round
+            ..color = const Color(0xFFC77DFF));
+    }
+
     // รอบที่ไฮไลต์: สีตามความเร็ว
     if (to > from && from >= 0 && to < pts.length) {
       final a = math.max(0, from - 1), b = math.min(pts.length - 1, to + 1);
@@ -135,6 +155,26 @@ class TrackPainter extends CustomPainter {
       for (var i = a; i < b; i++) {
         pa.color = speedColor((pts[i].spd - lo) / rng);
         c.drawLine(sp(xy[i]), sp(xy[i + 1]), pa);
+      }
+    }
+
+    // จุดแบ่งช่วง (S1 S2 S3)
+    if (line != null) {
+      for (var k = 0; k < line!.splits.length; k++) {
+        final x = line!.splits[k];
+        final g = GeoProj(x.lat, x.lon);
+        final (a0, b0) = x.ends(g);
+        Offset back(Offset m) => merc(x.lat + m.dy / GeoProj.ky, x.lon + m.dx / g.kx);
+        final a = sp(back(a0)), b = sp(back(b0));
+        c.drawLine(a, b, Paint()
+          ..color = kAmber
+          ..strokeWidth = 3
+          ..strokeCap = StrokeCap.round);
+        final tp = TextPainter(
+          text: TextSpan(text: 'S${k + 1}', style: const TextStyle(fontSize: 10, color: kAmber, fontWeight: FontWeight.w800)),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(c, b + const Offset(3, -6));
       }
     }
 
@@ -187,7 +227,8 @@ class TrackPainter extends CustomPainter {
       o.to != to ||
       o.line != line ||
       o.pos != pos ||
-      o.style != style;
+      o.style != style ||
+      o.cmp != cmp;
 }
 
 /// ปุ่มเลือกแผนที่ (มุมกรอบ)
@@ -343,7 +384,12 @@ class _LapViewState extends State<LapView> {
               _big(widget.hub.data.speed.toStringAsFixed(0), 'km/h'),
               const SizedBox(width: 18),
               _big('${s?.laps.length ?? 0}', 'รอบ'),
+              if (lt.predicted != null) ...[
+                const SizedBox(width: 18),
+                _big(fmtLap(lt.predicted), 'คาด', col: (lt.liveDelta ?? 0) <= 0 ? kGreen : kAmber),
+              ],
             ]),
+            if ((lt.line?.splits.length ?? 0) > 0) _sectorRow(s, cm),
             const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
               lt.active
@@ -369,6 +415,14 @@ class _LapViewState extends State<LapView> {
                 onPressed: () {
                   final e = lt.setLineHere();
                   _snack(e ?? 'ตั้งเส้นสตาร์ท "${lt.line!.name}" แล้ว');
+                },
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.more_vert, size: 18),
+                label: const Text('แบ่งช่วง'),
+                onPressed: () {
+                  final e = lt.addSplitHere();
+                  _snack(e ?? 'เพิ่มจุดแบ่ง S${lt.line!.splits.length} แล้ว');
                 },
               ),
               OutlinedButton.icon(
@@ -408,6 +462,7 @@ class _LapViewState extends State<LapView> {
                             painter: TrackPainter(
                               pts: s?.pts ?? const [],
                               from: lt.curFrom,
+                              cmp: lt.bestRange,
                               to: (s?.pts.length ?? 0) - 1,
                               line: lt.line,
                               pos: lt.hasFix ? (lt.lat!, lt.lon!) : null,
@@ -435,6 +490,43 @@ class _LapViewState extends State<LapView> {
     );
   }
 
+  /// แถวเวลาแต่ละช่วงของรอบนี้: ม่วง = เร็วกว่าช่วงดีสุดเดิม · เหลือง = ช่วงที่กำลังวิ่ง
+  Widget _sectorRow(LapSession? s, int? cm) {
+    final n = lt.line!.splits.length;
+    final bestS = s?.bestSectors;
+    final sp = lt.curSplits;
+    final cells = <Widget>[];
+    var prev = 0;
+    for (var i = 0; i <= n; i++) {
+      String v;
+      Color col;
+      if (i < sp.length) {
+        final x = sp[i] - prev;
+        prev = sp[i];
+        v = (x / 1000).toStringAsFixed(2);
+        col = bestS != null && x <= bestS[i] ? const Color(0xFFC77DFF) : Colors.white;
+      } else if (i == sp.length && cm != null) {
+        v = ((cm - prev) / 1000).toStringAsFixed(1);
+        col = kAmber;
+      } else {
+        v = '--';
+        col = Colors.white38;
+      }
+      cells.add(Padding(
+        padding: const EdgeInsets.only(right: 14),
+        child: Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+          Text('S${i + 1} ', style: const TextStyle(fontSize: 11, color: kGrey)),
+          Text(v, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: col, fontFeatures: _mono)),
+        ]),
+      ));
+    }
+    final th = s?.theoretical;
+    if (th != null) {
+      cells.add(Text('ในอุดมคติ ${fmtLap(th)}', style: const TextStyle(fontSize: 12, color: Color(0xFFC77DFF))));
+    }
+    return Padding(padding: const EdgeInsets.only(top: 4), child: Wrap(crossAxisAlignment: WrapCrossAlignment.end, children: cells));
+  }
+
   Widget _lapList(LapSession? s) {
     if (s == null || s.laps.isEmpty) {
       return const Center(
@@ -452,12 +544,17 @@ class _LapViewState extends State<LapView> {
           child: Row(children: [
             SizedBox(width: 44, child: Text('L${l.n}', style: const TextStyle(color: kGrey, fontSize: 14))),
             Expanded(
-              child: Text(fmtLap(l.ms),
-                  style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      color: identical(l, b) ? const Color(0xFF8FD3FF) : Colors.white,
-                      fontFeatures: _mono)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(fmtLap(l.ms),
+                    style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: identical(l, b) ? const Color(0xFF8FD3FF) : Colors.white,
+                        fontFeatures: _mono)),
+                if (l.sectors(s.nSplits) != null)
+                  Text(l.sectors(s.nSplits)!.map((x) => (x / 1000).toStringAsFixed(2)).join(' · '),
+                      style: const TextStyle(fontSize: 11, color: kGrey, fontFeatures: _mono)),
+              ]),
             ),
             Text(identical(l, b) ? 'BEST' : fmtDelta((l.ms - b.ms) / 1000),
                 style: TextStyle(
@@ -503,6 +600,7 @@ class _TracksDialog extends StatelessWidget {
             width: 460,
             child: lt.tracks.isEmpty
                 ? const Text('ยังไม่มีสนาม — ขับไปที่เส้นสตาร์ทแล้วกด "ตั้งเส้น"\n'
+                    'แบ่งช่วง (sector): ระหว่างวิ่ง กด "แบ่งช่วง" ตอนผ่านจุดที่ต้องการ (สูงสุด 3 จุด)\n'
                     'ครั้งต่อไปมาสนามเดิม แอปจะเลือกเส้นให้เองอัตโนมัติ (ในระยะ 2 กม.)')
                 : ListView(shrinkWrap: true, children: [
                     for (final t in lt.tracks)
@@ -510,7 +608,8 @@ class _TracksDialog extends StatelessWidget {
                         leading: Icon(identical(t, lt.line) ? Icons.radio_button_checked : Icons.radio_button_off,
                             color: identical(t, lt.line) ? kAccent : null),
                         title: Text(t.name),
-                        subtitle: Text('${t.lat.toStringAsFixed(5)}, ${t.lon.toStringAsFixed(5)} · ทิศ ${t.hdg.round()}°'),
+                        subtitle: Text('${t.lat.toStringAsFixed(5)}, ${t.lon.toStringAsFixed(5)} · ทิศ ${t.hdg.round()}°'
+                            '${t.splits.isEmpty ? '' : ' · แบ่ง ${t.splits.length + 1} ช่วง'}'),
                         onTap: () => lt.useTrack(t),
                         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                           IconButton(
@@ -520,6 +619,12 @@ class _TracksDialog extends StatelessWidget {
                               if (n != null && n.trim().isNotEmpty) lt.renameTrack(t, n.trim());
                             },
                           ),
+                          if (t.splits.isNotEmpty)
+                            IconButton(
+                              tooltip: 'ลบจุดแบ่งช่วง',
+                              icon: const Icon(Icons.content_cut, size: 20),
+                              onPressed: () => lt.clearSplits(t),
+                            ),
                           IconButton(
                             icon: const Icon(Icons.delete_outline, size: 20),
                             onPressed: () => lt.deleteTrack(t),
@@ -715,6 +820,7 @@ class _LapSessionPageState extends State<LapSessionPage> {
                       to: sel?.i1 ?? (s.laps.isEmpty ? s.pts.length - 1 : -1),
                       line: s.line,
                       style: MapStyle.of(_map),
+                      cmp: b == null ? null : (b.i0, b.i1),
                     ),
                   ),
                 ),
@@ -745,7 +851,9 @@ class _LapSessionPageState extends State<LapSessionPage> {
                 : ListView(children: [
                     Padding(
                       padding: const EdgeInsets.only(bottom: 6),
-                      child: Text('${s.laps.length} รอบ · ดีสุด ${fmtLap(b?.ms)} · สูงสุด ${s.top.toStringAsFixed(0)} km/h',
+                      child: Text('${s.laps.length} รอบ · ดีสุด ${fmtLap(b?.ms)} · สูงสุด ${s.top.toStringAsFixed(0)} km/h'
+                          '${s.theoretical == null ? '' : '\nในอุดมคติ (ช่วงดีสุดรวมกัน) ${fmtLap(s.theoretical)}'}'
+                          '\nเส้นม่วง = รอบดีสุด (เทียบกับรอบที่เลือก)',
                           style: const TextStyle(color: kGrey)),
                     ),
                     for (final l in s.laps)
@@ -755,6 +863,14 @@ class _LapSessionPageState extends State<LapSessionPage> {
                         selectedTileColor: const Color(0xFF1A1A1A),
                         onTap: () => setState(() => sel = l),
                         leading: Text('L${l.n}', style: const TextStyle(color: kGrey)),
+                        subtitle: l.sectors(s.nSplits) == null
+                            ? null
+                            : Text(
+                                [
+                                  for (var i = 0; i < l.sectors(s.nSplits)!.length; i++)
+                                    'S${i + 1} ${(l.sectors(s.nSplits)![i] / 1000).toStringAsFixed(2)}'
+                                ].join('  '),
+                                style: const TextStyle(fontSize: 11, fontFeatures: _mono)),
                         title: Text(fmtLap(l.ms),
                             style: TextStyle(
                                 fontSize: 18,
