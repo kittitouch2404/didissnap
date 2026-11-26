@@ -127,7 +127,7 @@ class _LiveValues {
       time: time,
       rpm: math.max(0.0, rpm.x),
       speed: math.max(0.0, speed.x),
-      gear: estimateGear(d.rpm, d.speed, s.gearRatios),
+      gear: estimateGear(d.rpm, d.speed, s.gearRatios, type: s.gearType),
       ect: d.ect == null ? null : ect.x,
       iat: d.iat == null ? null : iat.x,
       volt: d.volt == null ? null : volt.x,

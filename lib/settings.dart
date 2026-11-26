@@ -138,6 +138,10 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// ชนิดเกียร์: 0 ธรรมดา · 1 ออโต้ · 2 CVT
+  int get gearType => _i('gearType', 0);
+  set gearType(int v) => _setI('gearType', v);
+
   void resetGears() {
     _p.remove('gears');
     notifyListeners();

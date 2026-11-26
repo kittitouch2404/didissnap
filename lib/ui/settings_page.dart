@@ -668,6 +668,36 @@ class _GearTabState extends State<GearTab> {
     super.dispose();
   }
 
+  Future<void> _presets(BuildContext context) async {
+    final p = await showDialog<GearPreset>(
+      context: context,
+      builder: (c) => SimpleDialog(
+        title: const Text('พรีเซ็ตเกียร์ (ยางเดิมโรงงาน)'),
+        children: [
+          for (final p in kGearPresets)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(c, p),
+              child: ListTile(
+                dense: true,
+                title: Text(p.name),
+                subtitle: Text(p.type == 2
+                    ? 'ไม่มีเกียร์ตายตัว → โชว์ D'
+                    : '${p.tire} · ${p.kmh.map((e) => e.toStringAsFixed(1)).join(' / ')} km/h ต่อ 1000 rpm'),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (p == null) return;
+    final s = widget.settings;
+    s.gearType = p.type;
+    if (p.gears.isNotEmpty) s.gearRatios = p.kmh;
+    setState(() {});
+    if (context.mounted) {
+      _snack(context, 'ใช้พรีเซ็ต ${p.name} แล้ว — ถ้าเปลี่ยนขนาดยาง ให้ขับแล้วกด "จำค่า" ทีละเกียร์');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = widget.settings;
@@ -682,17 +712,42 @@ class _GearTabState extends State<GearTab> {
     return ListView(
       padding: const EdgeInsets.only(bottom: 24),
       children: [
-        const _Hint(
-            'แอปเดาเกียร์จาก "ความเร็ว ÷ รอบ" — ขับคงที่ในแต่ละเกียร์ (ไม่เหยียบคลัตช์) แล้วกด "จำค่า" ของเกียร์นั้น'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(value: 0, label: Text('ธรรมดา')),
+                ButtonSegment(value: 1, label: Text('ออโต้')),
+                ButtonSegment(value: 2, label: Text('CVT')),
+              ],
+              selected: {s.gearType},
+              onSelectionChanged: (v) => setState(() => s.gearType = v.first),
+            ),
+            FilledButton.tonalIcon(
+              icon: const Icon(Icons.list_alt),
+              label: const Text('เลือกพรีเซ็ต'),
+              onPressed: () => _presets(context),
+            ),
+          ]),
+        ),
+        _Hint(switch (s.gearType) {
+          2 => 'CVT ไม่มีเกียร์ตายตัว (อัตราทดเปลี่ยนตลอด) — หน้าปัดจะโชว์ D ตอนรถวิ่ง\n'
+              'แอปรู้แค่รอบกับความเร็ว ไม่รู้ว่าคันเกียร์อยู่ P / R / N / D',
+          1 => 'ออโต้: แอปเดาเกียร์จาก "ความเร็ว ÷ รอบ" เหมือนกัน แต่ทอร์คคอนเวอร์เตอร์ลื่นได้ (ออกตัว / เร่งแรง)\n'
+              'ช่วงที่เดาไม่ได้จะโชว์ D — ขับคงที่ในแต่ละเกียร์ (เกียร์ล็อกแล้ว) แล้วกด "จำค่า" จะแม่นขึ้น',
+          _ => 'แอปเดาเกียร์จาก "ความเร็ว ÷ รอบ" — ขับคงที่ในแต่ละเกียร์ (ไม่เหยียบคลัตช์) แล้วกด "จำค่า" ของเกียร์นั้น',
+        }),
         ListTile(
           dense: true,
           leading: const Icon(Icons.speed),
           title: Text(
               'ตอนนี้: ${fmt(d.rpm)} rpm · ${fmt(d.speed)} km/h · '
               'อัตรา ${ratio == null ? '--' : ratio.toStringAsFixed(2)} · '
-              'เกียร์ ${estimateGear(d.rpm, d.speed, gears)}',
+              'เกียร์ ${estimateGear(d.rpm, d.speed, gears, type: s.gearType)}',
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
         ),
+        if (s.gearType != 2)
         for (var i = 0; i < gears.length; i++)
           ListTile(
             dense: true,
@@ -727,6 +782,7 @@ class _GearTabState extends State<GearTab> {
               ),
             ]),
           ),
+        if (s.gearType != 2)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Wrap(spacing: 8, children: [

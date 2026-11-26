@@ -87,8 +87,10 @@ class CarData {
 }
 
 /// เดาเกียร์จากอัตราส่วน ความเร็ว / (รอบ/1000)
-String estimateGear(double rpm, double speed, List<double> ratios) {
-  if (speed < 3 || rpm < 400) return 'N';
+/// type: 0 = ธรรมดา · 1 = ออโต้ (มีทอร์คคอนเวอร์เตอร์ ลื่นได้ → เผื่อคลาดมากขึ้น) · 2 = CVT (ไม่มีเกียร์ตายตัว → โชว์ D)
+String estimateGear(double rpm, double speed, List<double> ratios, {int type = 0}) {
+  if (type == 2) return speed < 3 || rpm < 400 ? '-' : 'D';
+  if (speed < 3 || rpm < 400) return type == 1 ? '-' : 'N';
   final r = speed / (rpm / 1000.0);
   var best = -1;
   var bestErr = 1e9;
@@ -100,6 +102,36 @@ String estimateGear(double rpm, double speed, List<double> ratios) {
       best = i;
     }
   }
-  if (best < 0 || bestErr > 0.12) return '-';
+  if (best < 0 || bestErr > (type == 1 ? 0.18 : 0.12)) return type == 1 ? 'D' : '-';
   return '${best + 1}';
 }
+
+/// พรีเซ็ตเกียร์: อัตราทดแต่ละเกียร์ + เฟืองท้าย + ขนาดยางเดิม → km/h ต่อ 1000 rpm
+class GearPreset {
+  const GearPreset(this.name, this.type, this.gears, this.fd, this.tire);
+  final String name;
+  final int type; // 0 ธรรมดา · 1 ออโต้ · 2 CVT
+  final List<double> gears;
+  final double fd;
+  final String tire; // เช่น 175/65R14
+
+  /// เส้นรอบวงยาง (เมตร) จาก 175/65R14
+  static double circ(String t) {
+    final m = RegExp(r'(\d+)/(\d+)R(\d+)').firstMatch(t);
+    if (m == null) return 1.9;
+    final w = double.parse(m[1]!), a = double.parse(m[2]!), r = double.parse(m[3]!);
+    return 3.14159265 * (r * 25.4 + 2 * w * a / 100) / 1000;
+  }
+
+  List<double> get kmh => [for (final g in gears) circ(tire) * 60 / (g * fd)];
+}
+
+const kGearPresets = [
+  GearPreset('Jazz / City GD · 5MT', 0, [3.462, 1.870, 1.321, 0.970, 0.757], 4.294, '175/65R14'),
+  GearPreset('Jazz / City GE · 5MT', 0, [3.308, 1.870, 1.303, 0.949, 0.727], 4.62, '175/65R15'),
+  GearPreset('Jazz GK RS · 6MT', 0, [3.461, 1.869, 1.235, 0.948, 0.809, 0.727], 4.62, '185/55R16'),
+  GearPreset('Jazz GE · 5AT', 1, [2.996, 1.679, 1.067, 0.756, 0.550], 4.56, '175/65R15'),
+  GearPreset('เกียร์ธรรมดา 5 สปีด (ทั่วไป)', 0, [3.4, 1.9, 1.3, 0.97, 0.76], 4.3, '185/60R15'),
+  GearPreset('เกียร์ธรรมดา 6 สปีด (ทั่วไป)', 0, [3.4, 1.9, 1.3, 1.0, 0.82, 0.70], 4.3, '205/55R16'),
+  GearPreset('CVT (GE / GK / FC / FK / City ฯลฯ)', 2, [], 1, ''),
+];
