@@ -32,7 +32,7 @@ jobs:
       - name: Compile S3 4.3"
         run: |
           arduino-cli compile \
-            --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashMode=dio,FlashSize=16M,PSRAM=opi" \
+            --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashMode=dio,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB" \
             --output-dir out_s3 esp32/Didissnap_S3
           ls -la out_s3
           cp out_s3/Didissnap_S3.ino.merged.bin Didissnap_S3_full.bin
@@ -41,7 +41,7 @@ jobs:
       - name: Compile CYD 2.8" (C3 mode)
         run: |
           arduino-cli compile \
-            --fqbn "esp32:esp32:esp32" \
+            --fqbn "esp32:esp32:esp32:PartitionScheme=huge_app" \
             --output-dir out_cyd esp32/obd2_cyd_c3
           ls -la out_cyd
           cp out_cyd/obd2_cyd_c3.ino.merged.bin CYD_full.bin
