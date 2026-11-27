@@ -96,6 +96,36 @@ static bool IRAM_ATTR onBounce(esp_lcd_panel_handle_t, void* buf, int pos, int l
   return hp == pdTRUE;
 }
 
+#if DIDI_7B
+// 7B: จอดึงภาพจากบัฟเฟอร์ 480x272 ของเราตรง ๆ แล้วขยาย 2 เท่าตอนเติม bounce (ใน RAM ภายใน)
+//  → ไม่ต้องมีภาพ 1024x600 ใน PSRAM เลย: จออ่าน PSRAM น้อยลง 4 เท่า และไม่ต้องเขียนภาพขยายลง PSRAM ทุกเฟรม
+static bool IRAM_ATTR onBounce7b(esp_lcd_panel_handle_t, void* buf, int pos, int len, void*) {
+  BaseType_t hp = pdFALSE;
+  if (pos == 0) {
+    frames++;
+    portENTER_CRITICAL_ISR(&swapMux);
+    if (ready >= 0 && (int)(frames - lastSwap) >= minVsyncs) { front = ready; ready = -1; lastSwap = frames; }
+    portEXIT_CRITICAL_ISR(&swapMux);
+    xSemaphoreGiveFromISR(vsyncSem, &hp);
+  }
+  const uint16_t* img = bb[front];
+  int y = pos / PW, rows = len / (PW * 2);
+  uint32_t* d = (uint32_t*)buf;
+  for (int r = 0; r < rows; r++, y++, d += PW / 2) {
+    int ly = y - LCD_OY;
+    if (ly < 0 || ly >= LCD_H * 2) { for (int i = 0; i < PW / 2; i++) d[i] = 0; continue; }
+    if ((ly & 1) && r > 0) { memcpy(d, d - PW / 2, PW * 2); continue; }   // แถวคี่ = ซ้ำแถวบน
+    const uint16_t* s = img + (ly >> 1) * LCD_W;
+    int i = 0;
+    for (; i < LCD_OX / 2; i++) d[i] = 0;
+    uint32_t* m = d + LCD_OX / 2;
+    for (int x = 0; x < LCD_W; x++) { uint32_t v = s[x]; m[x] = v | (v << 16); }
+    for (i = LCD_OX / 2 + LCD_W; i < PW / 2; i++) d[i] = 0;
+  }
+  return hp == pdTRUE;
+}
+#endif
+
 static bool IRAM_ATTR onVsync(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t*, void*) {
   frames++;
   BaseType_t hp = pdFALSE;
@@ -379,6 +409,7 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   c.timings.v_res = PH;
 #if DIDI_7B
   if (c.timings.pclk_hz > LCD_PCLK_HZ) c.timings.pclk_hz = LCD_PCLK_HZ;
+  bool isr7 = bounce;                          // เมนู BOUNCE ON = ขยายภาพตอนเติม bounce (ลื่นสุด) · OFF = ภาพ 1024x600 ใน PSRAM แบบเดิม
   bounce = true;                               // 1024x600 ต้องใช้ bounce buffer เสมอ (PSRAM ไม่ทัน)
   ws7b::begin();                               // เปิด VCOM / รีเซ็ตทัช (ไฟจอยังปิด)
   c.timings.hsync_pulse_width = 162;
@@ -419,9 +450,17 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   for (int i = 0; i < 16; i++) c.data_gpio_nums[i] = data[i];
   c.flags.fb_in_psram = 1;
   if (bounce) c.bounce_buffer_size_px = PW * BB_LINES;
-  if (bounce && LCD_NOFB && !DIDI_7B) { c.flags.no_fb = 1; c.num_fbs = 0; }   // no_fb ห้ามตั้ง num_fbs   // 2 × 8 แถวใน RAM ภายใน (ทดสอบแล้ว: 16 แถว RAM ไม่พอวาด 2 คอร์ + ภาพเลื่อน)
+#if DIDI_7B
+  if (isr7) { c.flags.no_fb = 1; c.num_fbs = 0; }
+#else
+  if (bounce && LCD_NOFB) { c.flags.no_fb = 1; c.num_fbs = 0; }
+#endif   // no_fb ห้ามตั้ง num_fbs   // 2 × 8 แถวใน RAM ภายใน (ทดสอบแล้ว: 16 แถว RAM ไม่พอวาด 2 คอร์ + ภาพเลื่อน)
   useBounce = bounce;
-  noFb = bounce && LCD_NOFB && !DIDI_7B;
+#if DIDI_7B
+  noFb = isr7;
+#else
+  noFb = bounce && LCD_NOFB;
+#endif
   // บัฟเฟอร์ของเราต้องพร้อมก่อนเริ่มจอ (โหมด bounce จอดึงภาพจากบัฟเฟอร์นี้ทันที)
   for (int i = 0; i < (noFb ? 3 : 2); i++) {
     bb[i] = (uint16_t*)heap_caps_aligned_alloc(64, BBUF_BYTES, MALLOC_CAP_SPIRAM);
@@ -444,7 +483,11 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   memset(&cb, 0, sizeof(cb));
   // โหมด bounce: จอดึงภาพจาก fb ล่วงหน้าเป็นช่วง ๆ — รอบสุดท้ายของเฟรมดึงเสร็จ = ปลอดภัยที่จะคัดลอกภาพใหม่ลง fb
   // (ถ้ารอ vsync ไดรเวอร์จะเติม bounce ช่วงบนของเฟรมถัดไปไปก่อนแล้ว → แถวบน ๆ เป็นภาพเก่า เห็นเป็นเส้นรอยต่อ)
+#if DIDI_7B
+  if (noFb) cb.on_bounce_empty = onBounce7b;
+#else
   if (noFb) cb.on_bounce_empty = onBounce;
+#endif
   else if (bounce) { cb.on_frame_buf_complete = onVsync; cb.on_vsync = onVsyncB; }
   else cb.on_vsync = onVsync;
   esp_lcd_rgb_panel_register_event_callbacks(panel, &cb, nullptr);
