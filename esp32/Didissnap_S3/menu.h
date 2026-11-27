@@ -511,7 +511,7 @@ inline void tap(int x, int y) {
 }
 // ปัดซ้าย/ขวา: d = -1 (ปัดซ้าย) / +1 (ปัดขวา)
 inline void swipeX(int d) {
-  if (!open) { didicfg::setPage(didicfg::stepPage(didicfg::cfg.page, d < 0 ? 1 : -1)); return; }
+  if (!open) { didicfg::setPage(didicfg::stepPage(didicfg::cfg.page, d > 0 ? 1 : -1)); return; }   // ปัดขวา = หน้าถัดไป (ไปทางขวา) · ปัดซ้าย = หน้าก่อน
   if (d > 0) { if (edit) edit = false; else if (cat < 0) open = false; else goBack(); }
 }
 // ปัดขึ้น/ลง: d = -1 (ปัดขึ้น) / +1 (ปัดลง)
