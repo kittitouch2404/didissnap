@@ -1,0 +1,52 @@
+name: Build 7B (ESP-IDF + LVGL)
+
+# จอ Waveshare ESP32-S3-Touch-LCD-7B แบบเขียนใหม่ (ESP-IDF 5.4 + LVGL 9) → release 7b-latest
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'esp32/Didissnap_7B_idf/**'
+      - '.github/workflows/build-7b.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (espressif/idf:v5.4.1)
+        run: |
+          docker run --rm -v "$PWD":/w -w /w/esp32/Didissnap_7B_idf espressif/idf:v5.4.1 bash -c \
+            "idf.py set-target esp32s3 && idf.py build && idf.py merge-bin -o didissnap_7b_full.bin && chmod -R a+rw build ."
+          cd esp32/Didissnap_7B_idf
+          ls -la build/*.bin
+          cp build/didissnap_7b_full.bin ../../Didissnap7B_full.bin 2>/dev/null || cp didissnap_7b_full.bin ../../Didissnap7B_full.bin 2>/dev/null || find . -name "didissnap_7b_full.bin" -exec cp {} ../../Didissnap7B_full.bin \;
+          cp build/didissnap_7b.bin ../../Didissnap7B_app.bin
+          python3 - <<'PY'
+          import os
+          s = os.path.getsize('build/didissnap_7b.bin')
+          print(f"APP SIZE: {s} bytes ({s/1024/1024:.2f} MB of 8 MB)")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: didissnap_7b
+          path: |
+            Didissnap7B_full.bin
+            Didissnap7B_app.bin
+
+      - name: Publish (release 7b-latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: 7b-latest
+          name: Didissnap 7B (ESP-IDF + LVGL)
+          body: |
+            Didissnap7B_full.bin = แฟลชทั้งชิปที่ 0x0
+            Didissnap7B_app.bin = เฉพาะโปรแกรมที่ 0x10000
+          files: |
+            Didissnap7B_full.bin
+            Didissnap7B_app.bin
+          make_latest: false
