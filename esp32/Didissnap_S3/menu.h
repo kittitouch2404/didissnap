@@ -109,6 +109,13 @@ inline void goBack() {
 static void (*onPeaks)() = nullptr;
 static void (*onTrip)() = nullptr;
 static void (*onHold2)() = nullptr;
+#if DIDI_7B
+static const bool touchUI = true;          // จอสัมผัส: แตะ/ปัดแบบ CYD (touchui.h)
+#define AGAIN_T "TAP AGAIN TO "
+#else
+static const bool touchUI = false;
+#define AGAIN_T "HOLD AGAIN TO "
+#endif
 // อัตรารีเฟรชจอ: 0 = 44 Hz · 1 = 30 Hz · 2 = 60 Hz ล็อก 30 fps · 3 = 60 Hz
 static int lcdMode = 0;
 static const char* const LCD_MODE_NAME[] = {"44 Hz", "30 Hz (30 fps)", "60 Hz lock 30 fps", "60 Hz"};
@@ -287,7 +294,7 @@ inline void drawGrid() {
     catSummary(i, v, sizeof(v));
     text(v, x + 75, y + 90, 11, rgb(0x969696), CENTER, 600);
   }
-  footer("BTN1 = NEXT   BTN2 = PREV   HOLD BTN2 = OPEN   HOLD BTN1 = EXIT");
+  footer(touchUI ? "TAP = OPEN     TAP TITLE / SWIPE RIGHT = CLOSE" : "BTN1 = NEXT   BTN2 = PREV   HOLD BTN2 = OPEN   HOLD BTN1 = EXIT");
 }
 
 // กล่องสถานะด้านบนของหมวด OBD (+ ผล DTC)
@@ -356,6 +363,16 @@ inline void drawList() {
     else snprintf(live, sizeof(live), "%s   car %.1f -> %.1f V", edit ? "BTN1 + / BTN2 -" : "BATTERY", RAW.volt, D.volt);
     ft = live;
   }
+  if (touchUI && edit) {                            // จอสัมผัส: ปุ่ม − / OK / + ที่แถบล่าง
+    fill(0, H - 26, W, 26, rgb(0x1A1512));
+    rrect(6, H - 24, 150, 22, 5, rgb(0x2A2320), ORG, 1.5f);
+    rrect(165, H - 24, 150, 22, 5, rgb(0x5A2E00), ORG, 1.5f);
+    rrect(324, H - 24, 150, 22, 5, rgb(0x2A2320), ORG, 1.5f);
+    text("-", 81, H - 7, 16, rgb(0xFFFFFF), CENTER, 900);
+    text("OK", 240, H - 7, 14, rgb(0xFFFFFF), CENTER, 900);
+    text("+", 399, H - 7, 16, rgb(0xFFFFFF), CENTER, 900);
+    return;
+  }
   footer(ft);
 }
 
@@ -369,6 +386,17 @@ inline void drawToast() {
   if (nowMs() >= toastUntil) return;
   rrect(W / 2 - 90, H / 2 - 18, 180, 36, 8, rgb(0x101010), pages::ORG, 1.5f);
   text(toastMsg, W / 2, H / 2 + 6, 16, pages::ORG, CENTER, 800);
+}
+
+inline void choose();
+// ปรับค่ารายการที่แก้อยู่ +1 / -1 ขั้น
+inline void stepEdit(int d) {
+  const Item& it = CATS[cat].it[sel];
+  int v = value(it.key) + (d > 0 ? it.st : -it.st);
+  if (!strcmp(it.key, "page")) v = didicfg::stepPage(value(it.key), d > 0 ? 1 : -1);
+  else if (!strncmp(it.key, "p13", 3) && strcmp(it.key, "p13spd")) v = (v + didicfg::N_SLOTS) % didicfg::N_SLOTS;   // วนรอบ
+  else v = constrain(v, it.mn, it.mx);
+  set(it.key, v);
 }
 
 // ปุ่ม: b = 0 (ปุ่ม 1) / 1 (ปุ่ม 2)
@@ -390,16 +418,18 @@ inline void button(int b, bool lng) {
   if (edit) {
     if (b == 1 && lng) { edit = false; return; }
     if (lng) return;
-    int v = value(it.key) + (b == 0 ? it.st : -it.st);
-    if (!strcmp(it.key, "page")) v = didicfg::stepPage(value(it.key), b == 0 ? 1 : -1);
-    else if (!strncmp(it.key, "p13", 3) && strcmp(it.key, "p13spd")) v = (v + didicfg::N_SLOTS) % didicfg::N_SLOTS;   // วนรอบ
-    else v = constrain(v, it.mn, it.mx);
-    set(it.key, v);
+    stepEdit(b == 0 ? 1 : -1);
     return;
   }
   if (b == 0 && lng) { goBack(); return; }   // ปุ่ม 1 ค้าง = ย้อนกลับ
   if (!lng) { sel = (sel + (b == 0 ? 1 : C.n - 1)) % C.n; return; }
-  // ปุ่ม 2 ค้าง = เลือก
+  choose();   // ปุ่ม 2 ค้าง = เลือก
+}
+
+// เลือกรายการที่ sel (ปุ่ม 2 ค้าง / แตะ)
+inline void choose() {
+  const Cat& C = CATS[cat];
+  const Item& it = C.it[sel];
   if (it.key) edit = true;
   else if (!strcmp(it.label, "BACK")) goBack();
   else if (!strcmp(it.label, "CALIBRATE")) { cat = CAT_CAL; sel = 0; }
@@ -412,7 +442,7 @@ inline void button(int b, bool lng) {
     toast(m);
   }
   else if (!strcmp(it.label, "RESET CALIBRATE")) {
-    if (!calArm || millis() - calArm > 3000) { calArm = millis(); toast("HOLD AGAIN TO RESET"); }
+    if (!calArm || millis() - calArm > 3000) { calArm = millis(); toast(AGAIN_T "RESET"); }
     else { calArm = 0; int old = didicfg::cfg.page; didicfg::calReset(); didicfg::changed(old); toast("CALIBRATE RESET"); }
   }
   else if (!strcmp(it.label, "SHOW PAGES")) { cat = CAT_PGON; sel = 0; }
@@ -421,14 +451,81 @@ inline void button(int b, bool lng) {
   else if (!strcmp(it.label, "FORGET ADAPTER")) { if (onObdForget) onObdForget(); }
   else if (!strcmp(it.label, "PAIR NEW SCREEN")) { if (onC3Pair) onC3Pair(); }
   else if (!strcmp(it.label, "FORGET C3")) {
-    if (!c3Arm || millis() - c3Arm > 3000) { c3Arm = millis(); toast("HOLD AGAIN TO FORGET C3"); }
+    if (!c3Arm || millis() - c3Arm > 3000) { c3Arm = millis(); toast(AGAIN_T "FORGET C3"); }
     else { c3Arm = 0; if (onC3Forget) onC3Forget(); }
   }
   else if (!strcmp(it.label, "READ DTC")) { if (!dtcStart || !dtcStart(1)) toast("OBD NOT CONNECTED"); }
   else if (!strcmp(it.label, "CLEAR DTC")) {
-    if (!clearArm || millis() - clearArm > 3000) { clearArm = millis(); toast("HOLD AGAIN TO CLEAR"); }
+    if (!clearArm || millis() - clearArm > 3000) { clearArm = millis(); toast(AGAIN_T "CLEAR"); }
     else { clearArm = 0; if (!dtcStart || !dtcStart(2)) toast("OBD NOT CONNECTED"); }
   }
+}
+
+// ---------------------------------------------------------------- จอสัมผัส (แบบ CYD) — พิกัดภาพ 480x272
+inline void openMenu() { open = true; cat = -1; gsel = 0; sel = 0; edit = false; }
+inline void listGeom(int& y0, int& rh, int& rows, int& top) {
+  const Cat& C = CATS[cat];
+  bool ob = C.it == L_OBD;
+  y0 = ob ? 116 : 33; rh = ob ? 33 : 36; rows = ob ? 4 : 6;
+  top = max(0, min(sel - (rows - 1) / 2, C.n - rows));
+}
+inline void tap(int x, int y) {
+  if (!open) { if (x >= 380 && y < 50) openMenu(); return; }   // มุมขวาบน = เมนู (สำรอง)
+  if (cat < 0) {
+    if (y < 28) { open = false; return; }
+    for (int i = 0; i < NC; i++) {
+      int bx = 8 + (i % 3) * 156, by = 36 + (i / 3) * 106;
+      if (x >= bx && x < bx + 150 && y >= by && y < by + 98) { gsel = i; cat = i; sel = 0; edit = false; return; }
+    }
+    return;
+  }
+  const Cat& C = CATS[cat];
+  if (edit) {
+    if (y >= H - 26) { int k = x * 3 / W; if (k == 0) stepEdit(-1); else if (k == 2) stepEdit(1); else edit = false; return; }
+    const Item& it = C.it[sel];
+    if (isSlider(it.key) && x >= 240 && x <= 400) {          // แตะบนแถบ = ตั้งค่าตามตำแหน่ง
+      float f = fminf(1, fmaxf(0, (x - 250) / 140.f));
+      int v = it.mn + (int)lroundf(f * (it.mx - it.mn) / it.st) * it.st;
+      set(it.key, constrain(v, it.mn, it.mx));
+      return;
+    }
+    edit = false;                                            // แตะที่อื่น = เสร็จ
+    return;
+  }
+  if (y < 28) { goBack(); return; }
+  int y0, rh, rows, top;
+  listGeom(y0, rh, rows, top);
+  if (y < y0) return;                                        // กล่องสถานะ OBD
+  int r = (y - y0) / rh, j = top + r;
+  if (r >= rows || j >= C.n) return;
+  sel = j;
+  const Item& it = C.it[j];
+  if (it.key && it.mn == 0 && it.mx == 1) { set(it.key, value(it.key) ? 0 : 1); return; }   // ON/OFF = สลับทันที
+  if (it.key && isSlider(it.key) && x >= 240 && x <= 400) {
+    float f = fminf(1, fmaxf(0, (x - 250) / 140.f));
+    int v = it.mn + (int)lroundf(f * (it.mx - it.mn) / it.st) * it.st;
+    set(it.key, constrain(v, it.mn, it.mx));
+    return;
+  }
+  choose();
+}
+// ปัดซ้าย/ขวา: d = -1 (ปัดซ้าย) / +1 (ปัดขวา)
+inline void swipeX(int d) {
+  if (!open) { didicfg::setPage(didicfg::stepPage(didicfg::cfg.page, d < 0 ? 1 : -1)); return; }
+  if (d > 0) { if (edit) edit = false; else if (cat < 0) open = false; else goBack(); }
+}
+// ปัดขึ้น/ลง: d = -1 (ปัดขึ้น) / +1 (ปัดลง)
+inline void swipeY(int d) {
+  if (!open) { if (d < 0) openMenu(); return; }
+  if (cat < 0) { if (d > 0) open = false; return; }
+  if (edit) return;
+  int y0, rh, rows, top;
+  listGeom(y0, rh, rows, top);
+  int n = CATS[cat].n;
+  sel = d < 0 ? min(n - 1, sel + rows - 1) : max(0, sel - (rows - 1));
+}
+inline void longPress(int, int) {
+  if (!open) { if (onHold2) onHold2(); }
 }
 
 }  // namespace menu

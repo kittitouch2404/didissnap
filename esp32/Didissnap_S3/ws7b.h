@@ -1,8 +1,7 @@
 // ws7b.h — อุปกรณ์บนบอร์ด Waveshare ESP32-S3-Touch-LCD-7B
 //  - ชิปขยายขา (CH32V003, I2C 0x24): ไฟจอ (IO2), รีเซ็ตทัช (IO1), รีเซ็ตจอ (IO3), SD CS (IO4), USB/CAN (IO5), VCOM (IO6)
 //    ความสว่าง = PWM ของชิปนี้ (ค่า 0 = สว่างสุด ตามตัวอย่างของ Waveshare)
-//  - ทัช GT911 (I2C 0x5D/0x14, INT = GPIO4) → แปลงเป็น "ปุ่ม" 2 ปุ่มแบบเดิม:
-//      แตะครึ่งขวา = ปุ่ม 1 · แตะครึ่งซ้าย = ปุ่ม 2 · แตะค้าง = กดค้าง
+//  - ทัช GT911 (I2C 0x5D/0x14, INT = GPIO4) → touching / tx / ty (ท่าทางแบบ CYD อยู่ใน touchui.h)
 #pragma once
 #include <Arduino.h>
 #include <Wire.h>
@@ -14,7 +13,9 @@ static const uint8_t EXP = 0x24;
 static uint8_t outv = 0xDF;          // ทุกขา HIGH ยกเว้น IO5 = LOW (ใช้ USB ไม่ใช่ CAN)
 static uint8_t tpAddr = 0;
 static bool expOk = false;
-static volatile bool down[2] = {false, false};   // ปุ่มเสมือนที่กดอยู่ (อ่านใน didibtn)
+static volatile bool down[2] = {false, false};   // ครึ่งขวา/ซ้ายที่กดอยู่ (ใช้ตอนเปิดเครื่อง: แตะเพื่อข้ามโลโก้)
+static bool touching = false;        // มีนิ้วแตะอยู่
+static int tx = 0, ty = 0;           // จุดแตะล่าสุด (พิกัดจอจริง 1024x600)
 static bool flip = false;            // จอกลับหัว → สลับซ้าย/ขวา
 
 static bool wr(uint8_t a, uint8_t reg, uint8_t v) {
@@ -89,6 +90,9 @@ inline void loop() {
       uint8_t p[4];
       if (gtRd(0x8150, p, 4) == 4) {
         int x = p[0] | (p[1] << 8);
+        tx = x;
+        ty = p[2] | (p[3] << 8);
+        touching = true;
         bool right = x >= 512;
         if (flip) right = !right;
         down[0] = right;
@@ -97,10 +101,12 @@ inline void loop() {
       }
     } else {
       down[0] = down[1] = false;
+      touching = false;
     }
     gtWr(0x814E, 0);
   } else if (now - lastTouch > 150) {
     down[0] = down[1] = false;                         // ไม่มีรายงานจุดสัมผัสนานแล้ว = ปล่อย
+    touching = false;
   }
 }
 

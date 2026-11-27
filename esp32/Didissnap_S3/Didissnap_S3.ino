@@ -42,6 +42,9 @@
 #include "menu.h"
 #include "perf.h"
 #include "bootanim.h"
+#if DIDI_7B
+#include "touchui.h"
+#endif
 #pragma GCC pop_options
 
 #if DIDI_7B
@@ -369,7 +372,7 @@ void setup() {
   didibtn::onEvent = onButton;
   didibtn::begin(PIN_BTN1, PIN_BTN2, -1, PIN_BTN2_ALT);
 #if DIDI_7B
-  didibtn::virt = ws7b::down;      // แตะจอ = ปุ่ม
+  menu::toast("SWIPE UP = MENU");  // จอสัมผัส: บอกวิธีเปิดเมนูครั้งแรก
 #endif
   // ตัวอ่าน OBD แบบ BLE (เริ่มหลังจองแรมจอ/วาดเสร็จ เพราะ Bluetooth ใช้ RAM ภายในเยอะ)
   menu::obdMode = prefs.getInt("obdBle", 1) & 3;   // 0 ปิด · 1 BLE · 2 C3 · 3 C3 จำลอง
@@ -433,7 +436,7 @@ void loop() {
   }
 #if DIDI_7B
   ws7b::flip = didicfg::cfg.flip;
-  ws7b::loop();
+  tui::tick();                     // แตะ/ปัดแบบ CYD
 #endif
   didibtn::loop();
   didicfg::tick();   // บันทึกค่าตั้งลงแฟลชทีหลัง
