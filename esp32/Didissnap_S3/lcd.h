@@ -451,6 +451,10 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   c.flags.fb_in_psram = 1;
   if (bounce) c.bounce_buffer_size_px = PW * BB_LINES;
 #if DIDI_7B
+  // โหมดขยายใน ISR: bounce 4 แถว (16 KB ใน RAM ภายใน แทน 40 KB) → เหลือ RAM ให้วาด 2 คอร์ได้
+  if (isr7) c.bounce_buffer_size_px = PW * 4;
+#endif
+#if DIDI_7B
   if (isr7) { c.flags.no_fb = 1; c.num_fbs = 0; }
 #else
   if (bounce && LCD_NOFB) { c.flags.no_fb = 1; c.num_fbs = 0; }

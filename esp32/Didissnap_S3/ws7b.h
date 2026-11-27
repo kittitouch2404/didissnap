@@ -24,18 +24,20 @@ static bool wr(uint8_t a, uint8_t reg, uint8_t v) {
   Wire.write(v);
   return Wire.endTransmission() == 0;
 }
-static void expOut(int pin, bool v) {
-  if (v) outv |= (1 << pin); else outv &= ~(1 << pin);
-  wr(EXP, 0x03, outv);
-}
+
+static int briPct = -1;              // ความสว่างล่าสุดที่สั่ง (-1 = ยังไม่สั่ง → ไฟจอปิด)
+static uint8_t pwmVal = 0;
 
 // ความสว่าง 0-100 %
 inline void brightness(int pct) {
-  if (!expOk) return;
   pct = constrain(pct, 0, 100);
-  expOut(2, pct > 0);                                  // ปิดไฟจอเมื่อ 0
+  briPct = pct;
   int duty = constrain(100 - pct, 0, 97);              // ชิปกลับด้าน: 0 = สว่างสุด
-  wr(EXP, 0x05, (uint8_t)(duty * 255 / 100));
+  pwmVal = (uint8_t)(duty * 255 / 100);
+  if (pct > 0) outv |= (1 << 2); else outv &= ~(1 << 2);   // ปิดไฟจอเมื่อ 0
+  if (!expOk) return;
+  wr(EXP, 0x03, outv);
+  wr(EXP, 0x05, pwmVal);
 }
 
 static bool gtWr(uint16_t reg, uint8_t v) {
@@ -52,18 +54,29 @@ static int gtRd(uint16_t reg, uint8_t* b, int n) {
   return got;
 }
 
+// ชิปขยายขาเป็น MCU (CH32V003) — ตอนเสียบไฟใหม่มันบูตช้ากว่า ESP32 → ต้องรอ/ลองซ้ำ
+//  (เดิมลองครั้งเดียว: กด RESET ใช้ได้ แต่ถอดเสียบไฟแล้วจอดำค้าง เพราะไม่ได้เปิดไฟจอ/VCOM)
+static bool expInit(uint32_t waitMs) {
+  uint32_t t0 = millis();
+  do {
+    if (wr(EXP, 0x02, 0xFF)) return true;              // ทุกขาเป็นขาออก
+    delay(25);
+  } while (millis() - t0 < waitMs);
+  return false;
+}
+
 // เรียกก่อนเปิดจอ (ต้องเปิด VCOM/ไฟจอผ่านชิปขยายขา)
 inline bool begin() {
   Wire.begin(SDA, SCL, 400000);
-  expOk = wr(EXP, 0x02, 0xFF);                         // ทุกขาเป็นขาออก
-  if (expOk) {
-    outv = 0xDF & ~(1 << 1) & ~(1 << 2);               // รีเซ็ตทัช + ไฟจอปิดไว้ก่อน (ไม่เห็นภาพขยะตอนเริ่ม)
-    wr(EXP, 0x03, outv);
-  }
+  Wire.setTimeOut(20);
+  expOk = expInit(3000);
+  outv = 0xDF & ~(1 << 1) & ~(1 << 2);                 // รีเซ็ตทัช + ไฟจอปิดไว้ก่อน (ไม่เห็นภาพขยะตอนเริ่ม)
+  if (expOk) wr(EXP, 0x03, outv);
   pinMode(TP_INT, OUTPUT);
   digitalWrite(TP_INT, LOW);                           // INT ต่ำตอนปล่อยรีเซ็ต = ที่อยู่ 0x5D
   delay(20);
-  if (expOk) expOut(1, true);
+  outv |= (1 << 1);                                    // ปล่อยรีเซ็ตทัช
+  if (expOk) wr(EXP, 0x03, outv);
   delay(60);
   pinMode(TP_INT, INPUT);
   delay(50);
@@ -75,8 +88,30 @@ inline bool begin() {
   return expOk;
 }
 
-// อ่านทัช (เรียกใน loop) — ตั้ง down[0]/down[1] ให้ didibtn ใช้แทนปุ่มจริง
+// ทุก 2 วิ: ย้ำค่าให้ชิปขยายขา (ถ้ามันรีสตาร์ท/บูตช้า ไฟจอ/VCOM จะกลับมาเอง) + หาทัชใหม่ถ้ายังไม่เจอ
+static void keepAlive() {
+  static uint32_t last = 0;
+  uint32_t now = millis();
+  if (now - last < 2000) return;
+  last = now;
+  bool ok = wr(EXP, 0x02, 0xFF);
+  if (ok) {
+    wr(EXP, 0x03, outv);
+    if (briPct >= 0) wr(EXP, 0x05, pwmVal);
+  }
+  if (ok && !expOk) Serial.println("[7B] io-ext came back");
+  expOk = ok;
+  if (!tpAddr && expOk) {
+    for (uint8_t a : {(uint8_t)0x5D, (uint8_t)0x14}) {
+      Wire.beginTransmission(a);
+      if (Wire.endTransmission() == 0) { tpAddr = a; Serial.printf("[7B] touch found 0x%02X\n", a); break; }
+    }
+  }
+}
+
+// อ่านทัช (เรียกใน loop)
 inline void loop() {
+  keepAlive();
   if (!tpAddr) return;
   static uint32_t last = 0, lastTouch = 0;
   uint32_t now = millis();
