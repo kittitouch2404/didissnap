@@ -20,10 +20,29 @@
 #include "hal/lcd_ll.h"
 #include "esp32s3/rom/cache.h"
 #include "esp_memory_utils.h"
+#include "board.h"
+#if DIDI_7B
+#include "ws7b.h"
+#endif
 
-#define LCD_W 480
+#define LCD_W 480            // ขนาดภาพที่วาด (ทุกบอร์ด)
 #define LCD_H 272
+#if DIDI_7B
+// Waveshare 7B: จอจริง 1024x600 — ขยายภาพ 2 เท่า (960x544) วางกลางจอ
+#define PW 1024
+#define PH 600
+#define LCD_OX ((PW - LCD_W * 2) / 2)
+#define LCD_OY ((PH - LCD_H * 2) / 2)
+#define BB_LINES 10
+#ifndef LCD_PCLK_HZ
+#define LCD_PCLK_HZ 30000000   // ค่าเดียวกับตัวอย่างของ Waveshare (~33 Hz)
+#endif
+#else
+#define PW LCD_W
+#define PH LCD_H
+#define BB_LINES 8
 #define PIN_BL 45
+#endif
 // ความเร็วส่งภาพ: ผู้ผลิตใช้ 14 MHz แต่ตอนวาดทั้งจอ PSRAM ไม่พอ → ภาพเลื่อน/ซ้อน
 // 10 MHz = จอรีเฟรช ~44 ครั้ง/วินาที
 #ifndef LCD_PCLK_HZ
@@ -32,8 +51,13 @@
 
 namespace lcd {
 
-static const size_t FB_BYTES = LCD_W * LCD_H * 2;
+static const size_t FB_BYTES = (size_t)PW * PH * 2;      // บัฟเฟอร์ที่จออ่าน (ขนาดจอจริง)
+static const size_t BBUF_BYTES = (size_t)LCD_W * LCD_H * 2;   // บัฟเฟอร์หลังของเรา (ขนาดภาพที่วาด)
+#if DIDI_7B
+static const uint32_t DOTS_PER_FRAME = (162 + 152 + PW + 48) * (45 + 13 + PH + 3);
+#else
 static const uint32_t DOTS_PER_FRAME = (10 + 80 + LCD_W + 60) * (10 + 20 + LCD_H + 60);   // รวมช่วงว่าง
+#endif
 static esp_lcd_panel_handle_t panel = nullptr;
 static uint16_t* fb = nullptr;               // บัฟเฟอร์ที่จออ่าน (PSRAM)
 static uint16_t* bb[3] = {nullptr, nullptr, nullptr}; // บัฟเฟอร์หลัง (โหมดปกติใช้ 2 ชุด, โหมด bounce ใช้ 3 ชุดแทน fb)
@@ -91,7 +115,7 @@ static const esp_flash_os_functions_t* origOs = nullptr;
 static uint8_t* bbuf[2] = {nullptr, nullptr};
 static volatile int* bPos = nullptr;          // ตำแหน่งเติม bounce ในไดรเวอร์ (หาเองตอนเริ่ม)
 static volatile size_t* bEof = nullptr;       // ตัวนับ EOF ในไดรเวอร์ (ใช้ % 2 เลือกชุด bounce)
-static const size_t BB_BYTES = LCD_W * 8 * 2;
+static const size_t BB_BYTES = (size_t)PW * BB_LINES * 2;
 static volatile uint32_t resyncs = 0;
 static volatile bool needSync = false;
 
@@ -260,10 +284,37 @@ inline void putBand(int dBand, const uint16_t* src, bool flip) {
   if (!noFb) esp_cache_msync(d, BAND_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
   bbHash[w][dBand] = h;
 }
+// เขียนแถบ b จากบัฟเฟอร์หลังลงจอ (7B: ขยาย 2 เท่า = 8 แถวจริง)
+static inline void bandToFb(int b, const uint16_t* src) {
+#if DIDI_7B
+  uint16_t* d0 = fb + (size_t)(LCD_OY + b * BAND_H * 2) * PW;
+  for (int r = 0; r < BAND_H; r++) {
+    const uint16_t* s = src + r * LCD_W;
+    uint32_t* d = (uint32_t*)(d0 + (size_t)(r * 2) * PW + LCD_OX);
+    for (int x = 0; x < LCD_W; x++) { uint32_t v = s[x]; d[x] = v | (v << 16); }
+    memcpy(d + PW / 2, d, LCD_W * 4);
+  }
+  esp_cache_msync(d0, (size_t)PW * BAND_H * 2 * 2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+#else
+  size_t o = (size_t)b * BAND_H * LCD_W;
+  memcpy(fb + o, src, BAND_BYTES);
+  esp_cache_msync(fb + o, BAND_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+#endif
+}
+#if DIDI_7B
+static const size_t BAND_COST = BAND_BYTES * 5;   // อ่าน 1 + เขียน 4 (ขยาย 2x2)
+#else
+static const size_t BAND_COST = BAND_BYTES * 2;
+#endif
+
 // คัดลอกบัฟเฟอร์หลัง p ขึ้นจอ เฉพาะแถบที่ต่างจากบนจอ
 static void copyChanged(int p) {
   if (bbFull[p]) {
+#if DIDI_7B
+    for (int b = 0; b < NB; b++) { psramGate(BAND_COST); bandToFb(b, bb[p] + (size_t)b * BAND_H * LCD_W); }
+#else
     paceCopy(fb, bb[p], FB_BYTES);
+#endif
     for (int b = 0; b < NB; b++) fbHash[b] = NOHASH;
     bandsCopied += NB;
     return;
@@ -271,15 +322,14 @@ static void copyChanged(int p) {
   int n = 0;
   // คุมความเร็วคัดลอกเอง (ตอนเปลี่ยนหน้า ทุกแถบเปลี่ยน → คัดลอกรวดเดียวทั้งจอ PSRAM แน่น
   //  ไดรเวอร์เติม bounce ไม่ทัน → ขอบซ้ายมีเส้นจากแถวด้านบน) — ทั้งจอที่ 40 MB/s ≈ 13 ms ยังเร็วกว่าจอไล่แสดง
-  uint32_t slot = (uint32_t)(BAND_BYTES * 2 / (copyMBps ? copyMBps : 1)) + 1;
+  uint32_t slot = (uint32_t)(BAND_COST / (copyMBps ? copyMBps : 1)) + 1;
   uint32_t due = (uint32_t)esp_timer_get_time();
   for (int b = 0; b < NB; b++) {
     if (bbHash[p][b] == fbHash[b]) continue;
     size_t o = (size_t)b * BAND_H * LCD_W;
-    psramGate(BAND_BYTES * 2, true);          // อ่าน+เขียน PSRAM (งานขึ้นจอมาก่อน)
+    psramGate(BAND_COST, true);               // อ่าน+เขียน PSRAM (งานขึ้นจอมาก่อน)
     if (useBounce) while ((int32_t)(due - (uint32_t)esp_timer_get_time()) > 0) {}
-    memcpy(fb + o, bb[p] + o, BAND_BYTES);
-    esp_cache_msync(fb + o, BAND_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+    bandToFb(b, bb[p] + o);
     fbHash[b] = bbHash[p][b];
     due += slot;
     if (!useBounce && ++n % 2 == 0) esp_rom_delay_us(60);   // จังหวะเดิมที่ทดสอบแล้วภาพนิ่ง (โหมดไม่ใช้ bounce)
@@ -325,8 +375,30 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   c.clk_src = LCD_CLK_SRC_DEFAULT;
   c.timings.pclk_hz = hz == 44 ? LCD_PCLK_HZ : (uint32_t)hz * DOTS_PER_FRAME;   // 44 Hz = 10 MHz พอดี (แบบที่ใช้ได้)
   minVsyncs = every < 1 ? 1 : every;
-  c.timings.h_res = LCD_W;
-  c.timings.v_res = LCD_H;
+  c.timings.h_res = PW;
+  c.timings.v_res = PH;
+#if DIDI_7B
+  if (c.timings.pclk_hz > LCD_PCLK_HZ) c.timings.pclk_hz = LCD_PCLK_HZ;
+  bounce = true;                               // 1024x600 ต้องใช้ bounce buffer เสมอ (PSRAM ไม่ทัน)
+  ws7b::begin();                               // เปิด VCOM / รีเซ็ตทัช (ไฟจอยังปิด)
+  c.timings.hsync_pulse_width = 162;
+  c.timings.hsync_back_porch = 152;
+  c.timings.hsync_front_porch = 48;
+  c.timings.vsync_pulse_width = 45;
+  c.timings.vsync_back_porch = 13;
+  c.timings.vsync_front_porch = 3;
+  c.timings.flags.pclk_active_neg = 1;
+  c.data_width = 16;
+  c.num_fbs = 1;
+  c.dma_burst_size = 64;
+  c.hsync_gpio_num = 46;
+  c.vsync_gpio_num = 3;
+  c.de_gpio_num = 5;
+  c.pclk_gpio_num = 7;
+  c.disp_gpio_num = -1;
+  // B3-B7, G2-G7, R3-R7
+  const int data[16] = {14, 38, 18, 17, 10, 39, 0, 45, 48, 47, 21, 1, 2, 42, 41, 40};
+#else
   c.timings.hsync_pulse_width = 10;
   c.timings.hsync_back_porch = 80;
   c.timings.hsync_front_porch = 60;
@@ -343,17 +415,18 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
   c.pclk_gpio_num = 14;
   c.disp_gpio_num = -1;
   const int data[16] = {9, 10, 11, 12, 13, 16, 17, 18, 8, 3, 46, 4, 5, 6, 7, 15};
+#endif
   for (int i = 0; i < 16; i++) c.data_gpio_nums[i] = data[i];
   c.flags.fb_in_psram = 1;
-  if (bounce) c.bounce_buffer_size_px = LCD_W * 8;
-  if (bounce && LCD_NOFB) { c.flags.no_fb = 1; c.num_fbs = 0; }   // no_fb ห้ามตั้ง num_fbs   // 2 × 8 แถวใน RAM ภายใน (ทดสอบแล้ว: 16 แถว RAM ไม่พอวาด 2 คอร์ + ภาพเลื่อน)
+  if (bounce) c.bounce_buffer_size_px = PW * BB_LINES;
+  if (bounce && LCD_NOFB && !DIDI_7B) { c.flags.no_fb = 1; c.num_fbs = 0; }   // no_fb ห้ามตั้ง num_fbs   // 2 × 8 แถวใน RAM ภายใน (ทดสอบแล้ว: 16 แถว RAM ไม่พอวาด 2 คอร์ + ภาพเลื่อน)
   useBounce = bounce;
-  noFb = bounce && LCD_NOFB;
+  noFb = bounce && LCD_NOFB && !DIDI_7B;
   // บัฟเฟอร์ของเราต้องพร้อมก่อนเริ่มจอ (โหมด bounce จอดึงภาพจากบัฟเฟอร์นี้ทันที)
   for (int i = 0; i < (noFb ? 3 : 2); i++) {
-    bb[i] = (uint16_t*)heap_caps_aligned_alloc(64, FB_BYTES, MALLOC_CAP_SPIRAM);
+    bb[i] = (uint16_t*)heap_caps_aligned_alloc(64, BBUF_BYTES, MALLOC_CAP_SPIRAM);
     if (!bb[i]) return false;
-    memset(bb[i], 0, FB_BYTES);
+    memset(bb[i], 0, BBUF_BYTES);
   }
   front = 0; ready = -1; wIdx = 1;
   resetHashes();
@@ -384,8 +457,10 @@ inline bool begin(int hz = 44, int every = 1, bool presenter = true, bool bounce
     memset(fb, 0, FB_BYTES);
     esp_cache_msync(fb, FB_BYTES, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
   }
+#if !DIDI_7B
   ledcAttach(PIN_BL, 5000, 8);
   ledcWrite(PIN_BL, 0);
+#endif
   delay(30);                 // ให้จอส่งภาพไปสักเฟรมก่อน ค่อยจำตำแหน่ง DMA
   findDma();
   if (useBounce && !noFb) locateBounce((uint32_t)(void*)onVsync);
@@ -406,7 +481,7 @@ inline bool ok() { return noFb ? (bb[0] && bb[1] && bb[2]) : (fb && bb[0] && bb[
 
 // คัดลอกลง PSRAM ทีละช่วงเล็ก ๆ เว้นจังหวะให้จออ่าน PSRAM ได้ (คัดลอกรวดเดียว → บรรทัดเลื่อน ภาพซ้อน)
 inline void paceCopy(uint16_t* dst, const uint16_t* src, size_t bytes) {
-  const size_t CH = LCD_W * 2 * 8;
+  const size_t CH = LCD_W * 2 * 8;   // (คัดลอกลงบัฟเฟอร์หลังขนาดภาพวาดเท่านั้น)
   uint8_t* d = (uint8_t*)dst;
   const uint8_t* s = (const uint8_t*)src;
   for (size_t o = 0; o < bytes; o += CH) {
@@ -418,7 +493,7 @@ inline void paceCopy(uint16_t* dst, const uint16_t* src, size_t bytes) {
 }
 static uint16_t* dummy = nullptr;   // ถ้าจอเริ่มไม่ได้ วาดลงที่นี่แทน (ไม่ค้าง)
 inline uint16_t* back() {
-  if (!ok()) { if (!dummy) dummy = (uint16_t*)heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM); return dummy; }
+  if (!ok()) { if (!dummy) dummy = (uint16_t*)heap_caps_malloc(BBUF_BYTES, MALLOC_CAP_SPIRAM); return dummy; }
   return bb[wIdx];
 }
 
@@ -469,6 +544,10 @@ inline void flush() {
   while (copied != handed) xSemaphoreTake(doneSem, pdMS_TO_TICKS(50));
 }
 
+#if DIDI_7B
+inline void brightness(int pct) { ws7b::brightness(pct); }
+#else
 inline void brightness(int pct) { ledcWrite(PIN_BL, constrain(pct, 0, 100) * 255 / 100); }
+#endif
 
 }  // namespace lcd

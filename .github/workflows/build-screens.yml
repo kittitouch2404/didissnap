@@ -38,6 +38,19 @@ jobs:
           cp out_s3/Didissnap_S3.ino.merged.bin Didissnap_S3_full.bin
           cp out_s3/Didissnap_S3.ino.bin Didissnap_S3_app.bin
 
+      - name: Compile Waveshare 7B (1024x600)
+        run: |
+          rm -rf build7b && mkdir -p build7b/Didissnap_7B
+          cp -r esp32/Didissnap_S3/. build7b/Didissnap_7B/
+          mv build7b/Didissnap_7B/Didissnap_S3.ino build7b/Didissnap_7B/Didissnap_7B.ino
+          sed -i 's/#define DIDI_7B 0/#define DIDI_7B 1/' build7b/Didissnap_7B/board.h
+          arduino-cli compile \
+            --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashMode=dio,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB" \
+            --output-dir out_7b build7b/Didissnap_7B
+          cp out_7b/Didissnap_7B.ino.merged.bin Didissnap_7B_full.bin
+          cp out_7b/Didissnap_7B.ino.bin Didissnap_7B_app.bin
+          (cd build7b && zip -qr ../Didissnap_7B_source.zip Didissnap_7B)
+
       - name: Compile CYD 2.8" (C3 mode)
         run: |
           arduino-cli compile \
@@ -55,6 +68,9 @@ jobs:
             Didissnap_S3_app.bin
             CYD_full.bin
             CYD_app.bin
+            Didissnap_7B_full.bin
+            Didissnap_7B_app.bin
+            Didissnap_7B_source.zip
 
       - name: Publish (release screens-latest)
         uses: softprops/action-gh-release@v2
@@ -64,10 +80,14 @@ jobs:
           body: |
             Didissnap_S3_full.bin = จอ S3 4.3" แฟลชทั้งชิปที่ 0x0
             CYD_full.bin = จอ CYD 2.8" (ต่อ C3) แฟลชทั้งชิปที่ 0x0
+            Didissnap_7B_full.bin = Waveshare ESP32-S3-Touch-LCD-7B แฟลชทั้งชิปที่ 0x0
             *_app.bin = เฉพาะโปรแกรม (ที่ 0x10000)
           files: |
             Didissnap_S3_full.bin
             Didissnap_S3_app.bin
             CYD_full.bin
             CYD_app.bin
+            Didissnap_7B_full.bin
+            Didissnap_7B_app.bin
+            Didissnap_7B_source.zip
           make_latest: false

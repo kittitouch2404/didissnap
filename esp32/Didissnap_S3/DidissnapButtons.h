@@ -23,6 +23,9 @@
 
 namespace didibtn {
 
+// ปุ่มเสมือน (เช่น แตะจอ) — ชี้ไปที่ bool[2] ที่ true = กดอยู่
+static volatile bool* virt = nullptr;
+
 struct Btn {
   int pin = -1;
   int alt = -1;             // ขาสำรอง (กดได้ทั้งสองขา) ไม่ใช้ = -1
@@ -52,8 +55,8 @@ inline void loop() {
   uint32_t now = millis();
   for (int i = 0; i < 2; i++) {
     Btn& x = b[i];
-    if (x.pin < 0) continue;
-    bool r = digitalRead(x.pin) == LOW || (x.alt >= 0 && digitalRead(x.alt) == LOW);
+    if (x.pin < 0 && !virt) continue;
+    bool r = (x.pin >= 0 && digitalRead(x.pin) == LOW) || (x.alt >= 0 && digitalRead(x.alt) == LOW) || (virt && virt[i]);
     if (r != x.raw) {
       x.raw = r;
       x.rawT = now;

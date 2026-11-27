@@ -21,6 +21,7 @@
 #define DIDI_2CORE 1
 #include <Arduino.h>
 #include <Preferences.h>
+#include "board.h"
 #include "esp_system.h"
 #define DIDI_MAX_FILE (6 * 1024 * 1024)   // รูป/GIF ไฟล์ละไม่เกิน 6 MB (โหลดลง PSRAM ตอนแสดง)
 #define DIDI_TX_POWER WIFI_POWER_8_5dBm   // กำลังส่ง WiFi ต่ำลง กินไฟน้อย (มือถืออยู่ในรถใกล้ ๆ)
@@ -43,9 +44,15 @@
 #include "bootanim.h"
 #pragma GCC pop_options
 
+#if DIDI_7B
+#define PIN_BTN1 -1      // 7B: ไม่มีปุ่ม ใช้แตะจอแทน (ws7b.h)
+#define PIN_BTN2 -1
+#define PIN_BTN2_ALT -1
+#else
 #define PIN_BTN1 41      // แพด RXD1
 #define PIN_BTN2 2       // แพด RXD2 (ทดสอบรอบแรกขึ้น IO1 เลยอ่านทั้งสองขา)
 #define PIN_BTN2_ALT 1
+#endif
 
 Preferences prefs;
 static bool demo = true;
@@ -178,13 +185,20 @@ static void bootFlush(const uint16_t* buf) {
   lcd::presentFull();
 }
 static bool bootSkip() {
+#if DIDI_7B
+  ws7b::loop();
+  return ws7b::any();
+#else
   return digitalRead(PIN_BTN1) == LOW || digitalRead(PIN_BTN2) == LOW || digitalRead(PIN_BTN2_ALT) == LOW;
+#endif
 }
 static void bootLogo() {
   if (!lcd::ok()) return;
+#if !DIDI_7B
   pinMode(PIN_BTN1, INPUT_PULLUP);
   pinMode(PIN_BTN2, INPUT_PULLUP);
   pinMode(PIN_BTN2_ALT, INPUT_PULLUP);
+#endif
   delay(5);
   bool held = bootSkip();                 // ปุ่มค้างอยู่ตั้งแต่เปิดเครื่อง (หรือขาลอย) → ไม่ใช้เป็นปุ่มข้าม
   lcd::brightness(didicfg::cfg.bri);
@@ -354,6 +368,9 @@ void setup() {
   perf::begin();
   didibtn::onEvent = onButton;
   didibtn::begin(PIN_BTN1, PIN_BTN2, -1, PIN_BTN2_ALT);
+#if DIDI_7B
+  didibtn::virt = ws7b::down;      // แตะจอ = ปุ่ม
+#endif
   // ตัวอ่าน OBD แบบ BLE (เริ่มหลังจองแรมจอ/วาดเสร็จ เพราะ Bluetooth ใช้ RAM ภายในเยอะ)
   menu::obdMode = prefs.getInt("obdBle", 1) & 3;   // 0 ปิด · 1 BLE · 2 C3 · 3 C3 จำลอง
   menu::onObd = onObd;
@@ -414,6 +431,10 @@ void loop() {
     didilink::loop();
     didicfg::loop();   // หน้าเว็บ + สลับหน้าอัตโนมัติ
   }
+#if DIDI_7B
+  ws7b::flip = didicfg::cfg.flip;
+  ws7b::loop();
+#endif
   didibtn::loop();
   didicfg::tick();   // บันทึกค่าตั้งลงแฟลชทีหลัง
 
