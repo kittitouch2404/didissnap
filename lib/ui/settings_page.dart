@@ -1785,7 +1785,14 @@ class CvtPreset {
   }
 }
 
-const List<CvtPreset> kCvtPresets = [];
+/// ค่า Honda จากฐานข้อมูล OBDb (github.com/OBDb) + Torque — กล่องเกียร์ 0x1D / 0x1E โหมด 22
+/// ยังไม่ได้ยืนยันกับรถทุกรุ่น: ใช้ปุ่ม "ลองค่าที่รู้จัก" ในหน้าค้นหาเพื่อดูว่าคันนี้ตอบตัวไหน
+const List<CvtPreset> kCvtPresets = [
+  CvtPreset('Honda CVT · 1E 2301 (Civic FC/FK, HR-V)', '18DA1EF1', '222301', 26, 0),
+  CvtPreset('Honda CVT · 1D 2201 (Jazz/City GK/GM6)', '18DA1DF1', '222201', 26, 0),
+  CvtPreset('Honda CVT · 1E 2201', '18DA1EF1', '222201', 26, 0),
+  CvtPreset('Honda CVT · 1E 3083', '18DA1EF1', '223083', 14, 0),
+];
 
 const List<String> kCvtFormulas = [
   'A - 40',
@@ -2047,7 +2054,7 @@ class _CvtTempSectionState extends State<_CvtTempSection> {
             ),
           ]),
         ),
-        _StepRow('ไบต์ A = ไบต์ที่ (หลัง echo คำสั่ง)', s.cvtByte, 0, 60, 1, (v) => s.cvtByte = v),
+        _StepRow('ไบต์ A = ไบต์ที่ (หลัง echo คำสั่ง)', s.cvtByte, 0, 50, 1, (v) => s.cvtByte = v),
         ListTile(
           dense: true,
           title: const Text('สูตร'),

@@ -424,7 +424,10 @@ class C3Source implements CarSource {
 
   /// สูตร CVT TEMP แบบเลือกจากเมนู -> สูตรตัวอักษร (เลื่อน A/B ตามไบต์ที่เลือก)
   static String _cvtFml(int f, int byte) {
-    final a = String.fromCharCode(65 + byte.clamp(0, 20)), bb = String.fromCharCode(66 + byte.clamp(0, 20));
+    // ชื่อไบต์แบบ Torque: 0-25 = A-Z · 26-51 = AA-AZ
+    String L(int k) => k < 26 ? String.fromCharCode(65 + k) : 'A${String.fromCharCode(65 + k - 26)}';
+    final k = byte.clamp(0, 50);
+    final a = L(k), bb = L(k + 1);
     return switch (f) {
       1 => a,
       2 => '($a*256+$bb)/10-40',

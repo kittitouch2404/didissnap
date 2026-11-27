@@ -137,6 +137,14 @@ class _Parser {
         _ => throw const FormatException('fn'),
       };
     }
+    // ไบต์ที่ 27 ขึ้นไปแบบ Torque: AA = ไบต์ 26 ... AZ = 51
+    final aa = RegExp(r'A([A-Z])(?![A-Z0-9(])').matchAsPrefix(s, i);
+    if (aa != null) {
+      i = aa.end;
+      final k = 26 + aa.group(1)!.codeUnitAt(0) - 65;
+      if (k >= b.length) throw const FormatException('byte');
+      return b[k].toDouble();
+    }
     if (RegExp(r'[A-Z]').hasMatch(c)) {
       i++;
       return _byte(c).toDouble();

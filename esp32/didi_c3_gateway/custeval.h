@@ -32,7 +32,16 @@ static float atom(P& p) {
     char name[8] = {0};
     int L = 0;
     while (isalnum((unsigned char)*p.s) && L < 7) name[L++] = toupper(*p.s++);
-    if (p.c() != '(') { p.err = true; return 0; }
+    if (p.c() != '(') {
+      // ไบต์ที่ 27 ขึ้นไปแบบ Torque: AA = ไบต์ 26, AB = 27 ... AZ = 51
+      if (L == 2 && name[0] == 'A' && name[1] >= 'A' && name[1] <= 'Z') {
+        int k = 26 + (name[1] - 'A');
+        if (k >= p.n) { p.err = true; return 0; }
+        return p.b[k];
+      }
+      p.err = true;
+      return 0;
+    }
     p.s++;
     float v = expr(p);
     if (p.c() != ')') { p.err = true; return 0; }

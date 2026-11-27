@@ -7,6 +7,7 @@ import '../data/custom_pid.dart';
 import '../data/hub.dart';
 import '../i18n.dart';
 import 'paint_utils.dart';
+import 'settings_page.dart' show kCvtPresets, CvtPreset;
 
 // ======================================================================
 //  ค้นหาค่า CVT TEMP: ไล่ถามกล่องเกียร์ทีละ DID (Mode 22) / ทีละหน้า (Mode 21)
@@ -38,11 +39,12 @@ class CvtScanPage extends StatefulWidget {
 class _CvtScanPageState extends State<CvtScanPage> {
   static const _hdrs = [
     ('กล่องเกียร์ · Honda 29 บิต', '18DA1EF1'),
+    ('กล่องเกียร์ 1D · Honda 29 บิต', '18DA1DF1'),
     ('กล่องเกียร์ · 11 บิต', '7E1'),
     ('เครื่องยนต์ · Honda 29 บิต', '18DA10F1'),
     ('เครื่องยนต์ · 11 บิต', '7E0'),
   ];
-  static const _ranges22 = ['0000-00FF', '0100-01FF', '1000-10FF', '1100-11FF', '1F00-1FFF', '2000-20FF', 'F400-F4FF'];
+  static const _ranges22 = ['2200-22FF', '2300-23FF', '3000-30FF', '0000-00FF', '0100-01FF', '1000-10FF', '1100-11FF', '1F00-1FFF', '2000-20FF', 'F400-F4FF'];
 
   final _hdr = TextEditingController(text: '18DA1EF1');
   final _from = TextEditingController(text: '0000');
@@ -161,6 +163,52 @@ class _CvtScanPageState extends State<CvtScanPage> {
     }
   }
 
+  // ---------------- ลองค่าที่รู้จัก (Honda) ทีละตัว
+  bool _known = false;
+  final _knownRes = <(CvtPreset, String)>[];
+
+  Future<void> _tryKnown() async {
+    setState(() {
+      _known = true;
+      _knownRes.clear();
+    });
+    for (final p in kCvtPresets) {
+      if (!mounted) return;
+      final h = encodeHdr(p.hdr);
+      String res;
+      if (h == null) {
+        res = 'header ผิด';
+      } else {
+        List<int>? r;
+        for (var t = 0; t < 2 && (r == null || r.isEmpty); t++) {
+          r = await _ask(h, p.req);
+        }
+        if (r == null) {
+          res = 'ไม่ตอบ';
+        } else if (r.isEmpty) {
+          res = 'ปฏิเสธ (ไม่รองรับ)';
+        } else if (r.length <= p.byte) {
+          res = 'ตอบ ${r.length} ไบต์ (สั้นไป)';
+        } else {
+          final v = r[p.byte] - 40;
+          res = v >= -30 && v <= 150 ? 'ได้ $v °C ✓' : 'ได้ $v °C (ค่าแปลก)';
+        }
+      }
+      if (mounted) setState(() => _knownRes.add((p, res)));
+    }
+    if (mounted) setState(() => _known = false);
+  }
+
+  void _useKnown(CvtPreset p) {
+    final s = hub.settings;
+    s.cvtHdr = p.hdr;
+    s.cvtReq = p.req;
+    s.cvtByte = p.byte;
+    s.cvtFml = p.fml;
+    s.cvtTempOn = true;
+    _toast('ตั้ง CVT TEMP = ${p.name} แล้ว');
+  }
+
   void _toast(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
   Future<void> _use(_Hit h, int byte) async {
@@ -201,6 +249,34 @@ class _CvtScanPageState extends State<CvtScanPage> {
             '1) เลือกกล่อง แล้วกด สแกน  2) ได้รายการที่ตอบแล้ว กด เฝ้าดู ขับไปสักพักให้เกียร์ร้อน\n'
             '3) ไบต์ไหนค่าขึ้นช้า ๆ ตามความร้อน (A−40 ใกล้อุณหภูมิน้ำ) = อุณหภูมิเกียร์ → แตะไบต์นั้น',
             style: TextStyle(fontSize: 13, color: Colors.white70)),
+        const SizedBox(height: 10),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              const Text('ลองค่าที่รู้จักก่อน (Honda CAN: Jazz/City GK, Civic FC/FK, HR-V ...)',
+                  style: TextStyle(fontWeight: FontWeight.w500)),
+              const Text('ใช้เวลาไม่กี่วิ — ติดเครื่องไว้ ถ้าตัวไหนขึ้น ✓ และใกล้อุณหภูมิน้ำตอนรถร้อน แตะ "ใช้" ได้เลย',
+                  style: TextStyle(fontSize: 12, color: Colors.white60)),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.tonal(
+                  onPressed: _known || _run ? null : _tryKnown,
+                  child: Text(_known ? 'กำลังลอง...' : 'ลองค่าที่รู้จัก'),
+                ),
+              ),
+              for (final (p, res) in _knownRes)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(p.name),
+                  subtitle: Text('${p.hdr} · ${p.req} · ไบต์ ${p.byte} → $res'),
+                  trailing: res.contains('°C') ? TextButton(onPressed: () => _useKnown(p), child: const Text('ใช้')) : null,
+                ),
+            ]),
+          ),
+        ),
         const SizedBox(height: 10),
         Wrap(spacing: 6, runSpacing: 6, children: [
           for (final h in _hdrs)
