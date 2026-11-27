@@ -1,5 +1,6 @@
 // link.cpp — NimBLE central: สแกน → เลือก Superlink ของเรา → ต่อ → เปิดแจ้งเตือน → ยืนยันตัว (DN_AUTH) → รับค่า
 #include "slink.h"
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include "didinow.h"

@@ -432,20 +432,8 @@ void build() {
   lv_obj_set_style_pad_column(dots, 8, 0);
   lv_obj_remove_flag(dots, LV_OBJ_FLAG_CLICKABLE);
 
-  // ปุ่มเมนู (มุมขวาล่าง — ไม่บังตัวเลข)
-  lv_obj_t* mb = lv_button_create(lv_layer_top());
-  lv_obj_set_size(mb, 64, 44);
-  lv_obj_align(mb, LV_ALIGN_BOTTOM_RIGHT, -8, -4);
-  lv_obj_set_style_bg_color(mb, lv_color_hex(0x000000), 0);
-  lv_obj_set_style_bg_opa(mb, LV_OPA_50, 0);
-  lv_obj_set_style_shadow_width(mb, 0, 0);
-  lv_obj_set_style_radius(mb, 12, 0);
-  lv_obj_t* ml = lv_label_create(mb);
-  lv_obj_set_style_text_font(ml, &lv_font_montserrat_28, 0);
-  lv_obj_set_style_text_color(ml, lv_color_hex(0xA0A0A8), 0);
-  lv_label_set_text(ml, LV_SYMBOL_SETTINGS);
-  lv_obj_center(ml);
-  lv_obj_add_event_cb(mb, onMenu, LV_EVENT_CLICKED, nullptr);
+  // แตะค้างที่ไหนก็ได้ = ตั้งค่า (ไม่มีปุ่มบังหน้าปัด)
+  lv_obj_add_event_cb(tv, onMenu, LV_EVENT_LONG_PRESSED, nullptr);
 
   toastL = lv_label_create(lv_layer_top());
   lv_obj_set_style_text_font(toastL, &f_t28, 0);
@@ -467,7 +455,7 @@ void build() {
   if (cfg.fps) lv_sysmon_show_performance(nullptr);
   else lv_sysmon_hide_performance(nullptr);
   lv_timer_create(tick, 30, nullptr);
-  toast("ปัดซ้าย/ขวา = เปลี่ยนหน้า  ·  ปุ่มมุมขวาล่าง = ตั้งค่า", 4000);
+  toast("ปัดซ้าย/ขวา = เปลี่ยนหน้า  ·  แตะค้าง = ตั้งค่า", 4000);
 }
 
 int bri() { return cfg.bri; }

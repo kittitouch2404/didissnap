@@ -1,6 +1,7 @@
 // vdata.cpp — เก็บค่าจาก DN_GW / DN_CUST / DN_GWINFO + โหมดจำลอง
 #include "vdata.h"
 #include <math.h>
+#include <stddef.h>
 #include <string.h>
 #include <strings.h>
 #include "didinow.h"
