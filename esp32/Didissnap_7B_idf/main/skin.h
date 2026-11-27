@@ -9,7 +9,7 @@ namespace skin {
 extern const char* const BUILTIN;   // สกินในตัว (JSON)
 
 // สร้างทุกหน้าใน tileview (ลบของเดิมก่อน) · คืนจำนวนหน้า (0 = JSON ผิด)
-int build(lv_obj_t* tileview, const char* json, char* err, size_t errLen);
+int build(lv_obj_t* tileview, const char* json, char* err, size_t errLen, bool english = false);
 // อัปเดตค่าของหน้าที่แสดงอยู่ (เรียกทุกเฟรมจากงาน LVGL)
 void update(int page, const vd::Snap& s);
 int pageCount();

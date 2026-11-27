@@ -6,10 +6,12 @@
 namespace slink {
 
 enum State { OFF, SEARCHING, CONNECTING, AUTH, READY };
+// สถานะสำหรับข้อความ (หน้าจอแปลเป็นไทย/อังกฤษเอง)
+enum Msg { M_START, M_BT_FAIL, M_SEARCH_PAIRED, M_SEARCH_OPEN, M_NONE_OPEN, M_CONNECTING, M_AUTH, M_DENIED, M_READY_NEW, M_READY, M_LOST };
 
 void begin();                     // เริ่ม Bluetooth + งานต่ออัตโนมัติ
 State state();
-const char* status();             // ข้อความสถานะ (ไทย)
+Msg msg();                        // สถานะล่าสุด
 const char* c3Name();             // ชื่อ Superlink ที่จับคู่ ("" = ยังไม่จับคู่)
 int screens();                    // จำนวนจอที่ Superlink จับคู่ไว้
 const char* c3Fw();

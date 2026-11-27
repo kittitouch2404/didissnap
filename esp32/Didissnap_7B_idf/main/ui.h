@@ -4,4 +4,5 @@
 namespace ui {
 void build();   // เรียกในล็อก LVGL ครั้งเดียว
 int bri();      // ความสว่างที่ตั้งไว้ (%)
+void previewMenu(bool english);   // (ใช้ทำภาพตัวอย่าง)
 }

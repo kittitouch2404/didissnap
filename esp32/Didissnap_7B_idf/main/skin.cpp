@@ -32,10 +32,52 @@ const char* const BUILTIN = R"JSON({
       {"t": "label", "x": 98, "y": 398, "w": 400, "text": "km/h", "font": "t28", "color": "#8A8A90", "align": "center"},
       {"t": "value", "x": 148, "y": 444, "w": 300, "v": "rpm", "font": "n60", "dec": 0, "align": "center", "color": "accent"},
       {"t": "label", "x": 148, "y": 520, "w": 300, "text": "rpm", "font": "t20", "color": "#8A8A90", "align": "center"},
-      {"t": "tile", "x": 596, "y": 40, "w": 404, "h": 124, "v": "ect", "title": "น้ำหล่อเย็น", "unit": "°C", "dec": 0, "warn": 105, "font": "n96"},
-      {"t": "tile", "x": 596, "y": 172, "w": 404, "h": 124, "v": "iat", "title": "อากาศเข้า", "unit": "°C", "dec": 0, "warn": 60, "font": "n96"},
-      {"t": "tile", "x": 596, "y": 304, "w": 404, "h": 124, "v": "volt", "title": "แบตเตอรี่", "unit": "V", "dec": 1, "low": 12.0, "font": "n96"},
-      {"t": "tile", "x": 596, "y": 436, "w": 404, "h": 124, "v": "load", "title": "โหลดเครื่อง", "unit": "%", "dec": 0, "font": "n96"}
+      {"t": "tile", "x": 596, "y": 40, "w": 404, "h": 124, "v": "ect", "title": "น้ำหล่อเย็น", "title_en": "COOLANT", "unit": "°C", "dec": 0, "warn": 105, "font": "n96"},
+      {"t": "tile", "x": 596, "y": 172, "w": 404, "h": 124, "v": "iat", "title": "อากาศเข้า", "title_en": "INTAKE AIR", "unit": "°C", "dec": 0, "warn": 60, "font": "n96"},
+      {"t": "tile", "x": 596, "y": 304, "w": 404, "h": 124, "v": "volt", "title": "แบตเตอรี่", "title_en": "BATTERY", "unit": "V", "dec": 1, "low": 12.0, "font": "n96"},
+      {"t": "tile", "x": 596, "y": 436, "w": 404, "h": 124, "v": "load", "title": "โหลดเครื่อง", "title_en": "ENGINE LOAD", "unit": "%", "dec": 0, "font": "n96"}
+    ]},
+    {"name": "RED", "bg": "#161616", "w": [
+      {"t": "rect", "x": 12, "y": 12, "w": 1000, "h": 58, "color": "#D01420", "radius": 0},
+      {"t": "rect", "x": 12, "y": 70, "w": 1000, "h": 58, "color": "#B80E18", "radius": 0},
+      {"t": "rect", "x": 12, "y": 128, "w": 1000, "h": 58, "color": "#D01420", "radius": 0},
+      {"t": "rect", "x": 12, "y": 186, "w": 1000, "h": 58, "color": "#B80E18", "radius": 0},
+      {"t": "rect", "x": 12, "y": 244, "w": 1000, "h": 58, "color": "#D01420", "radius": 0},
+      {"t": "rect", "x": 12, "y": 302, "w": 1000, "h": 58, "color": "#B80E18", "radius": 0},
+      {"t": "rect", "x": 12, "y": 360, "w": 1000, "h": 58, "color": "#D01420", "radius": 0},
+      {"t": "rect", "x": 12, "y": 418, "w": 1000, "h": 58, "color": "#B80E18", "radius": 0},
+      {"t": "rect", "x": 12, "y": 476, "w": 1000, "h": 58, "color": "#D01420", "radius": 0},
+      {"t": "rect", "x": 560, "y": 56, "w": 440, "h": 110, "color": "#000000", "opa": 20, "radius": 0},
+      {"t": "rect", "x": 560, "y": 174, "w": 440, "h": 110, "color": "#000000", "opa": 56, "radius": 0},
+      {"t": "rect", "x": 560, "y": 292, "w": 440, "h": 110, "color": "#000000", "opa": 20, "radius": 0},
+      {"t": "rect", "x": 560, "y": 410, "w": 440, "h": 110, "color": "#000000", "opa": 56, "radius": 0},
+      {"t": "value", "x": 560, "y": 28, "w": 352, "v": "iat", "font": "n96", "dec": 0, "align": "right"},
+      {"t": "label", "x": 918, "y": 62, "w": 80, "text": "°C", "font": "t28"},
+      {"t": "label", "x": 560, "y": 130, "w": 424, "text": "INTAKE AIR TEMP", "text_th": "อากาศเข้า", "font": "t28", "align": "right"},
+      {"t": "value", "x": 560, "y": 146, "w": 352, "v": "ect", "font": "n96", "dec": 0, "align": "right", "warn": 105},
+      {"t": "label", "x": 918, "y": 180, "w": 80, "text": "°C", "font": "t28"},
+      {"t": "label", "x": 560, "y": 248, "w": 424, "text": "WATER TEMP", "text_th": "น้ำหล่อเย็น", "font": "t28", "align": "right"},
+      {"t": "value", "x": 560, "y": 264, "w": 352, "v": "volt", "font": "n96", "dec": 1, "align": "right", "low": 12.0},
+      {"t": "label", "x": 918, "y": 298, "w": 80, "text": "V", "font": "t28"},
+      {"t": "label", "x": 560, "y": 366, "w": 424, "text": "BATTERY", "text_th": "แบตเตอรี่", "font": "t28", "align": "right"},
+      {"t": "value", "x": 560, "y": 382, "w": 352, "v": "load", "font": "n96", "dec": 0, "align": "right"},
+      {"t": "label", "x": 918, "y": 416, "w": 80, "text": "%", "font": "t28"},
+      {"t": "label", "x": 560, "y": 484, "w": 424, "text": "ENGINE LOAD", "text_th": "โหลดเครื่อง", "font": "t28", "align": "right"},
+      {"t": "circle", "x": 270, "y": 284, "r": 246, "color": "#0C0C0C"},
+      {"t": "ticks", "x": 270, "y": 284, "r": 229, "v": "rpm", "min": 0, "max": 8000, "red": 6500, "n": 100, "len": 16, "width": 7,
+       "rot": 120, "sweep": 300, "on": "#F2F2F2", "off": "#5A5A5A", "redon": "#FF3A3A"},
+      {"t": "ticks", "x": 270, "y": 284, "r": 246, "min": 0, "max": 8000, "red": 6500, "n": 8, "len": 12, "width": 9,
+       "rot": 120, "sweep": 300, "on": "#FF2A2A", "off": "#FF2A2A", "labels": 1, "font": "t40", "label": "#E8E8E8", "redlabel": "#FF6A6A", "gap": 26},
+      {"t": "circle", "x": 270, "y": 284, "r": 155, "color": "#E0101C", "grad": "#7A0006", "border": "#B8B8B8", "bw": 16},
+      {"t": "needle", "x": 270, "y": 284, "r0": 158, "r1": 196, "v": "rpm", "min": 0, "max": 8000, "rot": 120, "sweep": 300, "width": 14, "color": "#FFD21E"},
+      {"t": "rect", "x": 208, "y": 142, "w": 124, "h": 60, "color": "#E0141E", "radius": 8},
+      {"t": "value", "x": 208, "y": 130, "w": 124, "v": "gear", "font": "n60", "align": "center"},
+      {"t": "value", "x": 90, "y": 206, "w": 360, "v": "rpm", "font": "n96", "dec": 0, "align": "center"},
+      {"t": "rect", "x": 155, "y": 338, "w": 230, "h": 3, "color": "#FFFFFF", "radius": 0},
+      {"t": "value", "x": 120, "y": 334, "w": 300, "v": "spd", "font": "n60", "dec": 0, "align": "center"},
+      {"t": "label", "x": 170, "y": 406, "w": 200, "text": "KMH", "font": "t20", "align": "center"},
+      {"t": "rect", "x": 12, "y": 544, "w": 1000, "h": 46, "color": "#C8C8C8", "radius": 4},
+      {"t": "shift", "x": 330, "y": 553, "w": 364, "h": 28, "v": "rpm", "from": 4500, "to": 6500, "n": 10, "off": "#3A3A3A"}
     ]},
     {"name": "RACE", "w": [
       {"t": "shift", "x": 24, "y": 8, "w": 976, "h": 40, "v": "rpm", "from": 4800, "to": 6600, "n": 16},
@@ -44,37 +86,37 @@ const char* const BUILTIN = R"JSON({
       {"t": "label", "x": 24, "y": 172, "w": 200, "text": "rpm", "font": "t20", "color": "#8A8A90"},
       {"t": "value", "x": 262, "y": 120, "w": 500, "v": "spd", "font": "n170", "dec": 0, "align": "center"},
       {"t": "label", "x": 262, "y": 322, "w": 500, "text": "km/h", "font": "t28", "color": "#8A8A90", "align": "center"},
-      {"t": "tile", "x": 24, "y": 410, "w": 154, "h": 160, "v": "ect", "title": "น้ำ", "unit": "°C", "dec": 0, "warn": 105},
-      {"t": "tile", "x": 188, "y": 410, "w": 154, "h": 160, "v": "iat", "title": "อากาศ", "unit": "°C", "dec": 0, "warn": 60},
-      {"t": "tile", "x": 352, "y": 410, "w": 154, "h": 160, "v": "volt", "title": "แบต", "unit": "V", "dec": 1, "low": 12.0},
-      {"t": "tile", "x": 516, "y": 410, "w": 154, "h": 160, "v": "tps", "title": "คันเร่ง", "unit": "%", "dec": 0},
+      {"t": "tile", "x": 24, "y": 410, "w": 154, "h": 160, "v": "ect", "title": "น้ำ", "title_en": "WATER", "unit": "°C", "dec": 0, "warn": 105},
+      {"t": "tile", "x": 188, "y": 410, "w": 154, "h": 160, "v": "iat", "title": "อากาศ", "title_en": "AIR", "unit": "°C", "dec": 0, "warn": 60},
+      {"t": "tile", "x": 352, "y": 410, "w": 154, "h": 160, "v": "volt", "title": "แบต", "title_en": "BATT", "unit": "V", "dec": 1, "low": 12.0},
+      {"t": "tile", "x": 516, "y": 410, "w": 154, "h": 160, "v": "tps", "title": "คันเร่ง", "title_en": "THROTTLE", "unit": "%", "dec": 0},
       {"t": "tile", "x": 680, "y": 410, "w": 154, "h": 160, "v": "map", "title": "MAP", "unit": "kPa", "dec": 0},
       {"t": "tile", "x": 844, "y": 410, "w": 156, "h": 160, "v": "afr", "title": "AFR", "unit": "", "dec": 1}
     ]},
     {"name": "DATA", "w": [
-      {"t": "tile", "x": 24, "y": 36, "w": 320, "h": 176, "v": "rpm", "title": "รอบเครื่อง", "unit": "rpm", "dec": 0, "warn": 6500, "font": "n96"},
-      {"t": "tile", "x": 352, "y": 36, "w": 320, "h": 176, "v": "spd", "title": "ความเร็ว", "unit": "km/h", "dec": 0, "font": "n96"},
-      {"t": "tile", "x": 680, "y": 36, "w": 320, "h": 176, "v": "ect", "title": "น้ำหล่อเย็น", "unit": "°C", "dec": 0, "warn": 105, "font": "n96"},
-      {"t": "tile", "x": 24, "y": 220, "w": 320, "h": 176, "v": "iat", "title": "อากาศเข้า", "unit": "°C", "dec": 0, "font": "n96"},
-      {"t": "tile", "x": 352, "y": 220, "w": 320, "h": 176, "v": "volt", "title": "แบตเตอรี่", "unit": "V", "dec": 1, "low": 12.0, "font": "n96"},
-      {"t": "tile", "x": 680, "y": 220, "w": 320, "h": 176, "v": "load", "title": "โหลด", "unit": "%", "dec": 0, "font": "n96"},
-      {"t": "tile", "x": 24, "y": 404, "w": 320, "h": 176, "v": "tps", "title": "คันเร่ง", "unit": "%", "dec": 0, "font": "n96"},
+      {"t": "tile", "x": 24, "y": 36, "w": 320, "h": 176, "v": "rpm", "title": "รอบเครื่อง", "title_en": "ENGINE RPM", "unit": "rpm", "dec": 0, "warn": 6500, "font": "n96"},
+      {"t": "tile", "x": 352, "y": 36, "w": 320, "h": 176, "v": "spd", "title": "ความเร็ว", "title_en": "SPEED", "unit": "km/h", "dec": 0, "font": "n96"},
+      {"t": "tile", "x": 680, "y": 36, "w": 320, "h": 176, "v": "ect", "title": "น้ำหล่อเย็น", "title_en": "COOLANT", "unit": "°C", "dec": 0, "warn": 105, "font": "n96"},
+      {"t": "tile", "x": 24, "y": 220, "w": 320, "h": 176, "v": "iat", "title": "อากาศเข้า", "title_en": "INTAKE AIR", "unit": "°C", "dec": 0, "font": "n96"},
+      {"t": "tile", "x": 352, "y": 220, "w": 320, "h": 176, "v": "volt", "title": "แบตเตอรี่", "title_en": "BATTERY", "unit": "V", "dec": 1, "low": 12.0, "font": "n96"},
+      {"t": "tile", "x": 680, "y": 220, "w": 320, "h": 176, "v": "load", "title": "โหลด", "title_en": "LOAD", "unit": "%", "dec": 0, "font": "n96"},
+      {"t": "tile", "x": 24, "y": 404, "w": 320, "h": 176, "v": "tps", "title": "คันเร่ง", "title_en": "THROTTLE", "unit": "%", "dec": 0, "font": "n96"},
       {"t": "tile", "x": 352, "y": 404, "w": 320, "h": 176, "v": "map", "title": "MAP", "unit": "kPa", "dec": 0, "font": "n96"},
       {"t": "tile", "x": 680, "y": 404, "w": 320, "h": 176, "v": "maf", "title": "MAF", "unit": "g/s", "dec": 1, "font": "n96"}
     ]},
     {"name": "EXTRA", "w": [
-      {"t": "tile", "x": 24, "y": 36, "w": 320, "h": 268, "v": "cvt", "title": "เกียร์ CVT", "unit": "°C", "dec": 0, "warn": 110, "font": "n96"},
-      {"t": "tile", "x": 352, "y": 36, "w": 320, "h": 268, "v": "oil", "title": "น้ำมันเครื่อง", "unit": "°C", "dec": 0, "warn": 125, "font": "n96"},
-      {"t": "tile", "x": 680, "y": 36, "w": 320, "h": 268, "v": "timing", "title": "จุดระเบิด", "unit": "°", "dec": 1, "font": "n96"},
+      {"t": "tile", "x": 24, "y": 36, "w": 320, "h": 268, "v": "cvt", "title": "เกียร์ CVT", "title_en": "CVT TEMP", "unit": "°C", "dec": 0, "warn": 110, "font": "n96"},
+      {"t": "tile", "x": 352, "y": 36, "w": 320, "h": 268, "v": "oil", "title": "น้ำมันเครื่อง", "title_en": "OIL TEMP", "unit": "°C", "dec": 0, "warn": 125, "font": "n96"},
+      {"t": "tile", "x": 680, "y": 36, "w": 320, "h": 268, "v": "timing", "title": "จุดระเบิด", "title_en": "TIMING", "unit": "°", "dec": 1, "font": "n96"},
       {"t": "tile", "x": 24, "y": 312, "w": 320, "h": 268, "v": "afr", "title": "AFR", "unit": "", "dec": 1, "font": "n96"},
       {"t": "tile", "x": 352, "y": 312, "w": 320, "h": 268, "v": "stft", "title": "STFT", "unit": "%", "dec": 1, "font": "n96"},
-      {"t": "tile", "x": 680, "y": 312, "w": 320, "h": 268, "v": "fuel", "title": "น้ำมัน", "unit": "%", "dec": 0, "low": 12, "font": "n96"}
+      {"t": "tile", "x": 680, "y": 312, "w": 320, "h": 268, "v": "fuel", "title": "น้ำมัน", "title_en": "FUEL", "unit": "%", "dec": 0, "low": 12, "font": "n96"}
     ]}
   ]
 })JSON";
 
 // ---------------------------------------------------------------- วิดเจ็ต
-enum Type { T_LABEL, T_VALUE, T_TILE, T_ARC, T_BAR, T_SHIFT, T_RECT, T_IMAGE };
+enum Type { T_LABEL, T_VALUE, T_TILE, T_ARC, T_BAR, T_SHIFT, T_RECT, T_IMAGE, T_TICKS, T_NEEDLE };
 
 struct W {
   Type type;
@@ -84,7 +126,11 @@ struct W {
   lv_obj_t* obj = nullptr;      // ตัวหลัก (label ค่า / arc ชี้ค่า / bar)
   lv_obj_t* obj2 = nullptr;
   std::vector<lv_obj_t*> segs;  // ไฟเปลี่ยนเกียร์
-  lv_color_t col, warnCol, lowCol;
+  lv_color_t col, warnCol, lowCol, offCol;
+  lv_scale_section_t* sec[2] = {nullptr, nullptr};   // ticks: ช่วงที่ติด / ติดในโซนแดง
+  lv_point_precise_t* pts = nullptr;                  // needle
+  float cx = 0, cy = 0, r0 = 0, r1 = 0, rot = 0, sweep = 0;
+  int lastI = -1;
   char last[16] = "\x01";
   float shown = 0;              // ค่าที่แสดง (หน่วงให้นุ่ม)
   int lastState = -1;
@@ -97,6 +143,9 @@ struct Page {
 
 static std::vector<Page> pages;
 static lv_color_t acc;
+static bool en = false;
+static std::vector<lv_style_t*> styles;   // สไตล์ของ section (ลบตอนสร้างใหม่)
+static lv_style_t* newStyle() { lv_style_t* st = (lv_style_t*)lv_malloc(sizeof(lv_style_t)); lv_style_init(st); styles.push_back(st); return st; }
 static const lv_color_t C_DIM = lv_color_hex(0x8A8A90);
 static const lv_color_t C_RED = lv_color_hex(0xFF3B30);
 static const lv_color_t C_BLUE = lv_color_hex(0x3AA0FF);
@@ -132,6 +181,13 @@ static float jNum(cJSON* o, const char* k, float def) {
   return cJSON_IsNumber(v) ? (float)v->valuedouble : def;
 }
 static int jInt(cJSON* o, const char* k, int def) { return (int)lroundf(jNum(o, k, (float)def)); }
+// ข้อความตามภาษา: "text" / "text_en" / "text_th"
+static const char* jTxt(cJSON* o, const char* k) {
+  char kk[24];
+  snprintf(kk, sizeof(kk), "%s_%s", k, en ? "en" : "th");
+  const char* v = jStr(o, kk);
+  return v ? v : jStr(o, k);
+}
 
 static lv_text_align_t alignOf(const char* a) {
   if (a && !strcmp(a, "center")) return LV_TEXT_ALIGN_CENTER;
@@ -241,7 +297,7 @@ static void mkTile(lv_obj_t* p, W& w, cJSON* j) {
   const lv_font_t* tf = big ? &f_t28 : &f_t20;
   const lv_font_t* vf = fontOf(jStr(j, "font"), hh >= 160 && ww >= 300 ? &f_num96 : &f_num60);
   lv_color_t accC = colorOf(jStr(j, "color"), lv_color_hex(0xF2F2F4));
-  mkLabel(t, jStr(j, "title"), tf, C_DIM, 16, 10, ww - 32, LV_TEXT_ALIGN_LEFT);
+  mkLabel(t, jTxt(j, "title"), tf, C_DIM, 16, 10, ww - 32, LV_TEXT_ALIGN_LEFT);
   const char* unit = jStr(j, "unit");
   int vh = vf->line_height;
   if (row) {
@@ -261,6 +317,7 @@ static void mkShift(lv_obj_t* p, W& w, cJSON* j) {
   if (n > 40) n = 40;
   w.from = jNum(j, "from", 5000);
   w.to = jNum(j, "to", 7000);
+  w.offCol = colorOf(jStr(j, "off"), lv_color_hex(0x1A1A20));
   int gap = 6, sw = (ww - gap * (n - 1)) / n;
   for (int i = 0; i < n; i++) {
     lv_obj_t* s = lv_obj_create(p);
@@ -269,7 +326,7 @@ static void mkShift(lv_obj_t* p, W& w, cJSON* j) {
     lv_obj_set_style_radius(s, hh / 3, 0);
     lv_obj_set_style_border_width(s, 0, 0);
     lv_obj_set_style_pad_all(s, 0, 0);
-    lv_obj_set_style_bg_color(s, lv_color_hex(0x1A1A20), 0);
+    lv_obj_set_style_bg_color(s, w.offCol, 0);
     plain(s);
     w.segs.push_back(s);
   }
@@ -307,7 +364,7 @@ static void buildWidget(lv_obj_t* tile, Page& pg, cJSON* j) {
   w.low = jNum(j, "low", -1e9f);
   if (!strcmp(t, "label")) {
     w.type = T_LABEL;
-    mkLabel(tile, jStr(j, "text"), fontOf(jStr(j, "font"), &f_t28), colorOf(jStr(j, "color"), lv_color_hex(0xF2F2F4)),
+    mkLabel(tile, jTxt(j, "text"), fontOf(jStr(j, "font"), &f_t28), colorOf(jStr(j, "color"), lv_color_hex(0xF2F2F4)),
             jInt(j, "x", 0), jInt(j, "y", 0), jInt(j, "w", 0), alignOf(jStr(j, "align")));
     return;   // ไม่ต้องอัปเดต
   } else if (!strcmp(t, "value")) {
@@ -327,16 +384,111 @@ static void buildWidget(lv_obj_t* tile, Page& pg, cJSON* j) {
   } else if (!strcmp(t, "shift")) {
     w.type = T_SHIFT;
     mkShift(tile, w, j);
-  } else if (!strcmp(t, "rect")) {
+  } else if (!strcmp(t, "rect") || !strcmp(t, "circle")) {
     lv_obj_t* r = lv_obj_create(tile);
-    lv_obj_set_pos(r, jInt(j, "x", 0), jInt(j, "y", 0));
-    lv_obj_set_size(r, jInt(j, "w", 100), jInt(j, "h", 100));
+    bool circ = t[0] == 'c';
+    if (circ) {                                     // วงกลม: x,y = จุดศูนย์กลาง · r = รัศมี
+      int rr = jInt(j, "r", 100);
+      lv_obj_set_pos(r, jInt(j, "x", 0) - rr, jInt(j, "y", 0) - rr);
+      lv_obj_set_size(r, rr * 2, rr * 2);
+      lv_obj_set_style_radius(r, LV_RADIUS_CIRCLE, 0);
+    } else {
+      lv_obj_set_pos(r, jInt(j, "x", 0), jInt(j, "y", 0));
+      lv_obj_set_size(r, jInt(j, "w", 100), jInt(j, "h", 100));
+      lv_obj_set_style_radius(r, jInt(j, "radius", 12), 0);
+    }
     lv_obj_set_style_bg_color(r, colorOf(jStr(j, "color"), lv_color_hex(0x141418)), 0);
-    lv_obj_set_style_radius(r, jInt(j, "radius", 12), 0);
+    lv_obj_set_style_bg_opa(r, (lv_opa_t)jInt(j, "opa", 255), 0);
+    lv_obj_set_style_pad_all(r, 0, 0);
+    if (jStr(j, "grad")) {                          // ไล่สีบน→ล่าง
+      lv_obj_set_style_bg_grad_color(r, colorOf(jStr(j, "grad"), lv_color_hex(0)), 0);
+      lv_obj_set_style_bg_grad_dir(r, LV_GRAD_DIR_VER, 0);
+    }
     lv_obj_set_style_border_width(r, jInt(j, "bw", 0), 0);
     lv_obj_set_style_border_color(r, colorOf(jStr(j, "border"), lv_color_hex(0x2A2A32)), 0);
     plain(r);
     return;
+  } else if (!strcmp(t, "ticks")) {
+    w.type = T_TICKS;
+    int cx = jInt(j, "x", 0), cy = jInt(j, "y", 0), rr = jInt(j, "r", 200), n = jInt(j, "n", 100);
+    w.mn = jNum(j, "min", 0);
+    w.mx = jNum(j, "max", 8000);
+    w.red = jNum(j, "red", 1e9f);
+    lv_obj_t* sc = lv_scale_create(tile);
+    lv_obj_set_pos(sc, cx - rr, cy - rr);
+    lv_obj_set_size(sc, rr * 2, rr * 2);
+    lv_scale_set_mode(sc, LV_SCALE_MODE_ROUND_INNER);
+    lv_scale_set_rotation(sc, jInt(j, "rot", 135));
+    lv_scale_set_angle_range(sc, jInt(j, "sweep", 270));
+    lv_scale_set_range(sc, (int32_t)w.mn, (int32_t)w.mx);
+    lv_scale_set_total_tick_count(sc, n + 1);
+    bool labels = jInt(j, "labels", 0) != 0;
+    lv_scale_set_major_tick_every(sc, labels ? 1 : n + 2);
+    lv_scale_set_label_show(sc, labels);
+    int len = jInt(j, "len", 14), lw = jInt(j, "width", 4);
+    lv_color_t off = colorOf(jStr(j, "off"), lv_color_hex(0x5A5A5A));
+    lv_color_t on = colorOf(jStr(j, "on"), lv_color_hex(0xF2F2F2));
+    lv_color_t redon = colorOf(jStr(j, "redon"), on);
+    lv_obj_set_style_arc_width(sc, 0, LV_PART_MAIN);
+    lv_obj_set_style_length(sc, len, LV_PART_ITEMS);
+    lv_obj_set_style_length(sc, len, LV_PART_INDICATOR);
+    lv_obj_set_style_line_width(sc, lw, LV_PART_ITEMS);
+    lv_obj_set_style_line_width(sc, lw, LV_PART_INDICATOR);
+    lv_obj_set_style_line_color(sc, off, LV_PART_ITEMS);
+    lv_obj_set_style_line_color(sc, off, LV_PART_INDICATOR);
+    if (labels) {
+      lv_scale_set_range(sc, (int32_t)(w.mn / 1000), (int32_t)(w.mx / 1000));   // ตัวเลขเป็นหลักพัน
+      lv_obj_set_style_text_font(sc, fontOf(jStr(j, "font"), &f_t40), LV_PART_INDICATOR);
+      lv_obj_set_style_text_color(sc, colorOf(jStr(j, "label"), lv_color_hex(0xE8E8E8)), LV_PART_INDICATOR);
+      lv_obj_set_style_text_letter_space(sc, jInt(j, "gap", 10), LV_PART_INDICATOR);   // ระยะตัวเลขจากขีด
+      if (w.red < w.mx) {
+        lv_scale_section_t* rs = lv_scale_add_section(sc);
+        lv_scale_section_set_range(rs, (int32_t)ceilf(w.red / 1000), (int32_t)(w.mx / 1000));
+        lv_style_t* st = newStyle();
+        lv_style_set_text_color(st, colorOf(jStr(j, "redlabel"), lv_color_hex(0xFF6A6A)));
+        lv_style_set_line_color(st, off);
+        lv_style_set_line_width(st, lw);
+        lv_style_set_length(st, len);
+        lv_scale_section_set_style(rs, LV_PART_INDICATOR, st);
+      }
+    }
+    plain(sc);
+    w.obj = sc;
+    if (w.key >= 0 && !labels) {                    // ขีดที่ติดตามค่า (ขาว) + ในโซนแดง (แดง) — section ที่เพิ่มทีหลังทับก่อน
+      lv_style_t* s1 = newStyle();
+      lv_style_set_line_color(s1, on);
+      lv_style_set_line_width(s1, lw);
+      lv_style_set_length(s1, len);
+      w.sec[0] = lv_scale_add_section(sc);
+      lv_scale_section_set_style(w.sec[0], LV_PART_ITEMS, s1);
+      lv_scale_section_set_range(w.sec[0], (int32_t)w.mx + 1, (int32_t)w.mx + 1);
+      lv_style_t* s2 = newStyle();
+      lv_style_set_line_color(s2, redon);
+      lv_style_set_line_width(s2, lw);
+      lv_style_set_length(s2, len);
+      w.sec[1] = lv_scale_add_section(sc);
+      lv_scale_section_set_style(w.sec[1], LV_PART_ITEMS, s2);
+      lv_scale_section_set_range(w.sec[1], (int32_t)w.mx + 1, (int32_t)w.mx + 1);
+    } else {
+      return;   // ไม่ต้องอัปเดต
+    }
+  } else if (!strcmp(t, "needle")) {
+    w.type = T_NEEDLE;
+    w.cx = jNum(j, "x", 0); w.cy = jNum(j, "y", 0);
+    w.r0 = jNum(j, "r0", 100); w.r1 = jNum(j, "r1", 140);
+    w.rot = jNum(j, "rot", 135); w.sweep = jNum(j, "sweep", 270);
+    w.mn = jNum(j, "min", 0); w.mx = jNum(j, "max", 8000);
+    lv_obj_t* ln = lv_line_create(tile);
+    w.pts = (lv_point_precise_t*)lv_malloc(sizeof(lv_point_precise_t) * 2);
+    memset(w.pts, 0, sizeof(lv_point_precise_t) * 2);
+    lv_obj_set_pos(ln, 0, 0);
+    lv_obj_set_size(ln, 1, 1);
+    lv_obj_set_style_line_width(ln, jInt(j, "width", 10), 0);
+    lv_obj_set_style_line_color(ln, colorOf(jStr(j, "color"), lv_color_hex(0xFFD21E)), 0);
+    lv_obj_set_style_line_rounded(ln, true, 0);
+    lv_line_set_points(ln, w.pts, 2);
+    plain(ln);
+    w.obj = ln;
   } else if (!strcmp(t, "image")) {
     const char* src = jStr(j, "src");
     if (!src) return;
@@ -352,7 +504,8 @@ static void buildWidget(lv_obj_t* tile, Page& pg, cJSON* j) {
   pg.w.push_back(w);
 }
 
-int build(lv_obj_t* tv, const char* json, char* err, size_t errLen) {
+int build(lv_obj_t* tv, const char* json, char* err, size_t errLen, bool english) {
+  en = english;
   cJSON* root = cJSON_Parse(json);
   if (!root) {
     snprintf(err, errLen, "JSON ผิดใกล้: %.30s", cJSON_GetErrorPtr() ? cJSON_GetErrorPtr() : "?");
@@ -367,7 +520,12 @@ int build(lv_obj_t* tv, const char* json, char* err, size_t errLen) {
   acc = colorOf(jStr(root, "accent"), lv_color_hex(0xFF7A00));
   lv_color_t bg = colorOf(jStr(root, "bg"), lv_color_hex(0x0A0A0C));
   lv_obj_clean(tv);
+  for (auto& pg : pages)
+    for (auto& w : pg.w)
+      if (w.pts) lv_free(w.pts);
   pages.clear();
+  for (auto* st : styles) { lv_style_reset(st); lv_free(st); }
+  styles.clear();
   int i = 0;
   cJSON* p;
   cJSON_ArrayForEach(p, jp) {
@@ -461,11 +619,45 @@ void update(int page, const vd::Snap& s) {
         w.lastState = stt;
         for (int i = 0; i < n; i++) {
           lv_color_t c;
-          if (stt >= 1000) c = stt == 1000 ? lv_color_hex(0x2A7BFF) : lv_color_hex(0x1A1A20);   // เกินรอบ: กะพริบฟ้า
-          else if (i >= lit) c = lv_color_hex(0x1A1A20);
+          if (stt >= 1000) c = stt == 1000 ? lv_color_hex(0x2A7BFF) : w.offCol;   // เกินรอบ: กะพริบฟ้า
+          else if (i >= lit) c = w.offCol;
           else c = i < n / 2 ? lv_color_hex(0x2BD46A) : i < n * 4 / 5 ? lv_color_hex(0xFFC21A) : lv_color_hex(0xFF3B30);
           lv_obj_set_style_bg_color(w.segs[i], c, 0);
         }
+        break;
+      }
+      case T_TICKS: {
+        w.shown += (v - w.shown) * 0.45f;
+        int iv = have ? (int)lroundf(w.shown) : (int)w.mn - 1;
+        int step = (int)((w.mx - w.mn) / 100);                // ขยับทีละ 1% พอ (ไม่วาดใหม่ทุกเฟรมโดยไม่จำเป็น)
+        if (step < 1) step = 1;
+        iv = iv / step * step;
+        if (iv == w.lastI) break;
+        w.lastI = iv;
+        lv_scale_section_set_range(w.sec[0], (int32_t)w.mn, iv);
+        if (iv >= (int)w.red) lv_scale_section_set_range(w.sec[1], (int32_t)w.red, iv);
+        else lv_scale_section_set_range(w.sec[1], (int32_t)w.mx + 1, (int32_t)w.mx + 1);
+        lv_obj_invalidate(w.obj);
+        break;
+      }
+      case T_NEEDLE: {
+        w.shown += (v - w.shown) * 0.45f;
+        float f = (w.shown - w.mn) / (w.mx - w.mn);
+        if (f < 0) f = 0;
+        if (f > 1) f = 1;
+        int iv = (int)lroundf(f * 1000);
+        if (iv == w.lastI) break;
+        w.lastI = iv;
+        float a = (w.rot + w.sweep * f) * (float)M_PI / 180.f;
+        float x0 = w.cx + cosf(a) * w.r0, y0 = w.cy + sinf(a) * w.r0, x1 = w.cx + cosf(a) * w.r1, y1 = w.cy + sinf(a) * w.r1;
+        // กรอบเล็กพอดีเข็ม → LVGL วาดใหม่แค่ตรงนั้น
+        int lw = lv_obj_get_style_line_width(w.obj, 0);
+        int bx = (int)floorf(fminf(x0, x1)) - lw, by = (int)floorf(fminf(y0, y1)) - lw;
+        w.pts[0].x = (lv_value_precise_t)(x0 - bx); w.pts[0].y = (lv_value_precise_t)(y0 - by);
+        w.pts[1].x = (lv_value_precise_t)(x1 - bx); w.pts[1].y = (lv_value_precise_t)(y1 - by);
+        lv_obj_set_pos(w.obj, bx, by);
+        lv_obj_set_size(w.obj, (int)fabsf(x1 - x0) + lw * 2 + 2, (int)fabsf(y1 - y0) + lw * 2 + 2);
+        lv_line_set_points(w.obj, w.pts, 2);
         break;
       }
       default: break;

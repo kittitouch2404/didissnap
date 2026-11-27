@@ -32,7 +32,7 @@ static uint8_t ownType;
 static volatile State st = OFF;
 static volatile uint16_t conn = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t svcStart, svcEnd, hData, hCmd;
-static char statusTxt[96] = "เริ่ม Bluetooth...";
+static volatile Msg msgCode = M_START;
 
 // ---------------------------------------------------------------- จับคู่ (เหมือน c3pair.h)
 static uint8_t tok[8];
@@ -234,9 +234,9 @@ static bool sendAuth(uint8_t op) {
   return ble_gattc_write_flat(conn, hCmd, &a, sizeof(a), onWrite, nullptr) == 0;
 }
 
-static void setStatus(State s, const char* t) {
+static void setStatus(State s, Msg m) {
   st = s;
-  strncpy(statusTxt, t, sizeof(statusTxt) - 1);
+  msgCode = m;
 }
 
 // งานหลัก: หา → ต่อ → ยืนยันตัว → เฝ้าดู
@@ -250,7 +250,7 @@ static void task(void*) {
       nvsSavePair();
     }
     // ---- สแกน
-    setStatus(SEARCHING, havePair ? "กำลังหา Superlink ที่จับคู่ไว้..." : "กำลังหา Superlink ที่เปิดโหมดจับคู่...");
+    setStatus(SEARCHING, havePair ? M_SEARCH_PAIRED : M_SEARCH_OPEN);
     nCand = 0;
     xEventGroupClearBits(ev, EV_SCAN_DONE);
     ble_gap_disc_params dp;
@@ -262,12 +262,12 @@ static void task(void*) {
     xEventGroupWaitBits(ev, EV_SCAN_DONE, pdTRUE, pdTRUE, pdMS_TO_TICKS(5000));
     Cand* c = pick();
     if (!c) {
-      if (!havePair) setStatus(SEARCHING, "ไม่เจอ Superlink ที่เปิดโหมดจับคู่ — ถอดเสียบ Superlink ใหม่ หรือกด \"เพิ่มจอใหม่\" ในแอป");
+      if (!havePair) setStatus(SEARCHING, M_NONE_OPEN);
       vTaskDelay(pdMS_TO_TICKS(800));
       continue;
     }
     // ---- ต่อ
-    setStatus(CONNECTING, "กำลังต่อ Superlink...");
+    setStatus(CONNECTING, M_CONNECTING);
     ble_addr_t target = c->a;
     xEventGroupClearBits(ev, EV_CONN | EV_FAIL | EV_READY | EV_DISC | EV_AUTH);
     if (ble_gap_connect(ownType, &target, 5000, nullptr, gapEvent, nullptr) != 0) { vTaskDelay(pdMS_TO_TICKS(1000)); continue; }
@@ -278,7 +278,7 @@ static void task(void*) {
       continue;
     }
     // ---- ยืนยันตัว
-    setStatus(AUTH, "กำลังยืนยันการจับคู่...");
+    setStatus(AUTH, M_AUTH);
     vTaskDelay(pdMS_TO_TICKS(150));
     authRes = -1;
     xEventGroupClearBits(ev, EV_AUTH);
@@ -287,7 +287,7 @@ static void task(void*) {
     if (b & EV_DISC) continue;
     if (authRes == DN_AUTHR_DENIED) {
       reject(target);
-      setStatus(SEARCHING, "Superlink ที่เจอเป็นของคันอื่น — กำลังหาตัวของเรา");
+      setStatus(SEARCHING, M_DENIED);
       ble_gap_terminate(conn, BLE_ERR_REM_USER_CONN_TERM);
       vTaskDelay(pdMS_TO_TICKS(800));
       continue;
@@ -297,7 +297,7 @@ static void task(void*) {
       havePair = true;
       nvsSavePair();
     }
-    setStatus(READY, authRes == DN_AUTHR_NEW ? "จับคู่ใหม่แล้ว" : "ต่อ Superlink แล้ว");
+    setStatus(READY, authRes == DN_AUTHR_NEW ? M_READY_NEW : M_READY);
     ESP_LOGI(TAG, "ready: %s (res %d, %u screens)", c3name, authRes, nScreens);
     // ---- เฝ้าดู
     int64_t tAuth = esp_timer_get_time();
@@ -313,7 +313,7 @@ static void task(void*) {
       vTaskDelay(pdMS_TO_TICKS(100));
     }
     xEventGroupWaitBits(ev, EV_DISC, pdTRUE, pdTRUE, pdMS_TO_TICKS(2000));
-    setStatus(SEARCHING, "Superlink หลุด — กำลังต่อใหม่...");
+    setStatus(SEARCHING, M_LOST);
     vTaskDelay(pdMS_TO_TICKS(500));
   }
 }
@@ -321,7 +321,7 @@ static void task(void*) {
 void begin() {
   ev = xEventGroupCreate();
   nvsLoad();
-  if (nimble_port_init() != ESP_OK) { setStatus(OFF, "เปิด Bluetooth ไม่ได้"); return; }
+  if (nimble_port_init() != ESP_OK) { setStatus(OFF, M_BT_FAIL); return; }
   ble_hs_cfg.sync_cb = onSync;
   ble_hs_cfg.reset_cb = onReset;
   nimble_port_freertos_init(hostTask);
@@ -329,7 +329,7 @@ void begin() {
 }
 
 State state() { return st; }
-const char* status() { return statusTxt; }
+Msg msg() { return msgCode; }
 const char* c3Name() { return havePair ? c3name : ""; }
 const char* c3Fw() { return c3fw; }
 int screens() { return nScreens; }
