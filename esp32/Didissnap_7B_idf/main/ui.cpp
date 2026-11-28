@@ -27,14 +27,14 @@ LV_FONT_DECLARE(f_t28)
 LV_FONT_DECLARE(f_t20)
 }
 
-#define FW_VER "7B 2026.11.28k"
+#define FW_VER "7B 2026.11.28l"
 
 namespace ui {
 
 static const char* TAG = "ui";
 
 // ---------------------------------------------------------------- ค่าตั้ง (NVS "ui")
-struct Cfg { int bri = 85; int demo = 0; int fps = 0; int page = 0; int en = 0; int color = 0; char skin[48] = ""; };
+struct Cfg { int bri = 85; int demo = 0; int fps = 0; int page = 0; int en = 0; int color = 0; int bar = 0; char skin[48] = ""; };
 static Cfg cfg;
 static void cfgLoad() {
   nvs_handle_t h;
@@ -46,6 +46,7 @@ static void cfgLoad() {
   if (nvs_get_i32(h, "page", &v) == ESP_OK) cfg.page = v;
   if (nvs_get_i32(h, "en", &v) == ESP_OK) cfg.en = v;
   if (nvs_get_i32(h, "color", &v) == ESP_OK) cfg.color = v;
+  if (nvs_get_i32(h, "bar", &v) == ESP_OK) cfg.bar = v;
   size_t n = sizeof(cfg.skin);
   if (nvs_get_str(h, "skin", cfg.skin, &n) != ESP_OK) cfg.skin[0] = 0;
   char hide[256];
@@ -62,6 +63,7 @@ static void cfgSave() {
   nvs_set_i32(h, "page", cfg.page);
   nvs_set_i32(h, "en", cfg.en);
   nvs_set_i32(h, "color", cfg.color);
+  nvs_set_i32(h, "bar", cfg.bar);
   nvs_set_str(h, "skin", cfg.skin);
   nvs_commit(h);
   nvs_close(h);
@@ -98,7 +100,11 @@ static lv_obj_t* chipDot;
 static lv_obj_t* chipTxt;
 static lv_obj_t* dots;
 static lv_obj_t* toastL;
-static lv_obj_t* fpsL = nullptr;     // ตัวนับ FPS มุมขวาล่าง
+static lv_obj_t* fpsL = nullptr;
+static lv_obj_t* barO = nullptr;      // แถบปุ่มล่าง: PREV · PEAK · RESET · NEXT
+static lv_obj_t* barPeakL = nullptr;
+static lv_obj_t* peakBadge = nullptr;
+static int64_t barUntil = 0;           // ซ่อนเองเมื่อเลยเวลานี้ (0 = ปักไว้/ซ่อนอยู่)     // ตัวนับ FPS มุมขวาล่าง
 static lv_obj_t* menu = nullptr;      // หน้าเมนูหลัก (สร้างใหม่ทุกครั้งที่เปิด/เปลี่ยนภาษา/สี)
 static lv_obj_t* sub = nullptr;       // หน้าย่อย
 static int curPage = 0;
@@ -470,6 +476,7 @@ static void onRmode(lv_event_t* e) {
 }
 // ---- เกียร์จาก รอบ / ความเร็ว: ขับในเกียร์นั้นนิ่ง ๆ แล้วแตะเลขเกียร์ = จำไว้
 static void subGear();
+static void onBarPin(lv_event_t* e);
 static void onGearLearn(lv_event_t* e) {
   int i = (int)(intptr_t)lv_event_get_user_data(e);
   if (!vd::learnGear(i)) { toast(T("ยังไม่มีรอบ/ความเร็ว (ต้องวิ่ง > 5 km/h)", "No rpm/speed yet (drive above 5 km/h)")); return; }
@@ -536,6 +543,8 @@ static void subSystem() {
   sw(r, cfg.fps, onFps);
   r = row(b, T("วาดเร็ว (RAM ภายใน) · ปิด = ไม่ฉีกแต่ช้า", "Fast render (internal RAM) · off = no tearing, slower"));
   sw(r, board_render_mode(), onRmode);
+  r = row(b, T("แถบปุ่มล่าง (PREV · PEAK · RESET · NEXT) โชว์ตลอด", "Bottom button bar always on"));
+  sw(r, cfg.bar, onBarPin);
   r = row(b, T("เกียร์จากรอบ / ความเร็ว", "Gear from rpm / speed"), 90);
   lv_obj_t* bg = btn(r, T("สอนเกียร์", "Teach gears"), onOpenGear, 0x2A2A32);
   lv_obj_align(bg, LV_ALIGN_RIGHT_MID, 0, 0);
@@ -551,10 +560,10 @@ static void subSystem() {
 }
 static void subHelp() {
   lv_obj_t* b = openSub(T("วิธีใช้", "HELP"));
-  lv_obj_t* l = text(b, T("• ปัดซ้าย/ขวา = เปลี่ยนหน้า\n• แตะค้างที่ไหนก็ได้ = เมนูนี้\n• เมนู → หน้า = กระโดดไปหน้าที่ต้องการ\n"
+  lv_obj_t* l = text(b, T("• ปัดซ้าย/ขวา = เปลี่ยนหน้า\n• แตะ 1 ครั้ง = แถบปุ่มล่าง (PREV · PEAK สูง/ต่ำ · RESET · NEXT)\n• แตะค้างที่ไหนก็ได้ = เมนูนี้\n• เมนู → หน้า = กระโดดไปหน้าที่ต้องการ\n"
                           "• เมนู → หน้าปัด = ความสว่าง / สกิน / โหมดจำลอง\n• หัวเมนู: แตะ ภาษา = ไทย/EN · แตะ สี = เปลี่ยนสีเมนู\n"
                           "• หน้าจอทั้งหมดมาจากไฟล์สกิน (SD card โฟลเดอร์ skins) แก้ในคอมได้",
-                          "• Swipe left/right = change page\n• Long-press anywhere = this menu\n• Menu → Pages = jump to a page\n"
+                          "• Swipe left/right = change page\n• Tap once = bottom button bar (PREV · PEAK high/low · RESET · NEXT)\n• Long-press anywhere = this menu\n• Menu → Pages = jump to a page\n"
                           "• Menu → Display = brightness / skin / demo\n• Menu header: tap LANG = Thai/EN · tap COLOR = menu colour\n"
                           "• All pages come from skin files (SD card, skins folder) — edit them on a PC"),
                         &f_t28, lv_color_hex(0xE0E0E4), 0, 0, LCD_W - 60);
@@ -722,6 +731,101 @@ static void fpsTick(int64_t now) {
   if (fpsL && cfg.fps) lv_label_set_text_fmt(fpsL, "%d FPS  ·  draw %d ms", (int)lroundf(n / sec), n ? (int)(r / n / 1000) : 0);
 }
 
+// ---------------------------------------------------------------- แถบปุ่มล่าง (แตะจอ 1 ครั้ง = โชว์ 5 วิ · ปักไว้ได้ในเมนูระบบ)
+static const int BAR_H = 72;
+static void barShow(bool on) {
+  if (!barO) return;
+  if (on) {
+    lv_obj_remove_flag(barO, LV_OBJ_FLAG_HIDDEN);
+    barUntil = cfg.bar ? 0 : esp_timer_get_time() + 5000000;
+  } else {
+    lv_obj_add_flag(barO, LV_OBJ_FLAG_HIDDEN);
+    barUntil = 0;
+  }
+}
+static bool barVisible() { return barO && !lv_obj_has_flag(barO, LV_OBJ_FLAG_HIDDEN); }
+static void barPeakText() {
+  int m = skin::peakMode();
+  if (barPeakL) lv_label_set_text(barPeakL, m == 1 ? "PEAK: HIGH" : m == 2 ? "PEAK: LOW" : "PEAK: OFF");
+  if (peakBadge) {
+    if (m) {
+      lv_label_set_text(peakBadge, m == 1 ? "PEAK HIGH" : "PEAK LOW");
+      lv_obj_set_style_bg_color(peakBadge, m == 1 ? lv_color_hex(0xFF3B30) : lv_color_hex(0x3AA0FF), 0);
+      lv_obj_remove_flag(peakBadge, LV_OBJ_FLAG_HIDDEN);
+    } else lv_obj_add_flag(peakBadge, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+static void goPage(int p) {
+  int n = skin::pageCount();
+  if (n <= 0) return;
+  p = (p % n + n) % n;
+  lv_tileview_set_tile_by_index(tv, p, 0, LV_ANIM_ON);   // ปัดจบแล้ว onTile จะอัปเดตหน้า/จุด/อบรูป
+}
+static void barKick() { if (!cfg.bar) barUntil = esp_timer_get_time() + 5000000; }
+static void onBarPrev(lv_event_t*) { barKick(); goPage(curPage - 1); }
+static void onBarNext(lv_event_t*) { barKick(); goPage(curPage + 1); }
+static void onBarPeak(lv_event_t*) {
+  barKick();
+  skin::setPeakMode((skin::peakMode() + 1) % 3);
+  barPeakText();
+}
+static void onBarReset(lv_event_t*) {
+  barKick();
+  vd::resetPeaks();
+  toast("Peaks reset", 1500);
+}
+static lv_obj_t* barBtn(const char* t, lv_event_cb_t cb, uint32_t bg, lv_obj_t** lbl = nullptr) {
+  lv_obj_t* b = lv_button_create(barO);
+  lv_obj_set_size(b, (LCD_W - 16 - 3 * 10) / 4, BAR_H - 16);
+  lv_obj_set_style_bg_color(b, lv_color_hex(bg), 0);
+  lv_obj_set_style_bg_color(b, lv_color_hex(0x3A3A44), LV_STATE_PRESSED);
+  lv_obj_set_style_radius(b, 12, 0);
+  lv_obj_set_style_shadow_width(b, 0, 0);
+  lv_obj_set_style_border_width(b, 1, 0);
+  lv_obj_set_style_border_color(b, lv_color_hex(0x3A3A44), 0);
+  lv_obj_t* l = lv_label_create(b);
+  lv_obj_set_style_text_font(l, &lv_font_montserrat_28, 0);
+  lv_obj_set_style_text_color(l, lv_color_hex(0xF2F2F4), 0);
+  lv_label_set_text(l, t);
+  lv_obj_center(l);
+  lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
+  if (lbl) *lbl = l;
+  return b;
+}
+static void buildBar() {
+  barO = lv_obj_create(lv_layer_top());
+  lv_obj_set_size(barO, LCD_W, BAR_H);
+  lv_obj_set_pos(barO, 0, LCD_H - BAR_H);
+  lv_obj_set_style_bg_color(barO, lv_color_hex(0x000000), 0);
+  lv_obj_set_style_bg_opa(barO, LV_OPA_80, 0);
+  lv_obj_set_style_border_width(barO, 0, 0);
+  lv_obj_set_style_radius(barO, 0, 0);
+  lv_obj_set_style_pad_all(barO, 8, 0);
+  lv_obj_set_style_pad_column(barO, 10, 0);
+  lv_obj_set_flex_flow(barO, LV_FLEX_FLOW_ROW);
+  lv_obj_remove_flag(barO, LV_OBJ_FLAG_SCROLLABLE);
+  barBtn(LV_SYMBOL_LEFT "  PREV", onBarPrev, 0x1C1C22);
+  barBtn("PEAK: OFF", onBarPeak, 0x1C1C22, &barPeakL);
+  barBtn(LV_SYMBOL_REFRESH "  RESET", onBarReset, 0x2A1A1A);
+  barBtn("NEXT  " LV_SYMBOL_RIGHT, onBarNext, 0x1C1C22);
+  peakBadge = lv_label_create(lv_layer_top());
+  lv_obj_set_style_text_font(peakBadge, &f_t28, 0);
+  lv_obj_set_style_text_color(peakBadge, lv_color_hex(0xFFFFFF), 0);
+  lv_obj_set_style_bg_opa(peakBadge, LV_OPA_COVER, 0);
+  lv_obj_set_style_radius(peakBadge, 10, 0);
+  lv_obj_set_style_pad_hor(peakBadge, 16, 0);
+  lv_obj_set_style_pad_ver(peakBadge, 4, 0);
+  lv_obj_align(peakBadge, LV_ALIGN_TOP_MID, 0, 6);
+  lv_obj_add_flag(peakBadge, LV_OBJ_FLAG_HIDDEN);
+  barPeakText();
+  barShow(cfg.bar);
+}
+static void onBarPin(lv_event_t* e) {
+  cfg.bar = lv_obj_has_state((lv_obj_t*)lv_event_get_target(e), LV_STATE_CHECKED);
+  cfgSave();
+  barShow(cfg.bar);
+}
+
 // แตะค้างที่ไหนก็ได้ = เมนู · อ่านจากทัชตรง ๆ (อีเวนต์ LONG_PRESSED ไปตกที่หน้า/วิดเจ็ตลูก ไม่ถึง tileview)
 static void pollLongPress() {
   static lv_indev_t* in = nullptr;
@@ -737,11 +841,24 @@ static void pollLongPress() {
   lv_indev_get_point(in, &p);
   bool down = lv_indev_get_state(in) == LV_INDEV_STATE_PRESSED;
   int64_t now = esp_timer_get_time();
-  if (!down) { downAt = 0; fired = false; return; }
-  if (!downAt) { downAt = now; p0 = p; return; }
+  static int64_t firstAt = 0;
+  static bool moved = false, onBar = false;
+  if (!down) {
+    // แตะสั้น ๆ (ไม่ปัด ไม่ค้าง) บนหน้าปัด = โชว์/ซ่อนแถบปุ่มล่าง
+    if (firstAt && !fired && !moved && !onBar && !menu && !sub && now - firstAt < 400000) {
+      if (barVisible() && !cfg.bar) barShow(false); else barShow(true);
+    }
+    downAt = 0; firstAt = 0; fired = false; moved = false; onBar = false;
+    return;
+  }
+  if (!downAt) {
+    downAt = firstAt = now; p0 = p;
+    onBar = barVisible() && p.y >= LCD_H - BAR_H;
+    return;
+  }
   if (fired || menu || sub) return;
-  if (LV_ABS(p.x - p0.x) > 24 || LV_ABS(p.y - p0.y) > 24) { downAt = now; p0 = p; return; }   // กำลังปัด
-  if (now - downAt > 700000) { fired = true; buildMenu(); }
+  if (LV_ABS(p.x - p0.x) > 24 || LV_ABS(p.y - p0.y) > 24) { downAt = now; p0 = p; moved = true; return; }   // กำลังปัด
+  if (now - downAt > 700000 && !onBar) { fired = true; barShow(cfg.bar); buildMenu(); }
 }
 
 // ---------------------------------------------------------------- ทุกเฟรม
@@ -827,6 +944,7 @@ static void tick(lv_timer_t*) {
                             (unsigned)snap.rate, T("ค่า/วิ", "values/s"));
     }
   }
+  if (barUntil && now > barUntil) barShow(false);
   if (toastUntil && now > toastUntil) { toastUntil = 0; lv_obj_add_flag(toastL, LV_OBJ_FLAG_HIDDEN); }
   if (pageChangedAt && now - pageChangedAt > 3000000) { pageChangedAt = 0; cfg.page = curPage; cfgSave(); }
   static int64_t ka = 0;
@@ -905,11 +1023,12 @@ void build() {
   lv_label_set_text(fpsL, "-- FPS");
   lv_display_add_event_cb(lv_display_get_default(), onDispEv, LV_EVENT_RENDER_START, nullptr);
   lv_display_add_event_cb(lv_display_get_default(), onDispEv, LV_EVENT_RENDER_READY, nullptr);
+  buildBar();
 
   loadSkin(cfg.skin);
   if (fpsL) { if (cfg.fps) lv_obj_remove_flag(fpsL, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(fpsL, LV_OBJ_FLAG_HIDDEN); }
   lv_timer_create(tick, 16, nullptr);
-  toast(board_touch_ok() ? "Swipe left/right = page  ·  Long-press = menu" : "Touch not found (GT911) - check / replug", 5000);
+  toast(board_touch_ok() ? "Swipe = page  ·  Tap = buttons  ·  Hold = menu" : "Touch not found (GT911) - check / replug", 5000);
 }
 
 int bri() { return cfg.bri; }
@@ -926,4 +1045,13 @@ void previewGear() {
   subGear();
 }
 
+}  // namespace ui
+
+namespace ui {
+void previewBar(int peak) {
+  lv_obj_add_flag(toastL, LV_OBJ_FLAG_HIDDEN);
+  skin::setPeakMode(peak);
+  barPeakText();
+  barShow(true);
+}
 }  // namespace ui

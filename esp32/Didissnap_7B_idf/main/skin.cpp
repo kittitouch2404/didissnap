@@ -1284,6 +1284,15 @@ static void setColor(W& w, int state) {   // 0 ปกติ · 1 เตือน
   lv_obj_set_style_text_color(w.obj, state == 1 ? w.warnCol : state == 2 ? w.lowCol : w.col, 0);
 }
 
+static int gPeakMode = 0;
+void setPeakMode(int m) {
+  if (m == gPeakMode) return;
+  gPeakMode = m;
+  for (auto& pg : pages)                       // ให้ทุกช่องเขียนค่าใหม่ทันที (ไม่รอกันกระพริบ 80 ms)
+    for (auto& w : pg.w) { w.last[0] = '\x01'; w.last[1] = 0; w.lastTxtUs = 0; }
+}
+int peakMode() { return gPeakMode; }
+
 void update(int page, const vd::Snap& s) {
   if (page < 0 || page >= (int)pages.size()) return;
   static bool blink = false;
@@ -1299,9 +1308,12 @@ void update(int page, const vd::Snap& s) {
   if (dt > 0.2f) dt = 0.2f;
   const float k = 1.f - expf(-dt / 0.085f);
   for (W& w : pages[page].w) {
-    bool pkv = w.peak == 1 || w.peak == 2;
+    // ค่าสูงสุด/ต่ำสุด: ช่องที่ตั้ง "peak" ไว้ · หรือทั้งหน้าตอนกดปุ่ม PEAK (ยกเว้นเกียร์ ระยะทาง สถานะเชื่อมต่อ)
+    int pm = w.peak;
+    if (!pm && gPeakMode && w.key >= 0 && w.key != vd::GEAR && w.key != vd::TRIP && w.key != vd::LINK) pm = gPeakMode;
+    bool pkv = pm == 1 || pm == 2;
     bool have = w.key >= 0 && (pkv ? s.phave[w.key] : s.have[w.key]);
-    float v = !have ? 0 : w.peak == 1 ? s.pmax[w.key] : w.peak == 2 ? s.pmin[w.key] : s.v[w.key];
+    float v = !have ? 0 : pm == 1 ? s.pmax[w.key] : pm == 2 ? s.pmin[w.key] : s.v[w.key];
     switch (w.type) {
       case T_VALUE:
       case T_TILE: {

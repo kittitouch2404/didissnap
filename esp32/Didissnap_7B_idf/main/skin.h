@@ -15,6 +15,9 @@ void update(int page, const vd::Snap& s);
 // หน้าที่แสดงอยู่: วาดส่วนที่ไม่ขยับ (พื้น สเกล ป้าย กรอบ) เป็นรูปเดียวไว้ → ทุกเฟรมวาดใหม่แค่ค่า/เข็ม (เร็วหลายเท่า)
 // หน้าอื่นคืนเป็นวิดเจ็ตปกติ (ประหยัด PSRAM: รูปละ 1.2 MB)
 void setActive(int page);
+// ทั้งหน้าแสดง 0 ค่าสด · 1 ค่าสูงสุด · 2 ค่าต่ำสุด (ปุ่ม PEAK ที่แถบล่าง)
+void setPeakMode(int m);
+int peakMode();
 // ซ่อนหน้า: รายชื่อแบบ "|ECU|OBD2|" (ใช้ตอน build ครั้งถัดไป)
 void setHidden(const char* list);
 const char* hiddenList();
