@@ -25,7 +25,7 @@ LV_FONT_DECLARE(f_t28)
 LV_FONT_DECLARE(f_t20)
 }
 
-#define FW_VER "7B 2026.11.28d"
+#define FW_VER "7B 2026.11.28e"
 
 namespace ui {
 

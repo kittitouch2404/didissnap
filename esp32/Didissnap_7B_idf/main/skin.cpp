@@ -629,7 +629,7 @@ void update(int page, const vd::Snap& s) {
       case T_TICKS: {
         w.shown += (v - w.shown) * 0.45f;
         int iv = have ? (int)lroundf(w.shown) : (int)w.mn - 1;
-        int step = (int)((w.mx - w.mn) / 100);                // ขยับทีละ 1% พอ (ไม่วาดใหม่ทุกเฟรมโดยไม่จำเป็น)
+        int step = (int)((w.mx - w.mn) / 50);                 // ขยับทีละ 2% (สเกลใหญ่วาดใหม่ทั้งวง = แพง)
         if (step < 1) step = 1;
         iv = iv / step * step;
         if (iv == w.lastI) break;
