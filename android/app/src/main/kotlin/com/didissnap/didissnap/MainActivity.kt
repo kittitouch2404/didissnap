@@ -81,6 +81,12 @@ class MainActivity : FlutterActivity() {
                     else c.write(call.argument<ByteArray>("b") ?: ByteArray(0)) { ok -> runOnUiThread { result.success(ok) } }
                 }
                 "c3Mtu" -> result.success(c3?.mtuNow ?: 0)
+                "screenSend" -> {   // ส่งรูป/GIF เข้าจอ 7B ทาง BLE (ต่อจอตรง ครั้งเดียว) → "ok" หรือข้อความผิดพลาด
+                    val sf = screenFile ?: ScreenFile(this) { p -> mainHandler.post { chan?.invokeMethod("screenProgress", p) } }.also { screenFile = it }
+                    sf.send(call.argument<String>("name") ?: "", call.argument<ByteArray>("b") ?: ByteArray(0)) { err ->
+                        runOnUiThread { result.success(err ?: "ok") }
+                    }
+                }
                 "mapSplit" -> mapSplit(call.argument<Boolean>("exit") == true, result)
                 "splitHelperOn" -> result.success(SplitService.inst != null)
                 "openAccessibility" -> {
@@ -335,6 +341,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private var chan: MethodChannel? = null
+    private var screenFile: ScreenFile? = null
     private var pendingAudio: MethodChannel.Result? = null
     private var pendingText: MethodChannel.Result? = null
     private var pendingFile: MethodChannel.Result? = null

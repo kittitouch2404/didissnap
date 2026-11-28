@@ -1725,6 +1725,7 @@ class _Esp32TabState extends State<Esp32Tab> {
               ]),
             ),
           Esp32PicsSection(host: s.espHost, redline: _i('maxRpm', 7500)),
+          const Screen7bPicsSection(),
           const _Header('รีเซ็ต'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

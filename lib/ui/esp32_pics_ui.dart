@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../data/esp32_pics.dart';
 import '../data/hub.dart';
+import '../data/screen_send.dart';
 import 'paint_utils.dart';
 
 const int kBoardW = 480, kBoardH = 272;
@@ -26,10 +27,14 @@ bool _isGif(Uint8List b) => b.length > 3 && b[0] == 0x47 && b[1] == 0x49 && b[2]
 
 // ============================================================ แปลงรูป (ทำใน isolate แยก ไม่ให้แอปค้าง)
 class PicJob {
-  PicJob(this.src, this.x, this.y, this.w, this.h, [this.maxBytes = kMaxUpload]);
+  PicJob(this.src, this.x, this.y, this.w, this.h,
+      [this.maxBytes = kMaxUpload, this.tw = kBoardW, this.th = kBoardH, this.asGif = false, this.jpgQ = 85]);
   final Uint8List src;
   final double x, y, w, h; // ส่วนที่ครอป (0..1 ของภาพ)
   final int maxBytes; // ขนาดไฟล์สูงสุดที่บอร์ดรับ (GIF จะถูกย่อให้ไม่เกินนี้)
+  final int tw, th; // ขนาดบนจอ (S3 480×272 · 7B 1024×600 / กรอบ ANIME 602×306)
+  final bool asGif; // ต้องเป็น GIF เสมอ (รูปนิ่งก็ทำเป็น GIF 1 เฟรม)
+  final int jpgQ;
 }
 
 class PicOut {
@@ -107,7 +112,7 @@ PicOut processPic(PicJob j) {
     if (info == null) throw Exception('อ่านไฟล์ GIF ไม่ได้');
     // GIF ที่ขนาด 480×272 อยู่แล้วและไม่ได้ครอป → ส่งไฟล์เดิมเลย (เข้ารหัสใหม่ทุกเฟรมจะใหญ่ขึ้นหลายเท่า)
     final full = j.x < 0.002 && j.y < 0.002 && j.w > 0.996 && j.h > 0.996;
-    if (full && info.width == kBoardW && info.height == kBoardH && j.src.length <= limit) return PicOut(j.src);
+    if (full && info.width == j.tw && info.height == j.th && j.src.length <= limit) return PicOut(j.src);
     if (info.numFrames * info.width * info.height > 40000000) {
       throw Exception('GIF ใหญ่/ยาวเกินไป (${info.numFrames} เฟรม ${info.width}×${info.height}) '
           '— ลองตัดให้สั้นลงหรือย่อก่อน');
@@ -123,17 +128,20 @@ PicOut processPic(PicJob j) {
   final w = (j.w * im.width).round().clamp(1, im.width - x);
   final h = (j.h * im.height).round().clamp(1, im.height - y);
   im = img.copyCrop(im, x: x, y: y, width: w, height: h);
-  im = img.copyResize(im,
-      width: kBoardW, height: kBoardH, interpolation: img.Interpolation.average);
+  im = img.copyResize(im, width: j.tw, height: j.th, interpolation: img.Interpolation.average);
   if (gif && im.numFrames > 1) return _fitGif(im, limit);
-  return PicOut(img.encodeJpg(im, quality: 85));
+  if (j.asGif) return PicOut(img.encodeGif(im, samplingFactor: 10));
+  return PicOut(img.encodeJpg(im, quality: j.jpgQ));
 }
 
 // ============================================================ หน้าครอป 480×272
 class PicCropPage extends StatefulWidget {
-  const PicCropPage({super.key, required this.bytes, required this.iw, required this.ih});
+  const PicCropPage(
+      {super.key, required this.bytes, required this.iw, required this.ih, this.tw = kBoardW, this.th = kBoardH, this.label = 'จอบอร์ด'});
   final Uint8List bytes;
   final int iw, ih;
+  final int tw, th; // สัดส่วนกรอบ = ขนาดบนจอ
+  final String label;
   @override
   State<PicCropPage> createState() => _PicCropPageState();
 }
@@ -174,10 +182,10 @@ class _PicCropPageState extends State<PicCropPage> {
       ),
       body: SafeArea(
         child: LayoutBuilder(builder: (context, box) {
-          final maxW = math.min(box.maxWidth - 24, (box.maxHeight - 90) * kBoardW / kBoardH);
+          final maxW = math.min(box.maxWidth - 24, (box.maxHeight - 90) * widget.tw / widget.th);
           if (!_init) {
             _vw = maxW;
-            _vh = maxW * kBoardH / kBoardW;
+            _vh = maxW * widget.th / widget.tw;
             final s0 = math.max(_vw / widget.iw, _vh / widget.ih);
             _cw = widget.iw * s0;
             _ch = widget.ih * s0;
@@ -207,8 +215,8 @@ class _PicCropPageState extends State<PicCropPage> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text('ลากเพื่อเลื่อน · ถ่างสองนิ้วเพื่อซูม\nกรอบนี้ = จอบอร์ด 480×272 พอดี',
-                textAlign: TextAlign.center, style: TextStyle(color: Colors.white60, fontSize: 13)),
+            Text('ลากเพื่อเลื่อน · ถ่างสองนิ้วเพื่อซูม\nกรอบนี้ = ${widget.label} ${widget.tw}×${widget.th} พอดี',
+                textAlign: TextAlign.center, style: const TextStyle(color: Colors.white60, fontSize: 13)),
           ]);
         }),
       ),
@@ -526,6 +534,135 @@ class _Esp32PicsSectionState extends State<Esp32PicsSection> {
             );
           }),
       ],
+    ]);
+  }
+}
+
+// ============================================================ ส่งรูปเข้าจอ 7B ทาง Bluetooth (ต่อจอตรง ไม่ต้องใช้ WiFi)
+class Screen7bPicsSection extends StatefulWidget {
+  const Screen7bPicsSection({super.key});
+  @override
+  State<Screen7bPicsSection> createState() => _Screen7bPicsSectionState();
+}
+
+class _Screen7bTarget {
+  const _Screen7bTarget(this.title, this.file, this.w, this.h, this.gif, this.maxBytes, this.label);
+  final String title, file;
+  final int w, h;
+  final bool gif;
+  final int maxBytes;
+  final String label;
+}
+
+const _targets7b = [
+  _Screen7bTarget('รูปหน้า PHOTO (เต็มจอ)', 'photo.jpg', 1024, 600, false, 600 * 1024, 'จอ 7B'),
+  _Screen7bTarget('GIF หน้า ANIME (กรอบซ้ายบน · ภาพเดินตามรอบ)', 'anime.gif', 602, 306, true, 1536 * 1024, 'กรอบ ANIME'),
+];
+
+class _Screen7bPicsSectionState extends State<Screen7bPicsSection> {
+  bool _busy = false;
+  String? _step, _err;
+
+  void _snack(String m) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(m)));
+
+  Future<void> _pick(_Screen7bTarget t) async {
+    final x = await ImagePicker().pickImage(source: ImageSource.gallery, requestFullMetadata: false);
+    if (x == null || !mounted) return;
+    final src = await x.readAsBytes();
+    int iw, ih;
+    try {
+      final codec = await ui.instantiateImageCodec(src);
+      final fr = await codec.getNextFrame();
+      iw = fr.image.width;
+      ih = fr.image.height;
+      fr.image.dispose();
+      codec.dispose();
+    } catch (_) {
+      _snack('เปิดรูปนี้ไม่ได้');
+      return;
+    }
+    if (!mounted) return;
+    final crop = await Navigator.push<Rect>(context,
+        MaterialPageRoute(builder: (_) => PicCropPage(bytes: src, iw: iw, ih: ih, tw: t.w, th: t.h, label: t.label)));
+    if (crop == null || !mounted) return;
+    setState(() {
+      _busy = true;
+      _err = null;
+      _step = _isGif(src) ? 'กำลังย่อ GIF ทุกเฟรมเป็น ${t.w}×${t.h} (อาจใช้เวลาสักพัก) ...' : 'กำลังย่อรูปเป็น ${t.w}×${t.h} ...';
+    });
+    Uint8List out;
+    try {
+      final r = await compute(processPic,
+          PicJob(src, crop.left, crop.top, crop.width, crop.height, t.maxBytes + 64 * 1024, t.w, t.h, t.gif, 82));
+      out = r.bytes;
+    } catch (e) {
+      if (mounted) setState(() { _busy = false; _step = null; _err = '$e'; });
+      return;
+    }
+    if (out.length > t.maxBytes) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _step = null;
+          _err = 'ไฟล์หลังย่อยังใหญ่ ${fmtBytes(out.length)} (เกิน ${fmtBytes(t.maxBytes)}) — ใช้ GIF ที่สั้นลง';
+        });
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _step = 'กำลังส่ง ${fmtBytes(out.length)} เข้าจอ 7B ทาง Bluetooth ...');
+    final err = await ScreenSend.send(t.file, out);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _step = null;
+      _err = err;
+    });
+    if (err == null) _snack('ส่ง ${t.file} เข้าจอ 7B แล้ว');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Text('ส่งรูปเข้าจอ 7B (Bluetooth)',
+            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w700)),
+      ),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
+        child: Text('ที่จอ 7B: แตะค้าง → SD CARD → กด "เปิด/ปิดรับ" (เปิด 3 นาที) แล้วเลือกรูปด้านล่าง · ต้องมี SD card ในจอ',
+            style: TextStyle(fontSize: 12, color: Colors.white54)),
+      ),
+      for (final t in _targets7b)
+        ListTile(
+          dense: true,
+          leading: Icon(t.gif ? Icons.gif_box_outlined : Icons.image_outlined),
+          title: Text(t.title),
+          subtitle: Text('${t.w}×${t.h} · ${t.file}', style: const TextStyle(fontSize: 11)),
+          trailing: const Icon(Icons.upload),
+          enabled: !_busy,
+          onTap: () => _pick(t),
+        ),
+      if (_busy)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: ValueListenableBuilder<int>(
+            valueListenable: ScreenSend.progress,
+            builder: (_, p, __) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(p >= 0 ? '${_step ?? ''}  $p%' : (_step ?? ''), style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 6),
+              LinearProgressIndicator(value: p >= 0 ? p / 100 : null),
+            ]),
+          ),
+        ),
+      if (_err != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Text(_err!, style: const TextStyle(fontSize: 12, color: Colors.redAccent)),
+        ),
     ]);
   }
 }

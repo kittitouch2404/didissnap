@@ -1,3 +1,4 @@
+import 'data/screen_send.dart';
 import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
@@ -66,6 +67,7 @@ class _DashAppState extends State<DashApp> {
     // เสียงบิดกุญแจ: แอปเปิดอยู่แล้วตอนรถติด / แอปถูกเปิดเองเพราะรถติด
     Native.m.setMethodCallHandler((call) async {
       if (call.method == 'carWake') unawaited(KeySound.play(widget.settings));
+      if (call.method == 'screenProgress' && call.arguments is int) ScreenSend.progress.value = call.arguments as int;
       return null;
     });
     Native.launchReason().then((r) {
