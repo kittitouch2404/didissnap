@@ -16,6 +16,7 @@
 #include "nimble/nimble_port_freertos.h"
 #include "nvs.h"
 #include "vdata.h"
+#include "bfile.h"
 
 namespace slink {
 
@@ -214,6 +215,7 @@ static void onSync() {
   ble_hs_util_ensure_addr(0);
   ble_hs_id_infer_auto(0, &ownType);
   xEventGroupSetBits(ev, EV_SYNC);
+  bfile::onSync();
 }
 static void onReset(int reason) { ESP_LOGW(TAG, "host reset %d", reason); }
 static void hostTask(void*) {
@@ -324,6 +326,7 @@ void begin() {
   if (nimble_port_init() != ESP_OK) { setStatus(OFF, M_BT_FAIL); return; }
   ble_hs_cfg.sync_cb = onSync;
   ble_hs_cfg.reset_cb = onReset;
+  bfile::init();                     // รับไฟล์จากแอป (จอเป็นอุปกรณ์ต่อพ่วงด้วย · เปิดรับจากเมนูเท่านั้น)
   nimble_port_freertos_init(hostTask);
   xTaskCreatePinnedToCore(task, "link", 4096, nullptr, 3, nullptr, 0);
 }

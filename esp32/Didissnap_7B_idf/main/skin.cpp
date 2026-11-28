@@ -331,6 +331,18 @@ const char* const BUILTIN = R"JSON({
       {"t": "animnum", "x": 700, "y": 398, "w": 315, "size": "M", "v": "tps", "align": "right"},
       {"t": "segbar", "x": 668, "y": 530, "w": 342, "h": 24, "v": "tps", "min": 0, "max": 100, "n": 17, "peakmark": 1}
     ]},
+    {"name": "PHOTO", "bake": 1, "bg": "#000000", "w": [
+      {"t": "label", "x": 0, "y": 240, "w": 1024, "text": "SEND A PHOTO FROM THE APP", "font": "t40", "color": "#8A8A90", "align": "center"},
+      {"t": "label", "x": 0, "y": 296, "w": 1024, "text": "SD card: skins/photo.jpg  (1024 x 600)", "font": "t28", "color": "#8A8A90", "align": "center"},
+      {"t": "image", "src": "S:skins/photo.jpg", "x": 0, "y": 0},
+      {"t": "rect", "x": 0, "y": 480, "w": 1024, "h": 120, "color": "#000000", "opa": 150, "radius": 0},
+      {"t": "value", "x": 24, "y": 482, "w": 300, "v": "spd", "font": "n96", "dec": 0},
+      {"t": "label", "x": 250, "y": 548, "w": 120, "text": "km/h", "font": "t28", "color": "#C8C8CC"},
+      {"t": "value", "x": 380, "y": 500, "w": 260, "v": "rpm", "font": "n60", "dec": 0, "align": "right", "color": "accent", "warn": 6500},
+      {"t": "label", "x": 648, "y": 548, "w": 80, "text": "rpm", "font": "t28", "color": "#C8C8CC"},
+      {"t": "value", "x": 740, "y": 500, "w": 180, "v": "ect", "font": "n60", "dec": 0, "align": "right", "warn": 105},
+      {"t": "label", "x": 928, "y": 548, "w": 80, "text": "°C", "font": "t28", "color": "#C8C8CC"}
+    ]},
     {"name": "PEAK", "w": [
       {"t": "tile", "x": 24, "y": 24, "w": 320, "h": 156, "v": "rpm", "peak": "max", "title_en": "MAX RPM", "unit": "rpm", "dec": 0},
       {"t": "tile", "x": 352, "y": 24, "w": 320, "h": 156, "v": "spd", "peak": "max", "title_en": "MAX SPEED", "unit": "km/h", "dec": 0},

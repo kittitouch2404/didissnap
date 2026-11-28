@@ -16,6 +16,7 @@
 #include "lvgl.h"
 #include "nvs.h"
 #include "skin.h"
+#include "bfile.h"
 #include "slink.h"
 #include "vdata.h"
 
@@ -26,7 +27,7 @@ LV_FONT_DECLARE(f_t28)
 LV_FONT_DECLARE(f_t20)
 }
 
-#define FW_VER "7B 2026.11.28j"
+#define FW_VER "7B 2026.11.28k"
 
 namespace ui {
 
@@ -109,7 +110,8 @@ static vd::Snap snap;
 static lv_obj_t* hdrLink = nullptr;
 static lv_obj_t* cardSub[6] = {};
 static lv_obj_t* subLink = nullptr;
-static lv_obj_t* subGearL = nullptr;   // อัตราส่วนสด ในหน้าสอนเกียร์
+static lv_obj_t* subGearL = nullptr;
+static lv_obj_t* subRecvL = nullptr;   // สถานะรับไฟล์จากแอป
 
 static void toast(const char* t, int ms = 2500) {
   lv_label_set_text(toastL, t);
@@ -224,7 +226,7 @@ static lv_obj_t* btn(lv_obj_t* p, const char* t, lv_event_cb_t cb, uint32_t bg) 
 
 static void buildMenu();
 static void closeSub() {
-  if (sub) { lv_obj_delete(sub); sub = nullptr; subLink = nullptr; subGearL = nullptr; }
+  if (sub) { lv_obj_delete(sub); sub = nullptr; subLink = nullptr; subGearL = nullptr; subRecvL = nullptr; }
 }
 static void closeAll() {
   closeSub();
@@ -433,8 +435,17 @@ static void subPages() {
     lv_obj_add_event_cb(s, onPageShow, LV_EVENT_VALUE_CHANGED, (void*)(intptr_t)i);
   }
 }
+static void onRecvOpen(lv_event_t*) {
+  if (!board_sd_ok()) { toast(T("ไม่มี SD card", "No SD card")); return; }
+  if (bfile::windowLeft()) bfile::closeWindow();
+  else bfile::openWindow(180);
+}
 static void subSd() {
   lv_obj_t* b = openSub("SD CARD");
+  lv_obj_t* rr = row(b, T("รับรูป/GIF จากแอป (Bluetooth)", "Receive photo/GIF from app (Bluetooth)"), 90);
+  lv_obj_t* bo = btn(rr, T("เปิด/ปิดรับ", "Open/close"), onRecvOpen, 0x2A2A32);
+  lv_obj_align(bo, LV_ALIGN_RIGHT_MID, 0, 0);
+  subRecvL = text(b, "", &f_t20, accent(), 0, 0, LCD_W - 60);
   scanSkins();
   lv_obj_t* r = row(b, T("สถานะ", "Status"));
   char t[96];
@@ -770,6 +781,37 @@ static void tick(lv_timer_t*) {
       cfg.en = langSave;
     } else lv_obj_add_flag(chip, LV_OBJ_FLAG_HIDDEN);
     updateMenuLive();
+    if (subRecvL) {
+      char t[120];
+      int left = bfile::windowLeft(), pr = bfile::progress();
+      if (pr >= 0 && pr < 100) snprintf(t, sizeof(t), T("กำลังรับ %s  %d%%", "Receiving %s  %d%%"), bfile::current(), pr);
+      else if (bfile::connected()) snprintf(t, sizeof(t), "%s", T("แอปต่อแล้ว — เลือกรูปแล้วกดส่งในแอป", "App connected — pick a picture and tap Send in the app"));
+      else if (left) snprintf(t, sizeof(t), T("เปิดรับอยู่ (%d วิ) — ในแอป: ตั้งค่า → จอ ESP32 → ส่งรูปเข้าจอ 7B", "Open (%d s) — in the app: Settings → ESP32 screen → Send to 7B"), left);
+      else snprintf(t, sizeof(t), "%s", T("ปิดอยู่ — กด เปิด/ปิดรับ ก่อนส่งจากแอป", "Closed — tap Open/close before sending from the app"));
+      lv_label_set_text(subRecvL, t);
+    }
+    {
+      static int lastPr = -1;
+      int pr = bfile::progress();
+      if (pr >= 0 && pr < 100 && pr / 5 != lastPr / 5 && !sub) {
+        char t[64];
+        snprintf(t, sizeof(t), "Receiving %s  %d%%", bfile::current(), pr);
+        toast(t, 2000);
+      }
+      lastPr = pr;
+      char nm[40];
+      if (bfile::takeDone(nm, sizeof(nm))) {
+        lv_image_cache_drop(nullptr);                  // รูปชื่อเดิมไฟล์ใหม่ → ล้างแคช แล้วสร้างหน้าใหม่
+        char keep[24];
+        snprintf(keep, sizeof(keep), "%s", skin::pageName(curPage));
+        loadSkin(cfg.skin);
+        for (int q = 0; q < skin::pageCount(); q++)
+          if (!strcmp(skin::pageName(q), keep)) { curPage = q; lv_tileview_set_tile_by_index(tv, q, 0, LV_ANIM_OFF); rebuildDots(); skin::setActive(q); }
+        char t[64];
+        snprintf(t, sizeof(t), "Received %s", nm);
+        toast(t, 3000);
+      }
+    }
     if (subGearL) {
       float lr = vd::liveRatio();
       if (lr > 0) {
