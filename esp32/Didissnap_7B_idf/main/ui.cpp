@@ -26,7 +26,7 @@ LV_FONT_DECLARE(f_t28)
 LV_FONT_DECLARE(f_t20)
 }
 
-#define FW_VER "7B 2026.11.28f"
+#define FW_VER "7B 2026.11.28g"
 
 namespace ui {
 
@@ -413,10 +413,18 @@ static void subSd() {
   lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
   lv_obj_set_height(hint, LV_SIZE_CONTENT);
 }
+static void onRmode(lv_event_t* e) {
+  int on = lv_obj_has_state((lv_obj_t*)lv_event_get_target(e), LV_STATE_CHECKED);
+  nvs_handle_t h;
+  if (nvs_open("ui", NVS_READWRITE, &h) == ESP_OK) { nvs_set_i32(h, "rmode", on); nvs_commit(h); nvs_close(h); }
+  toast(T("กด รีสตาร์ท ด้านล่างเพื่อใช้โหมดใหม่", "Tap Restart below to apply"));
+}
 static void subSystem() {
   lv_obj_t* b = openSub(T("ระบบ", "SYSTEM"));
   lv_obj_t* r = row(b, T("แสดง FPS", "Show FPS"));
   sw(r, cfg.fps, onFps);
+  r = row(b, T("วาดเร็ว (RAM ภายใน) · ปิด = ไม่ฉีกแต่ช้า", "Fast render (internal RAM) · off = no tearing, slower"));
+  sw(r, board_render_mode(), onRmode);
   r = row(b, T("เวอร์ชัน", "Version"));
   lv_obj_t* v = text(r, FW_VER "  ·  ESP-IDF + LVGL 9", &f_t20, lv_color_hex(0x8A8A90), 0, 0);
   lv_obj_align(v, LV_ALIGN_RIGHT_MID, 0, 0);

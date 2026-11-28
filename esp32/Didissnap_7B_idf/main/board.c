@@ -7,6 +7,7 @@
 #include "esp_check.h"
 #include "esp_lcd_panel_rgb.h"
 #include "esp_lcd_touch_gt911.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "esp_vfs_fat.h"
@@ -75,7 +76,10 @@ void board_keepalive(void) {
   s_expOk = ok;
 }
 
-static esp_lcd_panel_handle_t lcd_new(void) {
+static int s_mode = 0;
+int board_render_mode(void) { return s_mode; }
+
+static esp_lcd_panel_handle_t lcd_new(int nfb) {
   esp_lcd_rgb_panel_config_t c;
   memset(&c, 0, sizeof(c));
   c.clk_src = LCD_CLK_SRC_DEFAULT;
@@ -91,7 +95,7 @@ static esp_lcd_panel_handle_t lcd_new(void) {
   c.timings.flags.pclk_active_neg = 1;
   c.data_width = 16;
   c.bits_per_pixel = 16;
-  c.num_fbs = 2;                              // 2 ชุด: LVGL วาดชุดหนึ่ง จอแสดงอีกชุด (ไม่ฉีก)
+  c.num_fbs = nfb;                            // 2 ชุด (โหมด 0): LVGL วาดชุดหนึ่ง จอแสดงอีกชุด · 1 ชุด (โหมด 1)
   c.bounce_buffer_size_px = LCD_W * 10;       // จอดึงภาพผ่าน RAM ภายใน (PSRAM ไม่ต้องตอบทันที)
   c.dma_burst_size = 64;
   c.hsync_gpio_num = 46;
@@ -149,7 +153,7 @@ static esp_lcd_touch_handle_t touch_new(void) {
   return tp;
 }
 
-lv_display_t* board_init(void) {
+lv_display_t* board_init(int mode) {
   i2c_master_bus_config_t bc;
   memset(&bc, 0, sizeof(bc));
   bc.i2c_port = I2C_NUM_0;
@@ -171,7 +175,7 @@ lv_display_t* board_init(void) {
   if (s_expOk) exp_wr(0x03, s_out);
   ESP_LOGI(TAG, "io-expander %s", s_expOk ? "ok" : "MISSING");
 
-  esp_lcd_panel_handle_t panel = lcd_new();
+  esp_lcd_panel_handle_t panel = lcd_new(mode ? 1 : 2);
   esp_lcd_touch_handle_t tp = touch_new();
   s_touchOk = tp != NULL;
 
@@ -185,18 +189,36 @@ lv_display_t* board_init(void) {
   lvgl_port_display_cfg_t d;
   memset(&d, 0, sizeof(d));
   d.panel_handle = panel;
-  d.buffer_size = LCD_W * LCD_H;
-  d.double_buffer = true;
   d.hres = LCD_W;
   d.vres = LCD_H;
   d.color_format = LV_COLOR_FORMAT_RGB565;
-  d.flags.buff_spiram = 1;
-  d.flags.direct_mode = 1;                    // วาดเฉพาะส่วนที่เปลี่ยน ลงบัฟเฟอร์เต็มจอ
+  d.double_buffer = true;
   lvgl_port_display_rgb_cfg_t rc;
   memset(&rc, 0, sizeof(rc));
-  rc.flags.bb_mode = 1;
-  rc.flags.avoid_tearing = 1;
-  lv_display_t* disp = lvgl_port_add_disp_rgb(&d, &rc);
+  lv_display_t* disp = NULL;
+  if (mode) {
+    // วาดลงบัฟเฟอร์เล็กใน RAM ภายใน (เร็วกว่า PSRAM หลายเท่า) แล้วก๊อปลงเฟรมบัฟเฟอร์ทีเดียว
+    d.buffer_size = LCD_W * 32;
+    d.flags.buff_dma = 1;                     // บังคับ RAM ภายใน
+    disp = lvgl_port_add_disp_rgb(&d, &rc);
+    if (!disp) {                              // RAM ภายในไม่พอ → บัฟเฟอร์เล็กใน PSRAM
+      ESP_LOGW(TAG, "no internal RAM for draw buffers, using PSRAM");
+      d.flags.buff_dma = 0;
+      d.flags.buff_spiram = 1;
+      d.buffer_size = LCD_W * 60;
+      disp = lvgl_port_add_disp_rgb(&d, &rc);
+    }
+    s_mode = 1;
+  } else {
+    d.buffer_size = LCD_W * LCD_H;
+    d.flags.buff_spiram = 1;
+    d.flags.direct_mode = 1;                  // วาดเฉพาะส่วนที่เปลี่ยน ลงบัฟเฟอร์เต็มจอ
+    rc.flags.bb_mode = 1;
+    rc.flags.avoid_tearing = 1;
+    disp = lvgl_port_add_disp_rgb(&d, &rc);
+    s_mode = 0;
+  }
+  ESP_LOGI(TAG, "render mode %d · internal free %u", s_mode, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
   if (tp) {
     lvgl_port_touch_cfg_t t;

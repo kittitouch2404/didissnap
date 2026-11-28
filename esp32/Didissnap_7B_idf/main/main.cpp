@@ -7,6 +7,7 @@
 #include "esp_lvgl_port.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "nvs.h"
 #include "nvs_flash.h"
 #include "skin.h"
 #include "slink.h"
@@ -20,7 +21,14 @@ extern "C" void app_main(void) {
     nvs_flash_init();
   }
   vd::begin();
-  board_init();
+  int rmode = 1;                      // โหมดวาด (เมนู → ระบบ) · ค่าเริ่มต้น = เร็ว
+  nvs_handle_t h;
+  if (nvs_open("ui", NVS_READONLY, &h) == ESP_OK) {
+    int32_t v;
+    if (nvs_get_i32(h, "rmode", &v) == ESP_OK) rmode = v;
+    nvs_close(h);
+  }
+  board_init(rmode);
   if (board_sd_mount()) {
     mkdir("/sdcard/skins", 0777);
     struct stat st;

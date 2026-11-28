@@ -14,7 +14,9 @@ extern "C" {
 #define LCD_H 600
 
 // เปิดจอ + ทัช + LVGL (คืนจอที่สร้างแล้ว) · ต้องเรียกก่อนอย่างอื่น
-lv_display_t* board_init(void);
+// mode 1 = วาดใน RAM ภายใน (เร็ว · อาจเห็นรอยต่อจาง ๆ ตอนเข็มวิ่ง) · 0 = วาดตรงลงเฟรมบัฟเฟอร์ PSRAM 2 ชุด (ไม่ฉีก แต่ช้า)
+lv_display_t* board_init(int mode);
+int board_render_mode(void);   // โหมดที่ใช้จริง (ถ้า RAM ไม่พอจะถอยไปโหมด 0)
 // ความสว่าง 0-100 %
 void board_backlight(int pct);
 // SD card (โหมด 1 บิต) ที่ /sdcard · true = ใช้ได้
