@@ -7,7 +7,7 @@ namespace vd {
 // ลำดับต้องตรงกับ KEYS ใน vdata.cpp (ชื่อที่ใช้ในไฟล์สกิน)
 enum Key {
   RPM, SPD, ECT, IAT, VOLT, LOAD, TPS, MAP, MAF, FUEL, STFT, AFR, TIMING, OIL,
-  CVT, C1, C2, C3, C4, BOOST, GEAR, NKEY
+  CVT, C1, C2, C3, C4, BOOST, GEAR, TRIP, LINK, NKEY
 };
 extern const char* const KEYS[NKEY];
 extern const char* const NAMES_TH[NKEY];   // ชื่อไทยสั้น ๆ (ใช้ในหน้าตั้งค่า)

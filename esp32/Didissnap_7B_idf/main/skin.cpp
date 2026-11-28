@@ -4,11 +4,15 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <string>
 #include <vector>
 #include "cJSON.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "fonts/animnum.h"
+#include "src/libs/gif/gifdec.h"
+#include "src/misc/lv_area_private.h"
 
 extern "C" {
 LV_FONT_DECLARE(f_num170)
@@ -66,10 +70,8 @@ const char* const BUILTIN = R"JSON({
       {"t": "label", "x": 918, "y": 416, "w": 80, "text": "%", "font": "t28"},
       {"t": "label", "x": 560, "y": 484, "w": 424, "text": "ENGINE LOAD", "text_th": "โหลดเครื่อง", "font": "t28", "align": "right"},
       {"t": "circle", "x": 270, "y": 284, "r": 246, "color": "#0C0C0C"},
-      {"t": "ticks", "x": 270, "y": 284, "r": 229, "v": "rpm", "min": 0, "max": 8000, "red": 6500, "n": 100, "len": 16, "width": 7,
-       "rot": 120, "sweep": 300, "on": "#F2F2F2", "off": "#5A5A5A", "redon": "#FF3A3A"},
-      {"t": "ticks", "x": 270, "y": 284, "r": 246, "min": 0, "max": 8000, "red": 6500, "n": 8, "len": 12, "width": 9,
-       "rot": 120, "sweep": 300, "on": "#FF2A2A", "off": "#FF2A2A", "labels": 1, "font": "t40", "label": "#E8E8E8", "redlabel": "#FF6A6A", "gap": 26},
+      {"t": "ticks", "x": 270, "y": 284, "r": 229, "v": "rpm", "min": 0, "max": 8000, "red": 6500, "n": 100, "len": 16, "width": 7, "rot": 120, "sweep": 300, "on": "#F2F2F2", "off": "#5A5A5A", "redon": "#FF3A3A"},
+      {"t": "ticks", "x": 270, "y": 284, "r": 246, "min": 0, "max": 8000, "red": 6500, "n": 8, "len": 12, "width": 9, "rot": 120, "sweep": 300, "on": "#FF2A2A", "off": "#FF2A2A", "labels": 1, "font": "t40", "label": "#E8E8E8", "redlabel": "#FF6A6A", "gap": 26},
       {"t": "circle", "x": 270, "y": 284, "r": 155, "color": "#E0101C", "grad": "#7A0006", "border": "#B8B8B8", "bw": 16},
       {"t": "needle", "x": 270, "y": 284, "r0": 158, "r1": 196, "v": "rpm", "min": 0, "max": 8000, "rot": 120, "sweep": 300, "width": 14, "color": "#FFD21E"},
       {"t": "rect", "x": 208, "y": 142, "w": 124, "h": 60, "color": "#E0141E", "radius": 8},
@@ -116,6 +118,219 @@ const char* const BUILTIN = R"JSON({
       {"t": "tile", "x": 352, "y": 312, "w": 320, "h": 268, "v": "stft", "title": "STFT", "unit": "%", "dec": 1, "font": "n96"},
       {"t": "tile", "x": 680, "y": 312, "w": 320, "h": 268, "v": "fuel", "title": "น้ำมัน", "title_en": "FUEL", "unit": "%", "dec": 0, "low": 12, "font": "n96"}
     ]},
+    {"name": "STRIP", "w": [
+      {"t": "value", "x": 16, "y": 0, "w": 300, "v": "rpm", "font": "n96", "dec": 0, "warn": 6500},
+      {"t": "label", "x": 18, "y": 118, "w": 200, "text": "RPM", "font": "t20", "color": "#BBBBBB"},
+      {"t": "shift", "x": 320, "y": 14, "w": 683, "h": 44, "v": "rpm", "mode": "heat", "color": "#FF7A00", "off": "#3A2A10", "from": 0, "to": 8000, "red": 6500, "n": 60, "gap": 3, "radius": 1, "tall_every": 5, "tall_h": 16},
+      {"t": "label", "x": 375, "y": 80, "w": 60, "text": "1", "font": "t28", "color": "#FFFFFF", "align": "center"},
+      {"t": "label", "x": 460, "y": 80, "w": 60, "text": "2", "font": "t28", "color": "#FFFFFF", "align": "center"},
+      {"t": "label", "x": 546, "y": 80, "w": 60, "text": "3", "font": "t28", "color": "#FFFFFF", "align": "center"},
+      {"t": "label", "x": 631, "y": 80, "w": 60, "text": "4", "font": "t28", "color": "#FFFFFF", "align": "center"},
+      {"t": "label", "x": 716, "y": 80, "w": 60, "text": "5", "font": "t28", "color": "#FFFFFF", "align": "center"},
+      {"t": "label", "x": 802, "y": 80, "w": 60, "text": "6", "font": "t28", "color": "#FFFFFF", "align": "center"},
+      {"t": "label", "x": 887, "y": 80, "w": 60, "text": "7", "font": "t28", "color": "#FF3A3A", "align": "center"},
+      {"t": "label", "x": 973, "y": 80, "w": 60, "text": "8", "font": "t28", "color": "#FF3A3A", "align": "center"},
+      {"t": "tile", "x": 12, "y": 150, "w": 300, "h": 130, "v": "trip", "title_en": "TRIP km", "unit": "", "dec": 1},
+      {"t": "tile", "x": 12, "y": 290, "w": 300, "h": 130, "v": "fuel", "title_en": "FUEL %", "unit": "", "dec": 0, "low": 12},
+      {"t": "shift", "x": 28, "y": 398, "w": 170, "h": 10, "v": "fuel", "mode": "level", "color": "#00E05A", "off": "#333333", "from": 0, "to": 100, "n": 10, "gap": 4, "radius": 1},
+      {"t": "tile", "x": 324, "y": 150, "w": 176, "h": 270, "v": "gear", "title_en": "GEAR", "unit": "", "font": "n170", "color": "#FFC400"},
+      {"t": "tile", "x": 512, "y": 150, "w": 500, "h": 270, "v": "spd", "title_en": "SPEED", "unit": "km/h", "font": "n170"},
+      {"t": "tile", "x": 12, "y": 432, "w": 192, "h": 136, "v": "ect", "title_en": "COOLANT", "unit": "", "dec": 0, "warn": 105},
+      {"t": "shift", "x": 26, "y": 546, "w": 110, "h": 9, "v": "ect", "mode": "level", "color": "#00E05A", "off": "#333333", "from": 40, "to": 130, "n": 6, "gap": 4, "radius": 1},
+      {"t": "tile", "x": 213, "y": 432, "w": 192, "h": 136, "v": "iat", "title_en": "IAT °C", "unit": "", "dec": 0},
+      {"t": "shift", "x": 227, "y": 546, "w": 110, "h": 9, "v": "iat", "mode": "level", "color": "#00E05A", "off": "#333333", "from": 0, "to": 80, "n": 6, "gap": 4, "radius": 1},
+      {"t": "tile", "x": 414, "y": 432, "w": 192, "h": 136, "v": "volt", "title_en": "BATT V", "unit": "", "dec": 1, "low": 12.0},
+      {"t": "shift", "x": 428, "y": 546, "w": 110, "h": 9, "v": "volt", "mode": "level", "color": "#00E05A", "off": "#333333", "from": 10, "to": 16, "n": 6, "gap": 4, "radius": 1},
+      {"t": "tile", "x": 615, "y": 432, "w": 192, "h": 136, "v": "tps", "title_en": "TPS %", "unit": "", "dec": 0},
+      {"t": "shift", "x": 629, "y": 546, "w": 110, "h": 9, "v": "tps", "mode": "level", "color": "#00E05A", "off": "#333333", "from": 0, "to": 100, "n": 6, "gap": 4, "radius": 1},
+      {"t": "tile", "x": 816, "y": 432, "w": 192, "h": 136, "v": "load", "title_en": "LOAD %", "unit": "", "dec": 0},
+      {"t": "shift", "x": 830, "y": 546, "w": 110, "h": 9, "v": "load", "mode": "level", "color": "#00E05A", "off": "#333333", "from": 0, "to": 100, "n": 6, "gap": 4, "radius": 1}
+    ]},
+    {"name": "RACE DASH", "w": [
+      {"t": "shift", "x": 17, "y": 12, "w": 990, "h": 34, "v": "rpm", "from": 3850, "to": 7000, "n": 12, "gap": 10, "off": "#2A2A2A"},
+      {"t": "bar", "x": 17, "y": 58, "w": 990, "h": 14, "v": "rpm", "min": 0, "max": 8000, "color": "#FF7A00"},
+      {"t": "label", "x": 17, "y": 92, "w": 300, "text": "Water TMP", "font": "t28", "color": "#FF7A00"},
+      {"t": "value", "x": 17, "y": 128, "w": 240, "v": "ect", "font": "n60", "dec": 0, "align": "center", "color": "#FF7A00", "warn": 105},
+      {"t": "label", "x": 707, "y": 92, "w": 300, "text": "Km/h", "font": "t28", "color": "#FF7A00", "align": "right"},
+      {"t": "value", "x": 767, "y": 128, "w": 240, "v": "spd", "font": "n60", "dec": 0, "align": "center", "color": "#FF7A00"},
+      {"t": "label", "x": 17, "y": 216, "w": 300, "text": "Air TMP", "font": "t28", "color": "#FF7A00"},
+      {"t": "value", "x": 17, "y": 252, "w": 240, "v": "iat", "font": "n60", "dec": 0, "align": "center", "color": "#FF7A00"},
+      {"t": "label", "x": 707, "y": 216, "w": 300, "text": "ENGINE L", "font": "t28", "color": "#FF7A00", "align": "right"},
+      {"t": "value", "x": 767, "y": 252, "w": 240, "v": "load", "font": "n60", "dec": 1, "align": "center", "color": "#FF7A00"},
+      {"t": "label", "x": 17, "y": 340, "w": 300, "text": "Air Press", "font": "t28", "color": "#FF7A00"},
+      {"t": "value", "x": 17, "y": 376, "w": 240, "v": "map", "font": "n60", "dec": 0, "align": "center", "color": "#FF7A00"},
+      {"t": "label", "x": 707, "y": 340, "w": 300, "text": "Short FT", "font": "t28", "color": "#FF7A00", "align": "right"},
+      {"t": "value", "x": 767, "y": 376, "w": 240, "v": "stft", "font": "n60", "dec": 1, "align": "center", "color": "#FF7A00"},
+      {"t": "label", "x": 17, "y": 464, "w": 300, "text": "AIR FLOW", "font": "t28", "color": "#FF7A00"},
+      {"t": "value", "x": 17, "y": 500, "w": 240, "v": "maf", "font": "n60", "dec": 1, "align": "center", "color": "#FF7A00"},
+      {"t": "label", "x": 707, "y": 464, "w": 300, "text": "Batt Vol", "font": "t28", "color": "#FF7A00", "align": "right"},
+      {"t": "value", "x": 767, "y": 500, "w": 240, "v": "volt", "font": "n60", "dec": 1, "align": "center", "color": "#FF7A00", "low": 12.0},
+      {"t": "value", "x": 262, "y": 96, "w": 250, "v": "rpm", "font": "n60", "dec": 0, "align": "right", "color": "#FF7A00", "warn": 6500},
+      {"t": "label", "x": 520, "y": 118, "w": 140, "text": "r/min", "font": "t28", "color": "#FF7A00"},
+      {"t": "label", "x": 362, "y": 180, "w": 300, "text": "Race", "font": "t40", "color": "#FF7A00", "align": "center"},
+      {"t": "value", "x": 312, "y": 250, "w": 400, "v": "gear", "font": "n170", "dec": 0, "align": "center", "color": "#FF7A00"}
+    ]},
+    {"name": "ECU", "bake": 1, "w": [
+      {"t": "value", "x": 20, "y": 8, "w": 320, "v": "rpm", "font": "n96", "dec": 0, "color": "#FFFFFF", "warn": 6500},
+      {"t": "label", "x": 300, "y": 72, "w": 120, "text": "RPM", "font": "t28", "color": "#FFFFFF"},
+      {"t": "cover", "x": 20, "y": 110, "w": 960, "h": 32, "v": "rpm", "min": 0, "max": 8000, "grad": ["#FFE600", "#FFB000", "#FF5A00", "#FF1010"], "off": "#1A1A1A"},
+      {"t": "rect", "x": 139, "y": 110, "w": 3, "h": 32, "color": "#000000", "radius": 0},
+      {"t": "rect", "x": 259, "y": 110, "w": 3, "h": 32, "color": "#000000", "radius": 0},
+      {"t": "rect", "x": 379, "y": 110, "w": 3, "h": 32, "color": "#000000", "radius": 0},
+      {"t": "rect", "x": 499, "y": 110, "w": 3, "h": 32, "color": "#000000", "radius": 0},
+      {"t": "rect", "x": 619, "y": 110, "w": 3, "h": 32, "color": "#000000", "radius": 0},
+      {"t": "rect", "x": 739, "y": 110, "w": 3, "h": 32, "color": "#000000", "radius": 0},
+      {"t": "rect", "x": 859, "y": 110, "w": 3, "h": 32, "color": "#000000", "radius": 0},
+      {"t": "label", "x": 110, "y": 146, "w": 60, "text": "1", "font": "t20", "color": "#DDDDDD", "align": "center"},
+      {"t": "label", "x": 230, "y": 146, "w": 60, "text": "2", "font": "t20", "color": "#DDDDDD", "align": "center"},
+      {"t": "label", "x": 350, "y": 146, "w": 60, "text": "3", "font": "t20", "color": "#DDDDDD", "align": "center"},
+      {"t": "label", "x": 470, "y": 146, "w": 60, "text": "4", "font": "t20", "color": "#DDDDDD", "align": "center"},
+      {"t": "label", "x": 590, "y": 146, "w": 60, "text": "5", "font": "t20", "color": "#DDDDDD", "align": "center"},
+      {"t": "label", "x": 710, "y": 146, "w": 60, "text": "6", "font": "t20", "color": "#DDDDDD", "align": "center"},
+      {"t": "label", "x": 830, "y": 146, "w": 60, "text": "7", "font": "t20", "color": "#FF4040", "align": "center"},
+      {"t": "label", "x": 950, "y": 146, "w": 60, "text": "8", "font": "t20", "color": "#FF4040", "align": "center"},
+      {"t": "label", "x": 50, "y": 182, "w": 200, "text": "TRIP km", "font": "t28", "color": "#F5C518", "align": "right"},
+      {"t": "value", "x": 50, "y": 214, "w": 200, "v": "trip", "font": "t40", "dec": 1, "align": "right"},
+      {"t": "label", "x": 50, "y": 262, "w": 200, "text": "FUEL %", "font": "t28", "color": "#F5C518", "align": "right"},
+      {"t": "value", "x": 50, "y": 294, "w": 200, "v": "fuel", "font": "t40", "dec": 0, "align": "right", "low": 12},
+      {"t": "label", "x": 330, "y": 182, "w": 200, "text": "GEAR", "font": "t28", "color": "#F5C518", "align": "center"},
+      {"t": "value", "x": 330, "y": 168, "w": 200, "v": "gear", "font": "n170", "dec": 0, "align": "center"},
+      {"t": "label", "x": 700, "y": 182, "w": 280, "text": "SPEED", "font": "t28", "color": "#F5C518", "align": "right"},
+      {"t": "value", "x": 560, "y": 168, "w": 420, "v": "spd", "font": "n170", "dec": 0, "align": "right"},
+      {"t": "label", "x": 900, "y": 348, "w": 80, "text": "km/h", "font": "t20", "color": "#CCCCCC", "align": "right"},
+      {"t": "label", "x": 5, "y": 372, "w": 190, "text": "WATER °C", "font": "t28", "color": "#F5C518", "align": "center"},
+      {"t": "value", "x": 5, "y": 404, "w": 190, "v": "ect", "font": "t40", "dec": 0, "align": "center", "warn": 105},
+      {"t": "label", "x": 205, "y": 372, "w": 190, "text": "BATT V", "font": "t28", "color": "#F5C518", "align": "center"},
+      {"t": "value", "x": 205, "y": 404, "w": 190, "v": "volt", "font": "t40", "dec": 1, "align": "center", "low": 12.0},
+      {"t": "label", "x": 405, "y": 372, "w": 190, "text": "BOOST bar", "font": "t28", "color": "#F5C518", "align": "center"},
+      {"t": "value", "x": 405, "y": 404, "w": 190, "v": "boost", "font": "t40", "dec": 2, "align": "center"},
+      {"t": "label", "x": 605, "y": 372, "w": 190, "text": "LOAD %", "font": "t28", "color": "#F5C518", "align": "center"},
+      {"t": "value", "x": 605, "y": 404, "w": 190, "v": "load", "font": "t40", "dec": 0, "align": "center"},
+      {"t": "label", "x": 805, "y": 372, "w": 190, "text": "IAT °C", "font": "t28", "color": "#F5C518", "align": "center"},
+      {"t": "value", "x": 805, "y": 404, "w": 190, "v": "iat", "font": "t40", "dec": 0, "align": "center"},
+      {"t": "bar", "x": 20, "y": 470, "w": 180, "h": 38, "v": "tps", "min": 0, "max": 100, "color": "#2EC84A"},
+      {"t": "label", "x": 28, "y": 474, "w": 80, "text": "TPS", "font": "t28", "color": "#000000"},
+      {"t": "value", "x": 110, "y": 474, "w": 84, "v": "tps", "font": "t28", "dec": 0, "align": "right", "color": "#000000"},
+      {"t": "label", "x": 190, "y": 446, "w": 60, "text": "0", "font": "t20", "color": "#AAAAAA", "align": "center"},
+      {"t": "label", "x": 370, "y": 446, "w": 60, "text": "50", "font": "t20", "color": "#AAAAAA", "align": "center"},
+      {"t": "label", "x": 550, "y": 446, "w": 60, "text": "100", "font": "t20", "color": "#AAAAAA", "align": "center"},
+      {"t": "bar", "x": 220, "y": 470, "w": 360, "h": 38, "v": "fuel", "min": 0, "max": 100, "color": "#2EC84A"},
+      {"t": "label", "x": 220, "y": 474, "w": 360, "text": "FUEL", "font": "t28", "color": "#000000", "align": "center"},
+      {"t": "lamp", "x": 600, "y": 470, "w": 180, "h": 38, "v": "rpm", "on": 400, "text": "ENGINE", "font": "t28", "bw": 1},
+      {"t": "lamp", "x": 800, "y": 470, "w": 180, "h": 38, "v": "link", "on": 0.5, "off": "#FFC400", "text": "LINK", "font": "t28", "bw": 1}
+    ]},
+    {"name": "OBD2", "w": [
+      {"t": "label", "x": 16, "y": 6, "w": 400, "text": "OBD2 LIVE DATA", "font": "t40", "color": "#FF7A00"},
+      {"t": "label", "x": 420, "y": 20, "w": 500, "text": "values from Superlink · - = not supported", "font": "t20", "color": "#888888"},
+      {"t": "label", "x": 16, "y": 76, "w": 330, "text": "Engine RPM", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 316, "y": 76, "w": 120, "v": "rpm", "font": "t28", "dec": 0, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 444, "y": 82, "w": 70, "text": "rpm", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 16, "y": 119, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 16, "y": 127, "w": 330, "text": "Vehicle speed", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 316, "y": 127, "w": 120, "v": "spd", "font": "t28", "dec": 0, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 444, "y": 133, "w": 70, "text": "km/h", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 16, "y": 170, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 16, "y": 178, "w": 330, "text": "Coolant temp", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 316, "y": 178, "w": 120, "v": "ect", "font": "t28", "dec": 0, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 444, "y": 184, "w": 70, "text": "°C", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 16, "y": 221, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 16, "y": 229, "w": 330, "text": "Intake air temp", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 316, "y": 229, "w": 120, "v": "iat", "font": "t28", "dec": 0, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 444, "y": 235, "w": 70, "text": "°C", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 16, "y": 272, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 16, "y": 280, "w": 330, "text": "Engine load", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 316, "y": 280, "w": 120, "v": "load", "font": "t28", "dec": 1, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 444, "y": 286, "w": 70, "text": "%", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 16, "y": 323, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 16, "y": 331, "w": 330, "text": "Throttle position", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 316, "y": 331, "w": 120, "v": "tps", "font": "t28", "dec": 1, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 444, "y": 337, "w": 70, "text": "%", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 16, "y": 374, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 16, "y": 382, "w": 330, "text": "MAP (intake press)", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 316, "y": 382, "w": 120, "v": "map", "font": "t28", "dec": 0, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 444, "y": 388, "w": 70, "text": "kPa", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 16, "y": 425, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 16, "y": 433, "w": 330, "text": "MAF air flow", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 316, "y": 433, "w": 120, "v": "maf", "font": "t28", "dec": 2, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 444, "y": 439, "w": 70, "text": "g/s", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 16, "y": 476, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 16, "y": 484, "w": 330, "text": "Short fuel trim B1", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 316, "y": 484, "w": 120, "v": "stft", "font": "t28", "dec": 1, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 444, "y": 490, "w": 70, "text": "%", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 16, "y": 527, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 16, "y": 535, "w": 330, "text": "Timing advance", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 316, "y": 535, "w": 120, "v": "timing", "font": "t28", "dec": 1, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 444, "y": 541, "w": 70, "text": "°", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 16, "y": 578, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 520, "y": 76, "w": 330, "text": "ECU voltage", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 820, "y": 76, "w": 120, "v": "volt", "font": "t28", "dec": 2, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 948, "y": 82, "w": 70, "text": "V", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 520, "y": 119, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 520, "y": 127, "w": 330, "text": "Fuel level", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 820, "y": 127, "w": 120, "v": "fuel", "font": "t28", "dec": 1, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 948, "y": 133, "w": 70, "text": "%", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 520, "y": 170, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 520, "y": 178, "w": 330, "text": "Air-fuel ratio", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 820, "y": 178, "w": 120, "v": "afr", "font": "t28", "dec": 2, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 948, "y": 184, "w": 70, "text": "", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 520, "y": 221, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 520, "y": 229, "w": 330, "text": "Engine oil temp", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 820, "y": 229, "w": 120, "v": "oil", "font": "t28", "dec": 0, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 948, "y": 235, "w": 70, "text": "°C", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 520, "y": 272, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 520, "y": 280, "w": 330, "text": "CVT temp", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 820, "y": 280, "w": 120, "v": "cvt", "font": "t28", "dec": 0, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 948, "y": 286, "w": 70, "text": "°C", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 520, "y": 323, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 520, "y": 331, "w": 330, "text": "Boost", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 820, "y": 331, "w": 120, "v": "boost", "font": "t28", "dec": 2, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 948, "y": 337, "w": 70, "text": "bar", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 520, "y": 374, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 520, "y": 382, "w": 330, "text": "Gear (calc)", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 820, "y": 382, "w": 120, "v": "gear", "font": "t28", "dec": 0, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 948, "y": 388, "w": 70, "text": "", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 520, "y": 425, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 520, "y": 433, "w": 330, "text": "Trip", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 820, "y": 433, "w": 120, "v": "trip", "font": "t28", "dec": 1, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 948, "y": 439, "w": 70, "text": "km", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 520, "y": 476, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 520, "y": 484, "w": 330, "text": "Custom C1", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 820, "y": 484, "w": 120, "v": "c1", "font": "t28", "dec": 1, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 948, "y": 490, "w": 70, "text": "", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 520, "y": 527, "w": 488, "h": 1, "color": "#242424", "radius": 0},
+      {"t": "label", "x": 520, "y": 535, "w": 330, "text": "Custom C2", "font": "t28", "color": "#B8B8B8"},
+      {"t": "value", "x": 820, "y": 535, "w": 120, "v": "c2", "font": "t28", "dec": 1, "align": "right", "color": "#FFFFFF"},
+      {"t": "label", "x": 948, "y": 541, "w": 70, "text": "", "font": "t20", "color": "#888888"},
+      {"t": "rect", "x": 520, "y": 578, "w": 488, "h": 1, "color": "#242424", "radius": 0}
+    ]},
+    {"name": "ANIME", "bg": "#000000", "w": [
+      {"t": "rect", "x": 13, "y": 16, "w": 627, "h": 324, "color": "#000000", "radius": 0, "bw": 4, "border": "#FF5CC4"},
+      {"t": "rect", "x": 20, "y": 23, "w": 613, "h": 310, "color": "#000000", "radius": 0, "bw": 2, "border": "#8C46E6"},
+      {"t": "label", "x": 30, "y": 140, "w": 593, "text": "PUT YOUR GIF HERE", "font": "t40", "color": "#C4B0DC", "align": "center"},
+      {"t": "label", "x": 30, "y": 196, "w": 593, "text": "SD card: skins/anime.gif  (602 x 306)", "font": "t28", "color": "#C4B0DC", "align": "center"},
+      {"t": "gifrpm", "x": 26, "y": 29, "w": 601, "h": 306, "src": "S:skins/anime.gif", "v": "rpm", "min": 0, "max": 5500},
+      {"t": "rect", "x": 9, "y": 12, "w": 34, "h": 6, "color": "#FFF4FC", "radius": 0},
+      {"t": "rect", "x": 9, "y": 12, "w": 6, "h": 34, "color": "#FFF4FC", "radius": 0},
+      {"t": "rect", "x": 612, "y": 334, "w": 34, "h": 6, "color": "#FFF4FC", "radius": 0},
+      {"t": "rect", "x": 640, "y": 306, "w": 6, "h": 34, "color": "#FFF4FC", "radius": 0},
+      {"t": "segbar", "x": 13, "y": 356, "w": 627, "h": 30, "v": "rpm", "min": 0, "max": 8000, "red": 6500, "n": 32},
+      {"t": "label", "x": 26, "y": 404, "w": 120, "text": "km/h", "font": "t28", "color": "#C4B0DC"},
+      {"t": "animnum", "x": 40, "y": 350, "w": 300, "size": "L", "v": "spd", "align": "right"},
+      {"t": "label", "x": 380, "y": 404, "w": 120, "text": "RPM", "font": "t28", "color": "#C4B0DC"},
+      {"t": "animnum", "x": 400, "y": 380, "w": 250, "size": "M", "v": "rpm", "align": "right", "warn": 6500},
+      {"t": "label", "x": 670, "y": 20, "w": 200, "text": "COOLANT", "font": "t28", "color": "#C4B0DC"},
+      {"t": "label", "x": 900, "y": 20, "w": 110, "text": "°C", "font": "t28", "color": "#C4B0DC", "align": "right"},
+      {"t": "animnum", "x": 700, "y": 14, "w": 315, "size": "M", "v": "ect", "align": "right", "warn": 105},
+      {"t": "segbar", "x": 668, "y": 146, "w": 342, "h": 24, "v": "ect", "min": 40, "max": 130, "n": 17, "peakmark": 1, "red": 105},
+      {"t": "label", "x": 670, "y": 212, "w": 200, "text": "IAT", "font": "t28", "color": "#C4B0DC"},
+      {"t": "label", "x": 900, "y": 212, "w": 110, "text": "°C", "font": "t28", "color": "#C4B0DC", "align": "right"},
+      {"t": "animnum", "x": 700, "y": 206, "w": 315, "size": "M", "v": "iat", "align": "right"},
+      {"t": "segbar", "x": 668, "y": 338, "w": 342, "h": 24, "v": "iat", "min": -10, "max": 80, "n": 17, "peakmark": 1},
+      {"t": "label", "x": 670, "y": 404, "w": 200, "text": "TPS", "font": "t28", "color": "#C4B0DC"},
+      {"t": "label", "x": 900, "y": 404, "w": 110, "text": "%", "font": "t28", "color": "#C4B0DC", "align": "right"},
+      {"t": "animnum", "x": 700, "y": 398, "w": 315, "size": "M", "v": "tps", "align": "right"},
+      {"t": "segbar", "x": 668, "y": 530, "w": 342, "h": 24, "v": "tps", "min": 0, "max": 100, "n": 17, "peakmark": 1}
+    ]},
     {"name": "PEAK", "w": [
       {"t": "tile", "x": 24, "y": 24, "w": 320, "h": 156, "v": "rpm", "peak": "max", "title_en": "MAX RPM", "unit": "rpm", "dec": 0},
       {"t": "tile", "x": 352, "y": 24, "w": 320, "h": 156, "v": "spd", "peak": "max", "title_en": "MAX SPEED", "unit": "km/h", "dec": 0},
@@ -132,7 +347,7 @@ const char* const BUILTIN = R"JSON({
 })JSON";
 
 // ---------------------------------------------------------------- วิดเจ็ต
-enum Type { T_LABEL, T_VALUE, T_TILE, T_ARC, T_BAR, T_SHIFT, T_RECT, T_IMAGE, T_TICKS, T_NEEDLE };
+enum Type { T_LABEL, T_VALUE, T_TILE, T_ARC, T_BAR, T_SHIFT, T_RECT, T_IMAGE, T_TICKS, T_NEEDLE, T_ANUM, T_SEGBAR, T_LAMP, T_COVER, T_GIFRPM };
 
 struct W {
   Type type;
@@ -153,7 +368,13 @@ struct W {
   float shown = 0;              // ค่าที่แสดง (หน่วงให้นุ่ม)
   int lastState = -1;
   int64_t lastTxtUs = 0;
-  int peak = 0;                 // 1 = แสดงค่าสูงสุด · 2 = ค่าต่ำสุด         // ตัวเลขเปลี่ยนได้ไม่เกิน ~12 ครั้ง/วิ (อ่านทัน + วาดน้อยลง)
+  int peak = 0;                 // 1 = แสดงค่าสูงสุด · 2 = ค่าต่ำสุด
+  int mode = 0;                 // shift: 0 ไฟรอบ เขียว/เหลือง/แดง · 1 แถบระดับ (สีเดียว / ไล่ความร้อน)
+  int align = 0;                // animnum: 0 ซ้าย 1 กลาง 2 ขวา
+  int bx = 0, bw = 0;           // cover: ช่วงของแถบ
+  const an_set_t* aset = nullptr;
+  std::vector<lv_draw_buf_t*> frames;   // gifrpm: เฟรมที่ถอดไว้ (RGB565)
+  float pk = 0;                 // segbar: ค่าสูงสุดที่จำไว้         // ตัวเลขเปลี่ยนได้ไม่เกิน ~12 ครั้ง/วิ (อ่านทัน + วาดน้อยลง)
 };
 
 struct Saved { lv_obj_t* o; lv_opa_t bg, border; };
@@ -168,6 +389,7 @@ struct Page {
   lv_opa_t tileBg = LV_OPA_COVER;
   std::vector<lv_obj_t*> live;     // ปุ่ม / GIF: ไม่อบเป็นรูป
   std::vector<lv_obj_t*> gifs;     // หยุดเล่นตอนไม่ได้แสดงหน้านี้
+  int forceBake = -1;              // "bake": 1 บังคับอบ · 0 ไม่อบ · ไม่ใส่ = อัตโนมัติ
 };
 
 static std::vector<Page> pages;
@@ -350,16 +572,24 @@ static void mkTile(lv_obj_t* p, W& w, cJSON* j) {
 static void mkShift(lv_obj_t* p, W& w, cJSON* j) {
   int x = jInt(j, "x", 0), y = jInt(j, "y", 0), ww = jInt(j, "w", 900), hh = jInt(j, "h", 20), n = jInt(j, "n", 16);
   if (n < 2) n = 2;
-  if (n > 40) n = 40;
+  if (n > 64) n = 64;
   w.from = jNum(j, "from", 5000);
   w.to = jNum(j, "to", 7000);
+  w.red = jNum(j, "red", 1e9f);
   w.offCol = colorOf(jStr(j, "off"), lv_color_hex(0x1A1A20));
-  int gap = 6, sw = (ww - gap * (n - 1)) / n;
+  const char* md = jStr(j, "mode");
+  if (md && !strcmp(md, "level")) w.mode = 1;          // แถบระดับ: ติดตามค่า from→to สีเดียว (เกิน red = แดง)
+  if (md && !strcmp(md, "heat")) w.mode = 2;           // แถบระดับไล่ความร้อน: สีหลัก → แดง
+  w.col = colorOf(jStr(j, "color"), lv_color_hex(0x2BD46A));
+  int gap = jInt(j, "gap", 6), sw = (ww - gap * (n - 1)) / n;
+  int tallEvery = jInt(j, "tall_every", 0), tallH = jInt(j, "tall_h", 0);
+  int rad = jInt(j, "radius", hh / 3);
   for (int i = 0; i < n; i++) {
     lv_obj_t* s = lv_obj_create(p);
+    int h2 = (tallEvery > 0 && i % tallEvery == 0) ? hh + tallH : hh;
     lv_obj_set_pos(s, x + i * (sw + gap), y);
-    lv_obj_set_size(s, sw, hh);
-    lv_obj_set_style_radius(s, hh / 3, 0);
+    lv_obj_set_size(s, sw, h2);
+    lv_obj_set_style_radius(s, rad, 0);
     lv_obj_set_style_border_width(s, 0, 0);
     lv_obj_set_style_pad_all(s, 0, 0);
     lv_obj_set_style_bg_color(s, w.offCol, 0);
@@ -384,6 +614,200 @@ static void mkBar(lv_obj_t* p, W& w, cJSON* j) {
   lv_obj_set_style_anim_duration(b, 0, 0);
   plain(b);
   w.obj = b;
+}
+
+
+// ---- ตัวเลขแบบไตเติลอนิเมะ: รูปทีละตัวอักษร (ชมพู→ขาว ขอบขาว+ม่วง เงาเยื้อง)
+static const an_glyph_t* anGlyph(const an_set_t* st, char c) {
+  for (int i = 0; i < st->n; i++) if (st->g[i].ch == c) return &st->g[i];
+  return nullptr;
+}
+static void mkAnum(lv_obj_t* p, W& w, cJSON* j) {
+  const char* sz = jStr(j, "size");
+  w.aset = sz && !strcmp(sz, "L") ? &an_L : &an_M;
+  lv_obj_t* box = lv_obj_create(p);
+  lv_obj_remove_style_all(box);
+  lv_obj_set_pos(box, jInt(j, "x", 0), jInt(j, "y", 0));
+  lv_obj_set_size(box, jInt(j, "w", 300), w.aset->h);
+  plain(box);
+  for (int i = 0; i < 7; i++) {
+    lv_obj_t* im = lv_image_create(box);
+    lv_obj_add_flag(im, LV_OBJ_FLAG_HIDDEN);
+    plain(im);
+  }
+  const char* al = jStr(j, "align");
+  w.align = al && !strcmp(al, "center") ? 1 : al && !strcmp(al, "right") ? 2 : 0;
+  w.obj = box;
+}
+static void anumSet(W& w, const char* txt, bool hot) {
+  int n = (int)strlen(txt);
+  if (n > 7) n = 7;
+  int total = 0;
+  for (int i = 0; i < n; i++) { const an_glyph_t* g = anGlyph(w.aset, txt[i]); if (g) total += g->adv + w.aset->outline; }
+  int bw = lv_obj_get_width(w.obj);
+  int x = w.align == 2 ? bw - total - w.aset->outline : w.align == 1 ? (bw - total) / 2 : 0;
+  for (int i = 0; i < 7; i++) {
+    lv_obj_t* im = lv_obj_get_child(w.obj, i);
+    const an_glyph_t* g = i < n ? anGlyph(w.aset, txt[i]) : nullptr;
+    if (!g) { lv_obj_add_flag(im, LV_OBJ_FLAG_HIDDEN); continue; }
+    lv_image_set_src(im, g->img);
+    lv_obj_set_pos(im, x + g->ofs, 0);
+    lv_obj_set_style_image_recolor(im, lv_color_hex(0xFF2030), 0);
+    lv_obj_set_style_image_recolor_opa(im, hot ? 150 : 0, 0);
+    lv_obj_remove_flag(im, LV_OBJ_FLAG_HIDDEN);
+    x += g->adv + w.aset->outline;
+  }
+}
+
+// ---- แถบช่องเฉียง (แบบหน้า Anime): ม่วง→ชมพู→ขาว · เกิน red = แดง · ขีดขาว = ค่าสูงสุด
+static void segbarDraw(lv_event_t* e) {
+  W* w = (W*)lv_event_get_user_data(e);
+  lv_obj_t* o = (lv_obj_t*)lv_event_get_current_target(e);
+  lv_layer_t* layer = lv_event_get_layer(e);
+  lv_area_t a;
+  lv_obj_get_coords(o, &a);
+  int n = w->bw, H = lv_area_get_height(&a), Wd = lv_area_get_width(&a);
+  float pitch = (float)(Wd - 4) / n, sk = H * 0.35f;
+  float f = (w->shown - w->mn) / (w->mx - w->mn), fr = (w->red - w->mn) / (w->mx - w->mn), fp = (w->pk - w->mn) / (w->mx - w->mn);
+  int pkSeg = w->peak ? (int)fminf(n - 1, fmaxf(0, fp * n)) : -1;
+  bool flash = w->shown >= w->red && w->lastState;
+  for (int s2 = 0; s2 < n; s2++) {
+    float t = (float)s2 / n;
+    bool lit = t < f, rz = t >= fr;
+    lv_color_t c;
+    if (s2 == pkSeg) c = lv_color_hex(0xFFF4FC);
+    else if (flash) c = lv_color_hex(0xFF3246);
+    else if (lit) {
+      float u = t / fmaxf(fr, .01f);
+      c = rz ? lv_color_hex(0xFF3246) : u < .55f ? lv_color_mix(lv_color_hex(0xFF5CC4), lv_color_hex(0x8C46E6), (uint8_t)(255 * u / .55f))
+                                                 : lv_color_mix(lv_color_hex(0xFFF4FC), lv_color_hex(0xFF5CC4), (uint8_t)(255 * (u - .55f) / .45f));
+    } else c = rz ? lv_color_hex(0x3C0E16) : lv_color_hex(0x221630);
+    float x0 = a.x1 + s2 * pitch, x1 = x0 + pitch - 3;
+    lv_draw_triangle_dsc_t d;
+    lv_draw_triangle_dsc_init(&d);
+    d.bg_color = c;
+    d.bg_opa = LV_OPA_COVER;
+    d.p[0] = {x0 + sk, (lv_value_precise_t)a.y1}; d.p[1] = {x1 + sk, (lv_value_precise_t)a.y1}; d.p[2] = {x0, (lv_value_precise_t)a.y2};
+    lv_draw_triangle(layer, &d);
+    d.p[0] = {x1 + sk, (lv_value_precise_t)a.y1}; d.p[1] = {x1, (lv_value_precise_t)a.y2}; d.p[2] = {x0, (lv_value_precise_t)a.y2};
+    lv_draw_triangle(layer, &d);
+  }
+}
+static void mkSegbar(lv_obj_t* p, W& w, cJSON* j) {
+  lv_obj_t* o = lv_obj_create(p);
+  lv_obj_remove_style_all(o);
+  lv_obj_set_pos(o, jInt(j, "x", 0), jInt(j, "y", 0));
+  lv_obj_set_size(o, jInt(j, "w", 600), jInt(j, "h", 28));
+  w.mn = jNum(j, "min", 0);
+  w.mx = jNum(j, "max", 100);
+  w.red = jNum(j, "red", 1e9f);
+  w.bw = jInt(j, "n", 20);
+  if (w.bw < 2) w.bw = 2;
+  if (!w.peak && jInt(j, "peakmark", 0)) w.peak = 3;   // ขีดค่าสูงสุด (ใช้ pmax)
+  plain(o);
+  w.obj = o;
+}
+
+// ---- ไฟสถานะ: ติดเมื่อค่า >= "on" (เช่น ENGINE รอบ > 400, LINK = 1) · มีข้อความในกล่องได้
+static void mkLamp(lv_obj_t* p, W& w, cJSON* j) {
+  lv_obj_t* o = lv_obj_create(p);
+  lv_obj_set_pos(o, jInt(j, "x", 0), jInt(j, "y", 0));
+  lv_obj_set_size(o, jInt(j, "w", 180), jInt(j, "h", 40));
+  lv_obj_set_style_radius(o, jInt(j, "radius", 4), 0);
+  lv_obj_set_style_border_width(o, jInt(j, "bw", 0), 0);
+  lv_obj_set_style_border_color(o, colorOf(jStr(j, "border"), lv_color_hex(0x666666)), 0);
+  lv_obj_set_style_pad_all(o, 0, 0);
+  w.col = colorOf(jStr(j, "color"), lv_color_hex(0x2EC84A));
+  w.offCol = colorOf(jStr(j, "off"), lv_color_hex(0x555555));
+  w.warnCol = colorOf(jStr(j, "warncolor"), C_RED);
+  w.from = jNum(j, "on", 0.5f);
+  lv_obj_set_style_bg_color(o, w.offCol, 0);
+  plain(o);
+  if (const char* t = jTxt(j, "text")) {
+    lv_obj_t* l = lv_label_create(o);
+    lv_obj_set_style_text_font(l, fontOf(jStr(j, "font"), &f_t20), 0);
+    lv_obj_set_style_text_color(l, colorOf(jStr(j, "text_color"), lv_color_hex(0x000000)), 0);
+    lv_label_set_text(l, t);
+    lv_obj_center(l);
+  }
+  w.obj = o;
+}
+
+// ---- แถบไล่สีแบบ ECU: พื้นไล่สี (นิ่ง อบเป็นรูปได้) + แผ่นทึบปิดส่วนที่ยังไม่ถึง (ขยับตามค่า)
+static void mkCover(lv_obj_t* p, W& w, cJSON* j) {
+  int x = jInt(j, "x", 0), y = jInt(j, "y", 0), ww = jInt(j, "w", 900), hh = jInt(j, "h", 30);
+  w.mn = jNum(j, "min", 0);
+  w.mx = jNum(j, "max", 8000);
+  cJSON* g = cJSON_GetObjectItemCaseSensitive(j, "grad");
+  int ns = cJSON_IsArray(g) ? cJSON_GetArraySize(g) : 0;
+  if (ns >= 2) {
+    for (int i = 0; i < ns - 1; i++) {
+      int xa = x + ww * i / (ns - 1), xb = x + ww * (i + 1) / (ns - 1);
+      lv_obj_t* r = lv_obj_create(p);
+      lv_obj_remove_style_all(r);
+      lv_obj_set_pos(r, xa, y);
+      lv_obj_set_size(r, xb - xa, hh);
+      lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
+      lv_obj_set_style_bg_color(r, colorOf(cJSON_GetArrayItem(g, i)->valuestring, acc), 0);
+      lv_obj_set_style_bg_grad_color(r, colorOf(cJSON_GetArrayItem(g, i + 1)->valuestring, acc), 0);
+      lv_obj_set_style_bg_grad_dir(r, LV_GRAD_DIR_HOR, 0);
+      plain(r);
+    }
+  }
+  lv_obj_t* c = lv_obj_create(p);
+  lv_obj_remove_style_all(c);
+  lv_obj_set_pos(c, x, y);
+  lv_obj_set_size(c, ww, hh);
+  lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
+  lv_obj_set_style_bg_color(c, colorOf(jStr(j, "off"), lv_color_hex(0x1A1A1A)), 0);
+  plain(c);
+  w.bx = x;
+  w.bw = ww;
+  w.obj = c;
+}
+
+// ---- GIF ตามรอบ (แบบหน้า Anime ของ 4.3): ถอดทุกเฟรมเก็บไว้ (RGB565) แล้วเลือกเฟรมตามรอบ — เหยียบ = เดินหน้า ปล่อย = ถอยกลับ
+static void mkGifRpm(lv_obj_t* p, Page& pg, W& w, cJSON* j) {
+  const char* src = jStr(j, "src");
+  lv_obj_t* im = lv_image_create(p);
+  lv_obj_set_pos(im, jInt(j, "x", 0), jInt(j, "y", 0));
+  plain(im);
+  w.obj = im;
+  w.mn = jNum(j, "min", 0);
+  w.mx = jNum(j, "max", 5500);
+  if (!src) return;
+  gd_GIF* gif = gd_open_gif_file(src);
+  if (!gif) { ESP_LOGW("skin", "gifrpm: open %s failed", src); return; }
+  size_t one = (size_t)gif->width * gif->height * 2;
+  int nf = 0;
+  gif->loop_count = 1;                                      // ไม่ให้วนซ้ำ (GIF ที่ตั้งเล่นวนไม่รู้จบ)
+  while (nf < 400 && gd_get_frame(gif) == 1) nf++;          // นับเฟรมก่อน
+  int budget = (int)((3u * 1024 * 1024) / (one ? one : 1)); // ไม่เกิน ~3 MB
+  int step = nf > budget && budget > 0 ? (nf + budget - 1) / budget : 1;
+  gd_rewind(gif);
+  int k = 0;
+  while (k < 400 && gd_get_frame(gif) == 1) {
+    gd_render_frame(gif, gif->canvas);
+    if (k++ % step) continue;
+    lv_draw_buf_t* b = lv_draw_buf_create(gif->width, gif->height, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
+    if (!b) break;
+    const uint8_t* c = gif->canvas;                         // ARGB8888 (B,G,R,A)
+    for (int y = 0; y < gif->height; y++) {
+      uint16_t* d = (uint16_t*)(b->data + y * b->header.stride);
+      for (int x = 0; x < gif->width; x++, c += 4) d[x] = (uint16_t)(((c[2] & 0xF8) << 8) | ((c[1] & 0xFC) << 3) | (c[0] >> 3));
+    }
+    w.frames.push_back(b);
+  }
+  gd_close_gif(gif);
+  if (!w.frames.empty()) lv_image_set_src(im, w.frames[0]);
+  int zw = jInt(j, "w", 0);                                 // ขยายให้พอดีกรอบ (ถ้าให้ "w")
+  if (zw > 0 && !w.frames.empty()) {
+    lv_image_set_scale(im, (uint32_t)(256 * zw / w.frames[0]->header.w));
+    lv_obj_set_size(im, zw, jInt(j, "h", w.frames[0]->header.h * zw / w.frames[0]->header.w));
+    lv_image_set_inner_align(im, LV_IMAGE_ALIGN_STRETCH);
+  }
+  pg.live.push_back(im);
+  ESP_LOGI("skin", "gifrpm %s: %d of %d frames", src, (int)w.frames.size(), nf);
 }
 
 // รูป: .gif = เล่นวน (ไม่อบเป็นรูปนิ่ง · หยุดเล่นตอนไม่ได้อยู่หน้านั้น) · อื่น ๆ (jpg/png) = รูปนิ่ง
@@ -556,6 +980,22 @@ static void buildWidget(lv_obj_t* tile, Page& pg, cJSON* j) {
     lv_obj_t* im = mkImage(tile, pg, src);
     lv_obj_set_pos(im, jInt(j, "x", 0), jInt(j, "y", 0));
     return;
+  } else if (!strcmp(t, "animnum")) {
+    w.type = T_ANUM;
+    mkAnum(tile, w, j);
+  } else if (!strcmp(t, "segbar")) {
+    w.type = T_SEGBAR;
+    mkSegbar(tile, w, j);
+  } else if (!strcmp(t, "lamp")) {
+    w.type = T_LAMP;
+    mkLamp(tile, w, j);
+  } else if (!strcmp(t, "cover")) {
+    w.type = T_COVER;
+    mkCover(tile, w, j);
+  } else if (!strcmp(t, "gifrpm")) {
+    w.type = T_GIFRPM;
+    if (w.key < 0) w.key = vd::RPM;
+    mkGifRpm(tile, pg, w, j);
   } else if (!strcmp(t, "button")) {             // ปุ่มแตะ: "action": "peak_reset"
     lv_obj_t* b = lv_button_create(tile);
     lv_obj_set_pos(b, jInt(j, "x", 0), jInt(j, "y", 0));
@@ -580,6 +1020,27 @@ static void buildWidget(lv_obj_t* tile, Page& pg, cJSON* j) {
   pg.w.push_back(w);
 }
 
+// ---------------------------------------------------------------- ซ่อนหน้า (ตามชื่อหน้า · เก็บใน NVS ฝั่ง ui)
+static std::vector<std::string> allNames;
+static std::string hideList;              // "|ECU|OBD2|"
+static bool isHiddenName(const char* nm) {
+  std::string k = std::string("|") + nm + "|";
+  return hideList.find(k) != std::string::npos;
+}
+void setHidden(const char* list) { hideList = list ? list : ""; }
+const char* hiddenList() { return hideList.c_str(); }
+int allCount() { return (int)allNames.size(); }
+const char* allName(int i) { return i >= 0 && i < (int)allNames.size() ? allNames[i].c_str() : ""; }
+bool isHidden(int i) { return i >= 0 && i < (int)allNames.size() && isHiddenName(allNames[i].c_str()); }
+void setHiddenAt(int i, bool hide) {
+  if (i < 0 || i >= (int)allNames.size()) return;
+  std::string k = "|" + allNames[i] + "|";
+  size_t at = hideList.find(k);
+  if (hide && at == std::string::npos) { if (hideList.empty()) hideList = "|"; hideList += allNames[i] + "|"; }
+  if (!hide && at != std::string::npos) hideList.erase(at, k.size() - 1);
+  if (hideList == "|") hideList.clear();
+}
+
 int build(lv_obj_t* tv, const char* json, char* err, size_t errLen, bool english) {
   en = english;
   cJSON* root = cJSON_Parse(json);
@@ -598,7 +1059,10 @@ int build(lv_obj_t* tv, const char* json, char* err, size_t errLen, bool english
   for (int k = 0; k < (int)pages.size(); k++) {   // รูปที่อบไว้ไม่ใช่วิดเจ็ต → คืนหน่วยความจำเอง
     Page& pg = pages[k];
     if (pg.bake) lv_draw_buf_destroy(pg.bake);
-    for (auto& w : pg.w) if (w.litBuf) lv_draw_buf_destroy(w.litBuf);
+    for (auto& w : pg.w) {
+      if (w.litBuf) lv_draw_buf_destroy(w.litBuf);
+      for (auto* f : w.frames) lv_draw_buf_destroy(f);
+    }
   }
   lv_obj_clean(tv);
   for (auto& pg : pages)
@@ -609,7 +1073,16 @@ int build(lv_obj_t* tv, const char* json, char* err, size_t errLen, bool english
   styles.clear();
   int i = 0;
   cJSON* p;
+  allNames.clear();
+  int nShow = 0;
   cJSON_ArrayForEach(p, jp) {
+    const char* nm = jStr(p, "name") ? jStr(p, "name") : "PAGE";
+    allNames.push_back(nm);
+    if (!isHiddenName(nm)) nShow++;
+  }
+  cJSON_ArrayForEach(p, jp) {
+    const char* nm = jStr(p, "name") ? jStr(p, "name") : "PAGE";
+    if (nShow > 0 && isHiddenName(nm)) continue;        // ซ่อนหน้านี้ (เมนู → หน้า) · ซ่อนหมดทุกหน้า = แสดงทั้งหมด
     lv_obj_t* tile = lv_tileview_add_tile(tv, i, 0, LV_DIR_HOR);
     lv_obj_set_style_bg_color(tile, colorOf(jStr(p, "bg"), bg), 0);
     lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
@@ -626,6 +1099,9 @@ int build(lv_obj_t* tv, const char* json, char* err, size_t errLen, bool english
     cJSON* wl = cJSON_GetObjectItemCaseSensitive(p, "w");
     cJSON* w;
     cJSON_ArrayForEach(w, wl) buildWidget(tile, pg, w);
+    pg.forceBake = jInt(p, "bake", -1);
+    for (auto& ww : pg.w)
+      if (ww.type == T_SEGBAR) lv_obj_add_event_cb(ww.obj, segbarDraw, LV_EVENT_DRAW_MAIN, &ww);
     i++;
   }
   cJSON_Delete(root);
@@ -651,12 +1127,31 @@ static bool hasDynInside(lv_obj_t* o, const std::vector<lv_obj_t*>& dyn) {
       if (p == o) return true;
   return false;
 }
+// ของนิ่งที่วางทับของที่ขยับ (เช่น ป้าย "TPS" บนบาร์) ต้องวาดสดต่อ ไม่งั้นบาร์จะทับป้ายที่อยู่ในรูป
+static lv_obj_t* topOf(lv_obj_t* tile, lv_obj_t* o) {
+  while (o && lv_obj_get_parent(o) != tile) o = lv_obj_get_parent(o);
+  return o;
+}
+static bool overDyn(lv_obj_t* tile, lv_obj_t* c, const std::vector<lv_obj_t*>& dyn) {
+  lv_area_t a;
+  lv_obj_get_coords(c, &a);
+  int ci = lv_obj_get_index(c);
+  for (auto* d : dyn) {
+    lv_obj_t* t = topOf(tile, d);
+    if (!t || t == c || lv_obj_get_index(t) >= ci) continue;
+    lv_area_t b, r;
+    lv_obj_get_coords(d, &b);
+    if (lv_area_intersect(&r, &a, &b)) return true;
+  }
+  return false;
+}
 static void strip(Page& pg, lv_obj_t* o, const std::vector<lv_obj_t*>& dyn) {
   uint32_t n = lv_obj_get_child_count(o);
   for (uint32_t i = 0; i < n; i++) {
     lv_obj_t* c = lv_obj_get_child(o, i);
     if (c == pg.bakeImg || has(dyn, c)) continue;
     if (lv_obj_has_flag(c, LV_OBJ_FLAG_HIDDEN)) continue;
+    if (o == pg.tile && overDyn(pg.tile, c, dyn)) continue;   // วาดสดต่อ (อยู่บนของที่ขยับ)
     if (hasDynInside(c, dyn)) {
       pg.clear.push_back({c, lv_obj_get_style_bg_opa(c, 0), lv_obj_get_style_border_opa(c, 0)});
       lv_obj_set_style_bg_opa(c, LV_OPA_TRANSP, 0);
@@ -688,7 +1183,8 @@ static void bake(Page& pg) {
   if (pg.bake || !pg.tile) return;
   if (!pg.gifs.empty()) return;       // มี GIF (อาจเป็นพื้นหลัง) → อบแล้วลำดับชั้นเพี้ยน ไม่อบ
   bool worth = false;                 // หน้าที่มีแค่ช่องตัวเลข: พื้นสีเรียบวาดเร็วกว่าอ่านรูปจาก PSRAM → ไม่ต้องอบ
-  for (auto& w : pg.w) if (w.type == T_ARC || w.type == T_TICKS || w.type == T_NEEDLE) worth = true;
+  for (auto& w : pg.w) if (w.type == T_ARC || w.type == T_TICKS || w.type == T_NEEDLE || w.type == T_COVER) worth = true;
+  if (pg.forceBake >= 0) worth = pg.forceBake;
   if (!worth) return;
   int64_t t0 = esp_timer_get_time();
   lv_obj_update_layout(pg.tile);
@@ -790,7 +1286,8 @@ void update(int page, const vd::Snap& s) {
   if (dt > 0.2f) dt = 0.2f;
   const float k = 1.f - expf(-dt / 0.085f);
   for (W& w : pages[page].w) {
-    bool have = w.key >= 0 && (w.peak ? s.phave[w.key] : s.have[w.key]);
+    bool pkv = w.peak == 1 || w.peak == 2;
+    bool have = w.key >= 0 && (pkv ? s.phave[w.key] : s.have[w.key]);
     float v = !have ? 0 : w.peak == 1 ? s.pmax[w.key] : w.peak == 2 ? s.pmin[w.key] : s.v[w.key];
     switch (w.type) {
       case T_VALUE:
@@ -801,6 +1298,66 @@ void update(int page, const vd::Snap& s) {
         else snprintf(b, sizeof(b), "%.*f", w.dec, (double)v);
         setText(w, b);
         setColor(w, !have ? 0 : v >= w.warn ? 1 : v <= w.low ? 2 : 0);
+        break;
+      }
+      case T_ANUM: {
+        char b[16];
+        if (!have) strcpy(b, "-");
+        else if (w.key == vd::GEAR) { if (v < 0.5f) strcpy(b, "N"); else snprintf(b, sizeof(b), "%d", (int)lroundf(v)); }
+        else snprintf(b, sizeof(b), "%.*f", w.dec, (double)v);
+        bool hot = have && v >= w.warn;
+        if (strcmp(w.last, b) || hot != (w.lastState == 1)) {
+          if (gNow - w.lastTxtUs < 80000 && w.last[0] != '\x01') break;
+          w.lastTxtUs = gNow;
+          strncpy(w.last, b, sizeof(w.last) - 1);
+          w.lastState = hot ? 1 : 0;
+          anumSet(w, b, hot);
+        }
+        break;
+      }
+      case T_SEGBAR: {
+        w.shown += (v - w.shown) * k;
+        if (w.peak == 3 && w.key >= 0 && s.phave[w.key]) w.pk = s.pmax[w.key];
+        int n = w.bw;
+        int lit = have ? (int)floorf((w.shown - w.mn) / (w.mx - w.mn) * n) : 0;
+        bool flash = have && w.shown >= w.red && blink;
+        int pkSeg = w.peak == 3 ? (int)((w.pk - w.mn) / (w.mx - w.mn) * n) : -1;
+        int stt = lit * 4 + (flash ? 1 : 0) + pkSeg * 1000;
+        if (stt == w.lastI) break;
+        w.lastI = stt;
+        w.lastState = flash ? 1 : 0;
+        lv_obj_invalidate(w.obj);
+        break;
+      }
+      case T_LAMP: {
+        int st = !have ? 0 : v >= w.warn ? 2 : v >= w.from ? 1 : 0;
+        if (st == w.lastState) break;
+        w.lastState = st;
+        lv_obj_set_style_bg_color(w.obj, st == 2 ? w.warnCol : st == 1 ? w.col : w.offCol, 0);
+        break;
+      }
+      case T_COVER: {
+        w.shown += (v - w.shown) * k;
+        float f = have ? (w.shown - w.mn) / (w.mx - w.mn) : 0;
+        if (f < 0) f = 0;
+        if (f > 1) f = 1;
+        int px = (int)lroundf(w.bw * f);
+        if (px == w.lastI) break;
+        w.lastI = px;
+        lv_obj_set_x(w.obj, w.bx + px);
+        lv_obj_set_width(w.obj, w.bw - px);
+        if (px >= w.bw) lv_obj_add_flag(w.obj, LV_OBJ_FLAG_HIDDEN); else lv_obj_remove_flag(w.obj, LV_OBJ_FLAG_HIDDEN);
+        break;
+      }
+      case T_GIFRPM: {
+        if (w.frames.empty()) break;
+        float f = have ? (v - w.mn) / (w.mx - w.mn) : 0;
+        if (f < 0) f = 0;
+        if (f > 1) f = 1;
+        int idx = (int)lroundf(f * (w.frames.size() - 1));
+        if (idx == w.lastI) break;
+        w.lastI = idx;
+        lv_image_set_src(w.obj, w.frames[idx]);
         break;
       }
       case T_ARC: {
@@ -836,6 +1393,22 @@ void update(int page, const vd::Snap& s) {
         int lit = have ? (int)floorf(f * n) : 0;
         if (lit < 0) lit = 0;
         if (lit > n) lit = n;
+        if (w.mode) {                                         // แถบระดับ
+          int stt2 = lit + (have && v >= w.red ? 500 : 0);
+          if (stt2 == w.lastState) break;
+          w.lastState = stt2;
+          for (int i = 0; i < n; i++) {
+            float fi = (float)i / n, fr = (w.red - w.from) / (w.to - w.from);
+            lv_color_t c = w.offCol;
+            if (i < lit) {
+              if (fi >= fr) c = C_RED;
+              else if (w.mode == 2) c = lv_color_mix(lv_color_hex(0xFF2A2A), w.col, (uint8_t)(255 * fminf(1.f, fi / fmaxf(fr, .01f)) * 0.7f));
+              else c = w.col;
+            }
+            lv_obj_set_style_bg_color(w.segs[i], c, 0);
+          }
+          break;
+        }
         int stt = (have && v >= w.to) ? (blink ? 1000 : 1001) : lit;
         if (stt == w.lastState) break;
         w.lastState = stt;

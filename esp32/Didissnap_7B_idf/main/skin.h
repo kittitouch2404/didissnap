@@ -15,6 +15,13 @@ void update(int page, const vd::Snap& s);
 // หน้าที่แสดงอยู่: วาดส่วนที่ไม่ขยับ (พื้น สเกล ป้าย กรอบ) เป็นรูปเดียวไว้ → ทุกเฟรมวาดใหม่แค่ค่า/เข็ม (เร็วหลายเท่า)
 // หน้าอื่นคืนเป็นวิดเจ็ตปกติ (ประหยัด PSRAM: รูปละ 1.2 MB)
 void setActive(int page);
+// ซ่อนหน้า: รายชื่อแบบ "|ECU|OBD2|" (ใช้ตอน build ครั้งถัดไป)
+void setHidden(const char* list);
+const char* hiddenList();
+int allCount();                 // ทุกหน้าในสกิน (รวมที่ซ่อน)
+const char* allName(int i);
+bool isHidden(int i);
+void setHiddenAt(int i, bool hide);
 int pageCount();
 const char* pageName(int i);
 lv_color_t accent();

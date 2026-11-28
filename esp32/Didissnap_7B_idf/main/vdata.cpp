@@ -12,9 +12,9 @@
 namespace vd {
 
 const char* const KEYS[NKEY] = {"rpm", "spd", "ect", "iat", "volt", "load", "tps", "map", "maf", "fuel", "stft", "afr",
-                                "timing", "oil", "cvt", "c1", "c2", "c3", "c4", "boost", "gear"};
+                                "timing", "oil", "cvt", "c1", "c2", "c3", "c4", "boost", "gear", "trip", "link"};
 const char* const NAMES_TH[NKEY] = {"รอบ", "ความเร็ว", "น้ำ", "อากาศเข้า", "แบต", "โหลด", "คันเร่ง", "MAP", "MAF", "น้ำมัน",
-                                    "STFT", "AFR", "จุดระเบิด", "น้ำมันเครื่อง", "เกียร์ CVT", "C1", "C2", "C3", "C4", "บูสต์", "เกียร์"};
+                                    "STFT", "AFR", "จุดระเบิด", "น้ำมันเครื่อง", "เกียร์ CVT", "C1", "C2", "C3", "C4", "บูสต์", "เกียร์", "ระยะทาง", "เชื่อมต่อ"};
 
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 static Snap cur;
@@ -210,6 +210,16 @@ void get(Snap& s) {
     s.have[GEAR] = false;
   }
   calcGear(s);
+  // ระยะทางตั้งแต่เปิดจอ (km) จากความเร็ว · สถานะเชื่อมต่อรถ (1 = ได้ค่าจากรถ/จำลอง)
+  static double tripKm = 0;
+  static int64_t tLast = 0;
+  int64_t t = nowUs();
+  if (tLast && s.live && s.have[SPD]) tripKm += s.v[SPD] * ((t - tLast) / 3.6e9);
+  tLast = t;
+  s.v[TRIP] = (float)tripKm;
+  s.have[TRIP] = true;
+  s.v[LINK] = s.live ? 1 : 0;
+  s.have[LINK] = true;
   peaks(s);
 }
 

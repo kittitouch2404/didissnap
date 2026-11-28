@@ -47,6 +47,9 @@ static void cfgLoad() {
   if (nvs_get_i32(h, "color", &v) == ESP_OK) cfg.color = v;
   size_t n = sizeof(cfg.skin);
   if (nvs_get_str(h, "skin", cfg.skin, &n) != ESP_OK) cfg.skin[0] = 0;
+  char hide[256];
+  n = sizeof(hide);
+  if (nvs_get_str(h, "hide", hide, &n) == ESP_OK) skin::setHidden(hide);
   nvs_close(h);
 }
 static void cfgSave() {
@@ -384,18 +387,50 @@ static void subDisplay() {
   r = row(b, T("โหมดจำลอง (ไม่ต้องต่อรถ)", "Demo mode (no car needed)"));
   sw(r, cfg.demo, onDemoSw);
 }
+static void hideSave() {
+  nvs_handle_t h;
+  if (nvs_open("ui", NVS_READWRITE, &h) != ESP_OK) return;
+  nvs_set_str(h, "hide", skin::hiddenList());
+  nvs_commit(h);
+  nvs_close(h);
+}
+static void subPages();
+static void onPageShow(lv_event_t* e) {
+  int i = (int)(intptr_t)lv_event_get_user_data(e);
+  bool on = lv_obj_has_state((lv_obj_t*)lv_event_get_target(e), LV_STATE_CHECKED);
+  skin::setHiddenAt(i, !on);
+  hideSave();
+  const char* keep = skin::pageName(curPage);
+  char nm[24];
+  snprintf(nm, sizeof(nm), "%s", keep);
+  loadSkin(cfg.skin);
+  for (int k = 0; k < skin::pageCount(); k++)            // อยู่หน้าเดิมต่อ (ถ้ายังแสดงอยู่)
+    if (!strcmp(skin::pageName(k), nm)) { curPage = k; lv_tileview_set_tile_by_index(tv, k, 0, LV_ANIM_OFF); rebuildDots(); skin::setActive(k); }
+  subPages();
+}
 static void subPages() {
-  lv_obj_t* b = openSub(T("หน้า", "PAGES"));
-  for (int i = 0; i < skin::pageCount(); i++) {
+  lv_obj_t* b = openSub(T("หน้า · แตะชื่อ = ไปหน้านั้น · สวิตช์ = แสดง/ซ่อน", "PAGES · tap = go · switch = show/hide"));
+  int shown = 0;
+  for (int i = 0; i < skin::allCount(); i++) {
     char t[48];
-    snprintf(t, sizeof(t), "%02d   %s", i + 1, skin::pageName(i));
+    bool hid = skin::isHidden(i);
+    snprintf(t, sizeof(t), "%02d   %s", i + 1, skin::allName(i));
     lv_obj_t* r = row(b, t, 76);
-    pressFx(r);
-    lv_obj_add_event_cb(r, onGoPage, LV_EVENT_CLICKED, (void*)(intptr_t)i);
-    if (i == curPage) {
-      lv_obj_t* l = text(r, T("กำลังแสดง", "showing"), &f_t20, accent(), 0, 0);
-      lv_obj_align(l, LV_ALIGN_RIGHT_MID, 0, 0);
+    if (!hid) {
+      int idx = shown++;
+      pressFx(r);
+      lv_obj_add_event_cb(r, onGoPage, LV_EVENT_CLICKED, (void*)(intptr_t)idx);
+      if (idx == curPage) {
+        lv_obj_t* l = text(r, T("กำลังแสดง", "showing"), &f_t20, accent(), 0, 0);
+        lv_obj_align(l, LV_ALIGN_RIGHT_MID, -120, 0);
+      }
     }
+    lv_obj_t* s = lv_switch_create(r);
+    lv_obj_set_size(s, 92, 46);
+    lv_obj_align(s, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_bg_color(s, accent(), LV_PART_INDICATOR | LV_STATE_CHECKED);
+    if (!hid) lv_obj_add_state(s, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(s, onPageShow, LV_EVENT_VALUE_CHANGED, (void*)(intptr_t)i);
   }
 }
 static void subSd() {
