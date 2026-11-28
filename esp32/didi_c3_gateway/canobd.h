@@ -32,7 +32,7 @@ inline void stop() {
   on = false;
 }
 
-inline bool start(int pinTx, int pinRx, uint32_t bitrate, bool listenOnly, bool extId = false) {
+inline bool start(int pinTx, int pinRx, uint32_t bitrate, bool listenOnly, bool extId = false, bool hwFilter = true) {
   stop();
   twai_general_config_t g = TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)pinTx, (gpio_num_t)pinRx,
                                                         listenOnly ? TWAI_MODE_LISTEN_ONLY : TWAI_MODE_NORMAL);
@@ -44,10 +44,12 @@ inline bool start(int pinTx, int pinRx, uint32_t bitrate, bool listenOnly, bool 
   // ถามรถ: รับเฉพาะคำตอบวินิจฉัย (ฮาร์ดแวร์กรองให้) — รถใหม่บัสแน่นมาก (1,000+ เฟรม/วิ) ถ้ารับหมด
   // คิวเต็มตอน CPU ไปทำ BLE/WiFi แล้วคำตอบหลุด = "bus ok but no OBD reply" / 0/s
   //  ตัวกรอง 1: ID 11 บิต 0x700-0x7FF (คำตอบ 7E8-7EF + กล่องอื่น เช่น 768) · ตัวกรอง 2: ID 29 บิต 18DAF1xx
-  if (!listenOnly) {
+  if (!listenOnly && hwFilter) {
     f.single_filter = false;
     f.acceptance_code = ((uint32_t)(0x700 << 5) << 16) | (0x18DAF100u >> 13);
-    f.acceptance_mask = ((uint32_t)((0xFF << 5) | 0x1F) << 16) | 0x0000;
+    // ไบต์ข้อมูลแรกของเฟรม 11 บิตใช้บิต 19:16 + 3:0 ของตัวกรอง 1 (แบบ SJA1000) → ต้องไม่สนใจทั้งสองส่วน
+    // (ก่อนหน้านี้บิต 3:0 ถูกบังคับ = 7 → คำตอบ 0x06 41 .. ถูกทิ้งหมด = "bus ok but no OBD reply")
+    f.acceptance_mask = ((uint32_t)((0xFF << 5) | 0x1F) << 16) | 0x000F;
   }
   if (twai_driver_install(&g, &t, &f) != ESP_OK) return false;
   if (twai_start() != ESP_OK) { twai_driver_uninstall(); return false; }

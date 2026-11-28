@@ -20,9 +20,9 @@
 //  ESP32 รุ่นแรก DevKit / NodeMCU 30 ขา (Board: ESP32 Dev Module · Partition: Minimal SPIFFS 1.9MB APP with OTA)
 //    = Bluetooth ธรรมดา + BLE (+ WiFi เปิด/ปิดได้) สำหรับจอแอนดรอยด์จีนที่ไม่มี BLE ให้แอป
 #if CONFIG_IDF_TARGET_ESP32
-#define FW_VER "sl 2026.11.27b"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต) · sl = ESP32-Superlink (Bluetooth ธรรมดา)
+#define FW_VER "sl 2026.11.28a"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต) · sl = ESP32-Superlink (Bluetooth ธรรมดา)
 #else
-#define FW_VER "c3 2026.11.27b"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
+#define FW_VER "c3 2026.11.28a"   // เวอร์ชันเฟิร์มแวร์ (โชว์ในแอปตอนอัปเดต)
 #endif
 #define USE_BLE 1       // ส่งทาง Bluetooth (BLE) ให้ S3 / CYD / แอป
 #define USE_ESPNOW 0    // ส่งทาง ESP-NOW แบบเดิม (ต้องใช้ WiFi) — ปิดไว้
@@ -320,13 +320,18 @@ static bool tryCan(uint32_t br, uint8_t p, uint8_t pExt) {
   for (int e = 0; e < 2; e++) {
     if (!canobd::start(PIN_CAN_TX, canRx, br, false, e == 1)) return false;
     proto = e ? pExt : p;
-    if (readMasks()) {
+    bool okm = readMasks();
+    if (!okm) {                                         // สำรอง: ปิดตัวกรองฮาร์ดแวร์แล้วถามอีกครั้ง
+      if (!e) canobd::txStatus(&txErr, &busOff);
+      if (canobd::start(PIN_CAN_TX, canRx, br, false, e == 1, false)) okm = readMasks();
+      if (okm) Serial.println("[obd] reply only without hw filter");
+    }
+    if (okm) {
       pickEcu();
       Serial.printf("[obd] CAN %u %s ok, ECU 0x%X %s\n", (unsigned)br, e ? "29-bit" : "11-bit", (unsigned)canobd::ecuRx,
                     canobd::physical ? "(direct)" : "(broadcast)");
       return true;
     }
-    if (!e) canobd::txStatus(&txErr, &busOff);
     canobd::stop();
   }
   proto = DN_P_NONE;
