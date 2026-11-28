@@ -88,6 +88,8 @@ const char* const BUILTIN = R"JSON({
       {"t": "label", "x": 24, "y": 172, "w": 200, "text": "rpm", "font": "t20", "color": "#8A8A90"},
       {"t": "value", "x": 262, "y": 120, "w": 500, "v": "spd", "font": "n170", "dec": 0, "align": "center"},
       {"t": "label", "x": 262, "y": 322, "w": 500, "text": "km/h", "font": "t28", "color": "#8A8A90", "align": "center"},
+      {"t": "value", "x": 800, "y": 120, "w": 200, "v": "gear", "font": "n170", "align": "center", "color": "accent"},
+      {"t": "label", "x": 800, "y": 322, "w": 200, "text": "GEAR", "font": "t28", "color": "#8A8A90", "align": "center"},
       {"t": "tile", "x": 24, "y": 410, "w": 154, "h": 160, "v": "ect", "title": "น้ำ", "title_en": "WATER", "unit": "°C", "dec": 0, "warn": 105},
       {"t": "tile", "x": 188, "y": 410, "w": 154, "h": 160, "v": "iat", "title": "อากาศ", "title_en": "AIR", "unit": "°C", "dec": 0, "warn": 60},
       {"t": "tile", "x": 352, "y": 410, "w": 154, "h": 160, "v": "volt", "title": "แบต", "title_en": "BATT", "unit": "V", "dec": 1, "low": 12.0},
@@ -113,6 +115,18 @@ const char* const BUILTIN = R"JSON({
       {"t": "tile", "x": 24, "y": 312, "w": 320, "h": 268, "v": "afr", "title": "AFR", "unit": "", "dec": 1, "font": "n96"},
       {"t": "tile", "x": 352, "y": 312, "w": 320, "h": 268, "v": "stft", "title": "STFT", "unit": "%", "dec": 1, "font": "n96"},
       {"t": "tile", "x": 680, "y": 312, "w": 320, "h": 268, "v": "fuel", "title": "น้ำมัน", "title_en": "FUEL", "unit": "%", "dec": 0, "low": 12, "font": "n96"}
+    ]},
+    {"name": "PEAK", "w": [
+      {"t": "tile", "x": 24, "y": 24, "w": 320, "h": 156, "v": "rpm", "peak": "max", "title_en": "MAX RPM", "unit": "rpm", "dec": 0},
+      {"t": "tile", "x": 352, "y": 24, "w": 320, "h": 156, "v": "spd", "peak": "max", "title_en": "MAX SPEED", "unit": "km/h", "dec": 0},
+      {"t": "tile", "x": 680, "y": 24, "w": 320, "h": 156, "v": "ect", "peak": "max", "title_en": "MAX COOLANT", "unit": "°C", "dec": 0, "warn": 105},
+      {"t": "tile", "x": 24, "y": 188, "w": 320, "h": 156, "v": "iat", "peak": "max", "title_en": "MAX INTAKE AIR", "unit": "°C", "dec": 0},
+      {"t": "tile", "x": 352, "y": 188, "w": 320, "h": 156, "v": "map", "peak": "max", "title_en": "MAX MAP", "unit": "kPa", "dec": 0},
+      {"t": "tile", "x": 680, "y": 188, "w": 320, "h": 156, "v": "cvt", "peak": "max", "title_en": "MAX CVT TEMP", "unit": "°C", "dec": 0, "warn": 110},
+      {"t": "tile", "x": 24, "y": 352, "w": 320, "h": 156, "v": "oil", "peak": "max", "title_en": "MAX OIL TEMP", "unit": "°C", "dec": 0, "warn": 125},
+      {"t": "tile", "x": 352, "y": 352, "w": 320, "h": 156, "v": "volt", "peak": "min", "title_en": "MIN BATTERY", "unit": "V", "dec": 1, "low": 12.0},
+      {"t": "tile", "x": 680, "y": 352, "w": 320, "h": 156, "v": "afr", "peak": "min", "title_en": "MIN AFR (RICH)", "unit": "", "dec": 1},
+      {"t": "button", "x": 362, "y": 520, "w": 300, "h": 52, "text": "RESET PEAKS", "action": "peak_reset", "color": "#3A2A1A"}
     ]}
   ]
 })JSON";
@@ -138,7 +152,8 @@ struct W {
   char last[16] = "\x01";
   float shown = 0;              // ค่าที่แสดง (หน่วงให้นุ่ม)
   int lastState = -1;
-  int64_t lastTxtUs = 0;         // ตัวเลขเปลี่ยนได้ไม่เกิน ~12 ครั้ง/วิ (อ่านทัน + วาดน้อยลง)
+  int64_t lastTxtUs = 0;
+  int peak = 0;                 // 1 = แสดงค่าสูงสุด · 2 = ค่าต่ำสุด         // ตัวเลขเปลี่ยนได้ไม่เกิน ~12 ครั้ง/วิ (อ่านทัน + วาดน้อยลง)
 };
 
 struct Saved { lv_obj_t* o; lv_opa_t bg, border; };
@@ -151,6 +166,8 @@ struct Page {
   std::vector<lv_obj_t*> hid;      // ของนิ่งที่ซ่อนไว้ตอนใช้รูป
   std::vector<Saved> clear;        // กล่องที่มีค่าอยู่ข้างใน: ทำพื้นใสชั่วคราว
   lv_opa_t tileBg = LV_OPA_COVER;
+  std::vector<lv_obj_t*> live;     // ปุ่ม / GIF: ไม่อบเป็นรูป
+  std::vector<lv_obj_t*> gifs;     // หยุดเล่นตอนไม่ได้แสดงหน้านี้
 };
 
 static std::vector<Page> pages;
@@ -369,6 +386,27 @@ static void mkBar(lv_obj_t* p, W& w, cJSON* j) {
   w.obj = b;
 }
 
+// รูป: .gif = เล่นวน (ไม่อบเป็นรูปนิ่ง · หยุดเล่นตอนไม่ได้อยู่หน้านั้น) · อื่น ๆ (jpg/png) = รูปนิ่ง
+static bool isGif(const char* src) {
+  size_t n = strlen(src);
+  return n > 4 && !strcasecmp(src + n - 4, ".gif");
+}
+static lv_obj_t* mkImage(lv_obj_t* tile, Page& pg, const char* src) {
+  lv_obj_t* im;
+  if (isGif(src)) {
+    im = lv_gif_create(tile);
+    lv_gif_set_src(im, src);
+    pg.live.push_back(im);
+    pg.gifs.push_back(im);
+  } else {
+    im = lv_image_create(tile);
+    lv_image_set_src(im, src);
+  }
+  plain(im);
+  return im;
+}
+static void onPeakReset(lv_event_t*) { vd::resetPeaks(); }
+
 static void buildWidget(lv_obj_t* tile, Page& pg, cJSON* j) {
   const char* t = jStr(j, "t");
   if (!t) return;
@@ -381,6 +419,7 @@ static void buildWidget(lv_obj_t* tile, Page& pg, cJSON* j) {
   w.dec = jInt(j, "dec", 0);
   w.warn = jNum(j, "warn", 1e9f);
   w.low = jNum(j, "low", -1e9f);
+  if (const char* pk = jStr(j, "peak")) w.peak = !strcmp(pk, "min") ? 2 : 1;
   if (!strcmp(t, "label")) {
     w.type = T_LABEL;
     mkLabel(tile, jTxt(j, "text"), fontOf(jStr(j, "font"), &f_t28), colorOf(jStr(j, "color"), lv_color_hex(0xF2F2F4)),
@@ -514,10 +553,25 @@ static void buildWidget(lv_obj_t* tile, Page& pg, cJSON* j) {
   } else if (!strcmp(t, "image")) {
     const char* src = jStr(j, "src");
     if (!src) return;
-    lv_obj_t* im = lv_image_create(tile);
-    lv_image_set_src(im, src);
+    lv_obj_t* im = mkImage(tile, pg, src);
     lv_obj_set_pos(im, jInt(j, "x", 0), jInt(j, "y", 0));
-    plain(im);
+    return;
+  } else if (!strcmp(t, "button")) {             // ปุ่มแตะ: "action": "peak_reset"
+    lv_obj_t* b = lv_button_create(tile);
+    lv_obj_set_pos(b, jInt(j, "x", 0), jInt(j, "y", 0));
+    lv_obj_set_size(b, jInt(j, "w", 240), jInt(j, "h", 56));
+    lv_obj_set_style_bg_color(b, colorOf(jStr(j, "color"), lv_color_hex(0x2A2A32)), 0);
+    lv_obj_set_style_radius(b, jInt(j, "radius", 12), 0);
+    lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_t* l = lv_label_create(b);
+    lv_obj_set_style_text_font(l, fontOf(jStr(j, "font"), &f_t28), 0);
+    lv_obj_set_style_text_color(l, colorOf(jStr(j, "text_color"), lv_color_hex(0xF2F2F4)), 0);
+    lv_label_set_text(l, jTxt(j, "text") ? jTxt(j, "text") : "OK");
+    lv_obj_center(l);
+    lv_obj_add_flag(b, LV_OBJ_FLAG_EVENT_BUBBLE);
+    const char* act = jStr(j, "action");
+    if (act && !strcmp(act, "peak_reset")) lv_obj_add_event_cb(b, onPeakReset, LV_EVENT_CLICKED, nullptr);
+    pg.live.push_back(b);
     return;
   } else {
     return;
@@ -560,16 +614,14 @@ int build(lv_obj_t* tv, const char* json, char* err, size_t errLen, bool english
     lv_obj_set_style_bg_color(tile, colorOf(jStr(p, "bg"), bg), 0);
     lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
     lv_obj_remove_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
-    const char* img = jStr(p, "image");
-    if (img) {
-      lv_obj_t* im = lv_image_create(tile);
-      lv_image_set_src(im, img);
-      lv_obj_set_pos(im, 0, 0);
-      plain(im);
-    }
     pages.emplace_back();
     Page& pg = pages.back();
     pg.tile = tile;
+    const char* img = jStr(p, "image");
+    if (img) {
+      lv_obj_t* im = mkImage(tile, pg, img);
+      lv_obj_set_pos(im, 0, 0);
+    }
     snprintf(pg.name, sizeof(pg.name), "%s", jStr(p, "name") ? jStr(p, "name") : "PAGE");
     cJSON* wl = cJSON_GetObjectItemCaseSensitive(p, "w");
     cJSON* w;
@@ -582,6 +634,7 @@ int build(lv_obj_t* tv, const char* json, char* err, size_t errLen, bool english
 
 // ---------------------------------------------------------------- อบส่วนนิ่งเป็นรูป
 static void dynObjs(Page& pg, std::vector<lv_obj_t*>& out) {
+  for (auto* o : pg.live) out.push_back(o);
   for (auto& w : pg.w) {
     if (w.type == T_SHIFT) for (auto* s : w.segs) out.push_back(s);
     else if (w.type == T_TICKS) { if (w.litArc) out.push_back(w.litArc); }
@@ -633,6 +686,7 @@ static void unbake(Page& pg) {
 }
 static void bake(Page& pg) {
   if (pg.bake || !pg.tile) return;
+  if (!pg.gifs.empty()) return;       // มี GIF (อาจเป็นพื้นหลัง) → อบแล้วลำดับชั้นเพี้ยน ไม่อบ
   bool worth = false;                 // หน้าที่มีแค่ช่องตัวเลข: พื้นสีเรียบวาดเร็วกว่าอ่านรูปจาก PSRAM → ไม่ต้องอบ
   for (auto& w : pg.w) if (w.type == T_ARC || w.type == T_TICKS || w.type == T_NEEDLE) worth = true;
   if (!worth) return;
@@ -699,7 +753,10 @@ static void bake(Page& pg) {
            (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 void setActive(int page) {
-  for (int i = 0; i < (int)pages.size(); i++) if (i != page) unbake(pages[i]);
+  for (int i = 0; i < (int)pages.size(); i++) {
+    for (auto* g : pages[i].gifs) { if (i == page) lv_gif_resume(g); else lv_gif_pause(g); }
+    if (i != page) unbake(pages[i]);
+  }
   if (page >= 0 && page < (int)pages.size()) bake(pages[page]);
 }
 
@@ -733,8 +790,8 @@ void update(int page, const vd::Snap& s) {
   if (dt > 0.2f) dt = 0.2f;
   const float k = 1.f - expf(-dt / 0.085f);
   for (W& w : pages[page].w) {
-    bool have = w.key >= 0 && s.have[w.key];
-    float v = have ? s.v[w.key] : 0;
+    bool have = w.key >= 0 && (w.peak ? s.phave[w.key] : s.have[w.key]);
+    float v = !have ? 0 : w.peak == 1 ? s.pmax[w.key] : w.peak == 2 ? s.pmin[w.key] : s.v[w.key];
     switch (w.type) {
       case T_VALUE:
       case T_TILE: {

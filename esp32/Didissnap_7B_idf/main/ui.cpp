@@ -26,7 +26,7 @@ LV_FONT_DECLARE(f_t28)
 LV_FONT_DECLARE(f_t20)
 }
 
-#define FW_VER "7B 2026.11.28i"
+#define FW_VER "7B 2026.11.28j"
 
 namespace ui {
 
@@ -106,6 +106,7 @@ static vd::Snap snap;
 static lv_obj_t* hdrLink = nullptr;
 static lv_obj_t* cardSub[6] = {};
 static lv_obj_t* subLink = nullptr;
+static lv_obj_t* subGearL = nullptr;   // อัตราส่วนสด ในหน้าสอนเกียร์
 
 static void toast(const char* t, int ms = 2500) {
   lv_label_set_text(toastL, t);
@@ -220,7 +221,7 @@ static lv_obj_t* btn(lv_obj_t* p, const char* t, lv_event_cb_t cb, uint32_t bg) 
 
 static void buildMenu();
 static void closeSub() {
-  if (sub) { lv_obj_delete(sub); sub = nullptr; subLink = nullptr; }
+  if (sub) { lv_obj_delete(sub); sub = nullptr; subLink = nullptr; subGearL = nullptr; }
 }
 static void closeAll() {
   closeSub();
@@ -421,12 +422,80 @@ static void onRmode(lv_event_t* e) {
   if (nvs_open("ui", NVS_READWRITE, &h) == ESP_OK) { nvs_set_i32(h, "rmode", on); nvs_commit(h); nvs_close(h); }
   toast(T("กด รีสตาร์ท ด้านล่างเพื่อใช้โหมดใหม่", "Tap Restart below to apply"));
 }
+// ---- เกียร์จาก รอบ / ความเร็ว: ขับในเกียร์นั้นนิ่ง ๆ แล้วแตะเลขเกียร์ = จำไว้
+static void subGear();
+static void onGearLearn(lv_event_t* e) {
+  int i = (int)(intptr_t)lv_event_get_user_data(e);
+  if (!vd::learnGear(i)) { toast(T("ยังไม่มีรอบ/ความเร็ว (ต้องวิ่ง > 5 km/h)", "No rpm/speed yet (drive above 5 km/h)")); return; }
+  char t[64];
+  snprintf(t, sizeof(t), T("จำเกียร์ %d แล้ว (%.1f)", "Gear %d saved (%.1f)"), i + 1, (double)vd::gearRatio(i));
+  subGear();
+  toast(t);
+}
+static void onGearClear(lv_event_t*) {
+  vd::clearGears();
+  subGear();
+  toast(T("ล้างเกียร์แล้ว", "Gears cleared"));
+}
+static void onPeakReset(lv_event_t*) {
+  vd::resetPeaks();
+  toast(T("รีเซ็ตค่าสูงสุดแล้ว", "Peaks reset"));
+}
+static void subGear() {
+  lv_obj_t* b = openSub(T("เกียร์ (รอบ / ความเร็ว)", "GEARS (RPM / SPEED)"));
+  lv_obj_t* r = row(b, T("ตอนนี้", "Now"), 70);
+  subGearL = text(r, "-", &f_t28, accent(), 0, 0, 560, LV_TEXT_ALIGN_RIGHT);
+  lv_obj_align(subGearL, LV_ALIGN_RIGHT_MID, 0, 0);
+  lv_obj_t* g = lv_obj_create(b);
+  lv_obj_set_size(g, lv_pct(100), 120);
+  lv_obj_set_style_bg_opa(g, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(g, 0, 0);
+  lv_obj_set_style_pad_all(g, 0, 0);
+  lv_obj_set_style_pad_column(g, 10, 0);
+  lv_obj_set_flex_flow(g, LV_FLEX_FLOW_ROW);
+  lv_obj_remove_flag(g, LV_OBJ_FLAG_SCROLLABLE);
+  for (int i = 0; i < vd::NGEAR; i++) {
+    lv_obj_t* bt = lv_button_create(g);
+    lv_obj_set_size(bt, 150, 116);
+    float rr = vd::gearRatio(i);
+    lv_obj_set_style_bg_color(bt, rr > 0 ? lv_color_hex(0x1E2A1E) : lv_color_hex(0x22222A), 0);
+    lv_obj_set_style_radius(bt, 12, 0);
+    lv_obj_set_style_shadow_width(bt, 0, 0);
+    lv_obj_t* l = lv_label_create(bt);
+    lv_obj_set_style_text_font(l, &f_t28, 0);
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    char t[32];
+    if (rr > 0) snprintf(t, sizeof(t), "%d\n%.1f", i + 1, (double)rr);
+    else snprintf(t, sizeof(t), "%d\n-", i + 1);
+    lv_label_set_text(l, t);
+    lv_obj_center(l);
+    lv_obj_add_event_cb(bt, onGearLearn, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+  }
+  lv_obj_t* h = text(b, T("วิธีสอน: ขับในเกียร์นั้นด้วยความเร็วคงที่ (เกิน 20 km/h ไม่เหยียบคลัตช์) แล้วแตะเลขเกียร์ — ทำให้ครบทุกเกียร์ "
+                          "· จอด = N · เหยียบคลัตช์/ไม่ตรงเกียร์ไหน = - · ตัวเลขคือ รอบต่อ 1 km/h",
+                          "How: drive in that gear at a steady speed (above 20 km/h, clutch out) and tap the gear number — do every gear "
+                          "· stopped = N · clutch in / no match = - · the number is rpm per 1 km/h"),
+                  &f_t20, lv_color_hex(0x8A8A90), 0, 0, LCD_W - 60);
+  lv_label_set_long_mode(h, LV_LABEL_LONG_WRAP);
+  lv_obj_set_height(h, LV_SIZE_CONTENT);
+  r = row(b, T("ล้างทุกเกียร์", "Clear all gears"), 90);
+  lv_obj_t* bc = btn(r, T("ล้าง", "Clear"), onGearClear, 0x4A2020);
+  lv_obj_align(bc, LV_ALIGN_RIGHT_MID, 0, 0);
+}
+static void onOpenGear(lv_event_t*) { subGear(); }
+
 static void subSystem() {
   lv_obj_t* b = openSub(T("ระบบ", "SYSTEM"));
   lv_obj_t* r = row(b, T("แสดง FPS", "Show FPS"));
   sw(r, cfg.fps, onFps);
   r = row(b, T("วาดเร็ว (RAM ภายใน) · ปิด = ไม่ฉีกแต่ช้า", "Fast render (internal RAM) · off = no tearing, slower"));
   sw(r, board_render_mode(), onRmode);
+  r = row(b, T("เกียร์จากรอบ / ความเร็ว", "Gear from rpm / speed"), 90);
+  lv_obj_t* bg = btn(r, T("สอนเกียร์", "Teach gears"), onOpenGear, 0x2A2A32);
+  lv_obj_align(bg, LV_ALIGN_RIGHT_MID, 0, 0);
+  r = row(b, T("ค่าสูงสุด (หน้า PEAK)", "Peak values (PEAK page)"), 90);
+  lv_obj_t* bp = btn(r, T("รีเซ็ต", "Reset"), onPeakReset, 0x2A2A32);
+  lv_obj_align(bp, LV_ALIGN_RIGHT_MID, 0, 0);
   r = row(b, T("เวอร์ชัน", "Version"));
   lv_obj_t* v = text(r, FW_VER "  ·  ESP-IDF + LVGL 9", &f_t20, lv_color_hex(0x8A8A90), 0, 0);
   lv_obj_align(v, LV_ALIGN_RIGHT_MID, 0, 0);
@@ -666,6 +735,14 @@ static void tick(lv_timer_t*) {
       cfg.en = langSave;
     } else lv_obj_add_flag(chip, LV_OBJ_FLAG_HIDDEN);
     updateMenuLive();
+    if (subGearL) {
+      float lr = vd::liveRatio();
+      if (lr > 0) {
+        if (snap.have[vd::GEAR]) lv_label_set_text_fmt(subGearL, T("%.1f รอบ/km/h · เกียร์ %s", "%.1f rpm per km/h · gear %s"), (double)lr,
+                                                       snap.v[vd::GEAR] < 0.5f ? "N" : snap.v[vd::GEAR] < 1.5f ? "1" : snap.v[vd::GEAR] < 2.5f ? "2" : snap.v[vd::GEAR] < 3.5f ? "3" : snap.v[vd::GEAR] < 4.5f ? "4" : snap.v[vd::GEAR] < 5.5f ? "5" : "6");
+        else lv_label_set_text_fmt(subGearL, T("%.1f รอบ/km/h", "%.1f rpm per km/h"), (double)lr);
+      } else lv_label_set_text(subGearL, T("รอรอบ + ความเร็ว (> 5 km/h)", "Waiting for rpm + speed (> 5 km/h)"));
+    }
     if (subLink) {
       const char* nm = slink::c3Name();
       lv_label_set_text_fmt(subLink, "%s\n%s%s%s  ·  %s %d  ·  %u %s", linkText(slink::msg()), nm[0] ? nm : T("(ยังไม่จับคู่)", "(not paired)"),
@@ -765,6 +842,11 @@ void previewMenu(bool english) {
   cfg.en = english;
   lv_obj_add_flag(toastL, LV_OBJ_FLAG_HIDDEN);
   buildMenu();
+}
+void previewGear() {
+  lv_obj_add_flag(toastL, LV_OBJ_FLAG_HIDDEN);
+  subSystem();
+  subGear();
 }
 
 }  // namespace ui

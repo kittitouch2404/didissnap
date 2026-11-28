@@ -19,6 +19,8 @@ struct Snap {
   uint8_t proto;
   uint16_t rate;       // คำตอบจากรถต่อวินาที
   bool live;           // ได้ค่าใหม่ภายใน 1.5 วิ
+  float pmax[NKEY], pmin[NKEY];   // ค่าสูงสุด/ต่ำสุดตั้งแต่รีเซ็ต (peak hold)
+  bool phave[NKEY];
 };
 
 int keyOf(const char* name);       // -1 = ไม่รู้จัก
@@ -28,5 +30,13 @@ bool demo();
 void feed(const uint8_t* d, int n);  // แพ็กเก็ตจาก Superlink
 void get(Snap& s);                   // สำเนาค่าปัจจุบัน (เรียกจากงาน LVGL)
 const char* info();                  // ข้อความสถานะจาก Superlink (DN_GWINFO)
+void resetPeaks();
+
+// เกียร์จาก รอบ ÷ ความเร็ว: จำอัตราส่วน (rpm ต่อ km/h) ของแต่ละเกียร์ไว้ใน NVS
+constexpr int NGEAR = 6;
+float gearRatio(int i);              // 0 = ยังไม่ได้ตั้ง
+bool learnGear(int i);               // จำอัตราส่วนตอนนี้เป็นเกียร์ i (0-based) · false = ยังไม่มีรอบ/ความเร็ว
+void clearGears();
+float liveRatio();                   // อัตราส่วนตอนนี้ (0 = ไม่มี)
 
 }  // namespace vd

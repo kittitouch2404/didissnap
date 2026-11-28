@@ -7,6 +7,7 @@
 #include "didinow.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "nvs.h"
 
 namespace vd {
 
@@ -28,9 +29,52 @@ int keyOf(const char* name) {
   return -1;
 }
 
+static float ratios[NGEAR];
+static float pkMax[NKEY], pkMin[NKEY];
+static bool pkHave[NKEY];
+static float lastRatio = 0;
+
+void resetPeaks() { memset(pkHave, 0, sizeof(pkHave)); }
+
+static void gearsLoad() {
+  memset(ratios, 0, sizeof(ratios));
+  nvs_handle_t h;
+  if (nvs_open("gear", NVS_READONLY, &h) != ESP_OK) return;
+  for (int i = 0; i < NGEAR; i++) {
+    char k[4] = {'r', (char)('1' + i), 0};
+    int32_t v;
+    if (nvs_get_i32(h, k, &v) == ESP_OK) ratios[i] = v / 100.f;
+  }
+  nvs_close(h);
+}
+static void gearsSave() {
+  nvs_handle_t h;
+  if (nvs_open("gear", NVS_READWRITE, &h) != ESP_OK) return;
+  for (int i = 0; i < NGEAR; i++) {
+    char k[4] = {'r', (char)('1' + i), 0};
+    nvs_set_i32(h, k, (int32_t)lroundf(ratios[i] * 100.f));
+  }
+  nvs_commit(h);
+  nvs_close(h);
+}
+float gearRatio(int i) { return i >= 0 && i < NGEAR ? ratios[i] : 0; }
+float liveRatio() { return lastRatio; }
+bool learnGear(int i) {
+  if (i < 0 || i >= NGEAR || lastRatio <= 0) return false;
+  ratios[i] = lastRatio;
+  gearsSave();
+  return true;
+}
+void clearGears() {
+  memset(ratios, 0, sizeof(ratios));
+  gearsSave();
+}
+
 void begin() {
   memset(&cur, 0, sizeof(cur));
   cur.link = 1;
+  gearsLoad();
+  resetPeaks();
 }
 
 void setDemo(bool on) { demoOn = on; }
@@ -121,13 +165,52 @@ static void demoFill(Snap& s) {
   s.live = true;
 }
 
+// เกียร์: หาเกียร์ที่อัตราส่วน รอบ/ความเร็ว ใกล้สุด (ห่างไม่เกิน 7%) · จอด = N · ไม่ตรงเกียร์ไหน (เหยียบคลัตช์/CVT) = "-"
+static void calcGear(Snap& s) {
+  lastRatio = 0;
+  if (!s.have[RPM] || !s.have[SPD]) return;
+  float rpm = s.v[RPM], spd = s.v[SPD];
+  if (spd >= 5 && rpm >= 500) lastRatio = rpm / spd;
+  if (s.have[GEAR]) return;            // โหมดจำลองมีเกียร์ให้อยู่แล้ว
+  int n = 0;
+  for (int i = 0; i < NGEAR; i++) if (ratios[i] > 0) n++;
+  if (!n) return;                      // ยังไม่ได้สอนเกียร์
+  if (spd < 3) { s.v[GEAR] = 0; s.have[GEAR] = true; return; }
+  if (lastRatio <= 0) return;
+  int best = -1;
+  float bestErr = 0.07f;
+  for (int i = 0; i < NGEAR; i++) {
+    if (ratios[i] <= 0) continue;
+    float e = fabsf(lastRatio / ratios[i] - 1.f);
+    if (e < bestErr) { bestErr = e; best = i; }
+  }
+  if (best >= 0) { s.v[GEAR] = best + 1; s.have[GEAR] = true; }
+}
+static void peaks(Snap& s) {
+  if (s.live) {
+    for (int k = 0; k < NKEY; k++) {
+      if (!s.have[k] || k == GEAR) continue;
+      float v = s.v[k];
+      if (!pkHave[k]) { pkMax[k] = pkMin[k] = v; pkHave[k] = true; }
+      else { if (v > pkMax[k]) pkMax[k] = v; if (v < pkMin[k]) pkMin[k] = v; }
+    }
+  }
+  memcpy(s.pmax, pkMax, sizeof(pkMax));
+  memcpy(s.pmin, pkMin, sizeof(pkMin));
+  memcpy(s.phave, pkHave, sizeof(pkHave));
+}
+
 void get(Snap& s) {
-  if (demoOn) { demoFill(s); return; }
-  portENTER_CRITICAL(&mux);
-  s = cur;
-  portEXIT_CRITICAL(&mux);
-  s.live = lastUs && nowUs() - lastUs < 1500000 && s.link == 2;
-  s.have[GEAR] = false;
+  if (demoOn) demoFill(s);
+  else {
+    portENTER_CRITICAL(&mux);
+    s = cur;
+    portEXIT_CRITICAL(&mux);
+    s.live = lastUs && nowUs() - lastUs < 1500000 && s.link == 2;
+    s.have[GEAR] = false;
+  }
+  calcGear(s);
+  peaks(s);
 }
 
 }  // namespace vd
