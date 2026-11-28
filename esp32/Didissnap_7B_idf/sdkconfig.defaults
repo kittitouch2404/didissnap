@@ -57,8 +57,6 @@ CONFIG_LV_USE_LODEPNG=y
 CONFIG_LV_USE_GIF=y
 CONFIG_LV_CACHE_DEF_SIZE=4194304
 CONFIG_LV_IMAGE_HEADER_CACHE_DEF_CNT=16
-CONFIG_LV_USE_SYSMON=y
-CONFIG_LV_USE_PERF_MONITOR=y
 # CONFIG_LV_USE_LOG is not set
 
 # ความเร็ววาด: LVGL วาดด้วย 2 คอร์พร้อมกัน (ค่าเดียวกับตัวอย่าง LVGL 9 ของ Waveshare) + แคชสไตล์

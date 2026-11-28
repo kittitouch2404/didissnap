@@ -567,7 +567,14 @@ static void setColor(W& w, int state) {   // 0 ปกติ · 1 เตือน
 void update(int page, const vd::Snap& s) {
   if (page < 0 || page >= (int)pages.size()) return;
   static bool blink = false;
-  blink = (esp_timer_get_time() / 90000) & 1;
+  int64_t nowUs = esp_timer_get_time();
+  blink = (nowUs / 90000) & 1;
+  // เข็ม/บาร์ไหลตามเวลา (ไม่ขึ้นกับจำนวนเฟรม): ค่ารถมาทีละ ~10 ครั้ง/วิ → ไหลต่อเนื่องแทนกระโดดแล้วหยุด
+  static int64_t lastUs = 0;
+  float dt = lastUs ? (nowUs - lastUs) / 1e6f : 0.016f;
+  lastUs = nowUs;
+  if (dt > 0.2f) dt = 0.2f;
+  const float k = 1.f - expf(-dt / 0.085f);
   for (W& w : pages[page].w) {
     bool have = w.key >= 0 && s.have[w.key];
     float v = have ? s.v[w.key] : 0;
@@ -583,7 +590,7 @@ void update(int page, const vd::Snap& s) {
         break;
       }
       case T_ARC: {
-        w.shown += (v - w.shown) * 0.45f;
+        w.shown += (v - w.shown) * k;
         int iv = (int)lroundf(1000.f * (w.shown - w.mn) / (w.mx - w.mn));
         if (iv < 0) iv = 0;
         if (iv > 1000) iv = 1000;
@@ -596,7 +603,7 @@ void update(int page, const vd::Snap& s) {
         break;
       }
       case T_BAR: {
-        w.shown += (v - w.shown) * 0.45f;
+        w.shown += (v - w.shown) * k;
         int iv = (int)lroundf(1000.f * (w.shown - w.mn) / (w.mx - w.mn));
         if (iv < 0) iv = 0;
         if (iv > 1000) iv = 1000;
@@ -627,7 +634,7 @@ void update(int page, const vd::Snap& s) {
         break;
       }
       case T_TICKS: {
-        w.shown += (v - w.shown) * 0.45f;
+        w.shown += (v - w.shown) * k;
         int iv = have ? (int)lroundf(w.shown) : (int)w.mn - 1;
         int step = (int)((w.mx - w.mn) / 50);                 // ขยับทีละ 2% (สเกลใหญ่วาดใหม่ทั้งวง = แพง)
         if (step < 1) step = 1;
@@ -641,7 +648,7 @@ void update(int page, const vd::Snap& s) {
         break;
       }
       case T_NEEDLE: {
-        w.shown += (v - w.shown) * 0.45f;
+        w.shown += (v - w.shown) * k;
         float f = (w.shown - w.mn) / (w.mx - w.mn);
         if (f < 0) f = 0;
         if (f > 1) f = 1;

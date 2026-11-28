@@ -1,4 +1,5 @@
 // ui.cpp — หน้าปัด (tileview จากสกิน) · ชิปสถานะ · จุดบอกหน้า · เมนูแบบแอป (Racing HUD) ไทย/อังกฤษ
+#include <math.h>
 #include "ui.h"
 #include <dirent.h>
 #include <stdio.h>
@@ -25,7 +26,7 @@ LV_FONT_DECLARE(f_t28)
 LV_FONT_DECLARE(f_t20)
 }
 
-#define FW_VER "7B 2026.11.28e"
+#define FW_VER "7B 2026.11.28f"
 
 namespace ui {
 
@@ -93,6 +94,7 @@ static lv_obj_t* chipDot;
 static lv_obj_t* chipTxt;
 static lv_obj_t* dots;
 static lv_obj_t* toastL;
+static lv_obj_t* fpsL = nullptr;     // ตัวนับ FPS มุมขวาล่าง
 static lv_obj_t* menu = nullptr;      // หน้าเมนูหลัก (สร้างใหม่ทุกครั้งที่เปิด/เปลี่ยนภาษา/สี)
 static lv_obj_t* sub = nullptr;       // หน้าย่อย
 static int curPage = 0;
@@ -293,10 +295,7 @@ static void onDemoSw(lv_event_t* e) {
 }
 static void onFps(lv_event_t* e) {
   cfg.fps = lv_obj_has_state((lv_obj_t*)lv_event_get_target(e), LV_STATE_CHECKED);
-#if LV_USE_PERF_MONITOR
-  if (cfg.fps) lv_sysmon_show_performance(nullptr);
-  else lv_sysmon_hide_performance(nullptr);
-#endif
+  if (fpsL) { if (cfg.fps) lv_obj_remove_flag(fpsL, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(fpsL, LV_OBJ_FLAG_HIDDEN); }
   cfgSave();
 }
 static void onBri(lv_event_t* e) {
@@ -574,6 +573,30 @@ static void updateMenuLive() {
   if (cardSub[5]) lv_label_set_text(cardSub[5], FW_VER);
 }
 
+// ตัวนับ FPS ของเราเอง (ตัววัดในตัวของ LVGL นับเวลารอจอเป็น CPU เต็ม และขึ้น 0 FPS)
+static volatile int fpsFrames = 0;
+static volatile int64_t fpsRenderUs = 0, fpsRenderStart = 0;
+static void onDispEv(lv_event_t* e) {
+  lv_event_code_t c = lv_event_get_code(e);
+  if (c == LV_EVENT_RENDER_START) fpsRenderStart = esp_timer_get_time();
+  else if (c == LV_EVENT_RENDER_READY) {
+    fpsFrames = fpsFrames + 1;
+    if (fpsRenderStart) fpsRenderUs = fpsRenderUs + (esp_timer_get_time() - fpsRenderStart);
+  }
+}
+static void fpsTick(int64_t now) {
+  static int64_t t0 = 0;
+  if (!t0) { t0 = now; return; }
+  if (now - t0 < 1000000) return;
+  int n = fpsFrames;
+  int64_t r = fpsRenderUs;
+  fpsFrames = 0;
+  fpsRenderUs = 0;
+  float sec = (now - t0) / 1e6f;
+  t0 = now;
+  if (fpsL && cfg.fps) lv_label_set_text_fmt(fpsL, "%d FPS  ·  draw %d ms", (int)lroundf(n / sec), n ? (int)(r / n / 1000) : 0);
+}
+
 // แตะค้างที่ไหนก็ได้ = เมนู · อ่านจากทัชตรง ๆ (อีเวนต์ LONG_PRESSED ไปตกที่หน้า/วิดเจ็ตลูก ไม่ถึง tileview)
 static void pollLongPress() {
   static lv_indev_t* in = nullptr;
@@ -612,6 +635,7 @@ static void tick(lv_timer_t*) {
   vd::get(snap);
   if (!menu && !sub) skin::update(curPage, snap);
   int64_t now = esp_timer_get_time();
+  fpsTick(now);
   static int k = 0;
   if (++k % 8 == 0) {                 // ~4 ครั้ง/วิ: สถานะ
     bool showChip = !menu && !sub && (cfg.demo || !snap.live);
@@ -706,12 +730,20 @@ void build() {
   lv_obj_align(toastL, LV_ALIGN_CENTER, 0, 120);
   lv_obj_add_flag(toastL, LV_OBJ_FLAG_HIDDEN);
 
+  fpsL = lv_label_create(lv_layer_top());
+  lv_obj_set_style_text_font(fpsL, &f_t20, 0);
+  lv_obj_set_style_text_color(fpsL, lv_color_hex(0x7CFC9A), 0);
+  lv_obj_set_style_bg_color(fpsL, lv_color_hex(0x000000), 0);
+  lv_obj_set_style_bg_opa(fpsL, LV_OPA_70, 0);
+  lv_obj_set_style_pad_hor(fpsL, 8, 0);
+  lv_obj_align(fpsL, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
+  lv_label_set_text(fpsL, "-- FPS");
+  lv_display_add_event_cb(lv_display_get_default(), onDispEv, LV_EVENT_RENDER_START, nullptr);
+  lv_display_add_event_cb(lv_display_get_default(), onDispEv, LV_EVENT_RENDER_READY, nullptr);
+
   loadSkin(cfg.skin);
-#if LV_USE_PERF_MONITOR
-  if (cfg.fps) lv_sysmon_show_performance(nullptr);
-  else lv_sysmon_hide_performance(nullptr);
-#endif
-  lv_timer_create(tick, 30, nullptr);
+  if (fpsL) { if (cfg.fps) lv_obj_remove_flag(fpsL, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(fpsL, LV_OBJ_FLAG_HIDDEN); }
+  lv_timer_create(tick, 16, nullptr);
   toast(board_touch_ok() ? "Swipe left/right = page  ·  Long-press = menu" : "Touch not found (GT911) - check / replug", 5000);
 }
 
