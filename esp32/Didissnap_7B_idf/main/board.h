@@ -20,6 +20,7 @@ void board_backlight(int pct);
 // SD card (โหมด 1 บิต) ที่ /sdcard · true = ใช้ได้
 bool board_sd_mount(void);
 bool board_sd_ok(void);
+bool board_touch_ok(void);   // เจอชิปทัช GT911 ไหม
 // เรียกทุก ~2 วิ: ย้ำค่าให้ชิปขยายขา (ถ้ามันรีสตาร์ท ไฟจอกลับมาเอง)
 void board_keepalive(void);
 

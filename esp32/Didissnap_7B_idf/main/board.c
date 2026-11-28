@@ -110,6 +110,9 @@ static esp_lcd_panel_handle_t lcd_new(void) {
   return p;
 }
 
+static bool s_touchOk = false;
+bool board_touch_ok(void) { return s_touchOk; }
+
 static esp_lcd_touch_handle_t touch_new(void) {
   // รีเซ็ต GT911: INT ต่ำตอนปล่อยรีเซ็ต = ที่อยู่ 0x5D
   gpio_config_t g = {.pin_bit_mask = 1ULL << PIN_TP_INT, .mode = GPIO_MODE_OUTPUT};
@@ -170,6 +173,7 @@ lv_display_t* board_init(void) {
 
   esp_lcd_panel_handle_t panel = lcd_new();
   esp_lcd_touch_handle_t tp = touch_new();
+  s_touchOk = tp != NULL;
 
   lvgl_port_cfg_t lc = ESP_LVGL_PORT_INIT_CONFIG();
   lc.task_priority = 4;

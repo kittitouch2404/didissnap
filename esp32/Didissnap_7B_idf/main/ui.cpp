@@ -25,7 +25,7 @@ LV_FONT_DECLARE(f_t28)
 LV_FONT_DECLARE(f_t20)
 }
 
-#define FW_VER "7B 2026.11.28c"
+#define FW_VER "7B 2026.11.28d"
 
 namespace ui {
 
@@ -574,7 +574,27 @@ static void updateMenuLive() {
   if (cardSub[5]) lv_label_set_text(cardSub[5], FW_VER);
 }
 
-static void onLongPress(lv_event_t*) { buildMenu(); }
+// แตะค้างที่ไหนก็ได้ = เมนู · อ่านจากทัชตรง ๆ (อีเวนต์ LONG_PRESSED ไปตกที่หน้า/วิดเจ็ตลูก ไม่ถึง tileview)
+static void pollLongPress() {
+  static lv_indev_t* in = nullptr;
+  static int64_t downAt = 0;
+  static lv_point_t p0;
+  static bool fired = false;
+  if (!in) {
+    for (lv_indev_t* i = lv_indev_get_next(nullptr); i; i = lv_indev_get_next(i))
+      if (lv_indev_get_type(i) == LV_INDEV_TYPE_POINTER) { in = i; break; }
+    if (!in) return;
+  }
+  lv_point_t p;
+  lv_indev_get_point(in, &p);
+  bool down = lv_indev_get_state(in) == LV_INDEV_STATE_PRESSED;
+  int64_t now = esp_timer_get_time();
+  if (!down) { downAt = 0; fired = false; return; }
+  if (!downAt) { downAt = now; p0 = p; return; }
+  if (fired || menu || sub) return;
+  if (LV_ABS(p.x - p0.x) > 24 || LV_ABS(p.y - p0.y) > 24) { downAt = now; p0 = p; return; }   // กำลังปัด
+  if (now - downAt > 700000) { fired = true; buildMenu(); }
+}
 
 // ---------------------------------------------------------------- ทุกเฟรม
 static void onTile(lv_event_t*) {
@@ -588,6 +608,7 @@ static void onTile(lv_event_t*) {
 }
 
 static void tick(lv_timer_t*) {
+  pollLongPress();
   vd::get(snap);
   if (!menu && !sub) skin::update(curPage, snap);
   int64_t now = esp_timer_get_time();
@@ -635,7 +656,6 @@ void build() {
   lv_obj_set_style_bg_color(tv, lv_color_hex(0x000000), 0);
   lv_obj_set_scrollbar_mode(tv, LV_SCROLLBAR_MODE_OFF);
   lv_obj_add_event_cb(tv, onTile, LV_EVENT_VALUE_CHANGED, nullptr);
-  lv_obj_add_event_cb(tv, onLongPress, LV_EVENT_LONG_PRESSED, nullptr);   // แตะค้างที่ไหนก็ได้ = เมนู
 
   chip = lv_obj_create(lv_layer_top());
   lv_obj_set_height(chip, 34);
@@ -692,7 +712,7 @@ void build() {
   else lv_sysmon_hide_performance(nullptr);
 #endif
   lv_timer_create(tick, 30, nullptr);
-  toast("Swipe left/right = page  ·  Long-press = menu", 4000);
+  toast(board_touch_ok() ? "Swipe left/right = page  ·  Long-press = menu" : "Touch not found (GT911) - check / replug", 5000);
 }
 
 int bri() { return cfg.bri; }
