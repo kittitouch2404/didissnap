@@ -138,6 +138,7 @@ struct W {
   char last[16] = "\x01";
   float shown = 0;              // ค่าที่แสดง (หน่วงให้นุ่ม)
   int lastState = -1;
+  int64_t lastTxtUs = 0;         // ตัวเลขเปลี่ยนได้ไม่เกิน ~12 ครั้ง/วิ (อ่านทัน + วาดน้อยลง)
 };
 
 struct Saved { lv_obj_t* o; lv_opa_t bg, border; };
@@ -206,8 +207,15 @@ static lv_text_align_t alignOf(const char* a) {
   return LV_TEXT_ALIGN_LEFT;
 }
 
+// LVGL เผื่อขอบป้ายไว้ 1/4 ความสูงตัวอักษร (เผื่อตัวเอียง) — ตัวเลขใหญ่ = เผื่อ 30-50 px รอบป้าย → วาดใหม่กว้างเกินจำเป็น
+// ป้ายเราตัดข้อความในกรอบอยู่แล้ว (LONG_CLIP) จึงเผื่อแค่ 2 px
+static void tightExt(lv_event_t* e) {
+  int32_t* s = (int32_t*)lv_event_get_param(e);
+  if (s) *s = 2;
+}
 static lv_obj_t* mkLabel(lv_obj_t* p, const char* txt, const lv_font_t* f, lv_color_t c, int x, int y, int w, lv_text_align_t al) {
   lv_obj_t* l = lv_label_create(p);
+  lv_obj_add_event_cb(l, tightExt, LV_EVENT_REFR_EXT_DRAW_SIZE, nullptr);
   lv_obj_set_style_text_font(l, f, 0);
   lv_obj_set_style_text_color(l, c, 0);
   lv_obj_set_style_text_align(l, al, 0);
@@ -215,6 +223,7 @@ static lv_obj_t* mkLabel(lv_obj_t* p, const char* txt, const lv_font_t* f, lv_co
   if (w > 0) lv_obj_set_width(l, w);
   lv_obj_set_pos(l, x, y);
   lv_label_set_text(l, txt ? txt : "");
+  lv_obj_refresh_ext_draw_size(l);
   return l;
 }
 
@@ -301,7 +310,6 @@ static void mkTile(lv_obj_t* p, W& w, cJSON* j) {
   lv_obj_set_style_border_width(t, 1, 0);
   lv_obj_set_style_radius(t, 14, 0);
   lv_obj_set_style_pad_all(t, 0, 0);
-  lv_obj_add_flag(t, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
   plain(t);
   bool row = ww > hh * 2.2f;                      // ช่องยาว: ชื่อซ้าย ค่าขวา
   bool big = ww >= 300 || row;
@@ -625,6 +633,9 @@ static void unbake(Page& pg) {
 }
 static void bake(Page& pg) {
   if (pg.bake || !pg.tile) return;
+  bool worth = false;                 // หน้าที่มีแค่ช่องตัวเลข: พื้นสีเรียบวาดเร็วกว่าอ่านรูปจาก PSRAM → ไม่ต้องอบ
+  for (auto& w : pg.w) if (w.type == T_ARC || w.type == T_TICKS || w.type == T_NEEDLE) worth = true;
+  if (!worth) return;
   int64_t t0 = esp_timer_get_time();
   lv_obj_update_layout(pg.tile);
   // 1) ขีดที่ติดตามค่า: ถ่ายรูปตอน "ติดทั้งวง" (พื้นใส) ไว้เป็นลายของ arc · แล้วคืนเป็นดับทั้งวงให้ไปอยู่ในรูปพื้น
@@ -693,8 +704,11 @@ void setActive(int page) {
 }
 
 // ---------------------------------------------------------------- อัปเดต
+static int64_t gNow = 0;
 static void setText(W& w, const char* s) {
   if (!strcmp(w.last, s)) return;
+  if (gNow - w.lastTxtUs < 80000 && w.last[0] != '\x01' && strcmp(s, "-")) return;
+  w.lastTxtUs = gNow;
   strncpy(w.last, s, sizeof(w.last) - 1);
   lv_label_set_text(w.obj, s);
 }
@@ -708,6 +722,9 @@ void update(int page, const vd::Snap& s) {
   if (page < 0 || page >= (int)pages.size()) return;
   static bool blink = false;
   int64_t nowUs = esp_timer_get_time();
+  gNow = nowUs;
+  static int frame = 0;
+  frame++;
   blink = (nowUs / 90000) & 1;
   // เข็ม/บาร์ไหลตามเวลา (ไม่ขึ้นกับจำนวนเฟรม): ค่ารถมาทีละ ~10 ครั้ง/วิ → ไหลต่อเนื่องแทนกระโดดแล้วหยุด
   static int64_t lastUs = 0;
@@ -744,6 +761,7 @@ void update(int page, const vd::Snap& s) {
       }
       case T_BAR: {
         w.shown += (v - w.shown) * k;
+        if (frame & 1) break;                                 // บาร์ยาวทั้งจอ: 30 ครั้ง/วิ พอ
         int iv = (int)lroundf(1000.f * (w.shown - w.mn) / (w.mx - w.mn));
         if (iv < 0) iv = 0;
         if (iv > 1000) iv = 1000;

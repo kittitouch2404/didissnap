@@ -26,7 +26,7 @@ LV_FONT_DECLARE(f_t28)
 LV_FONT_DECLARE(f_t20)
 }
 
-#define FW_VER "7B 2026.11.28h"
+#define FW_VER "7B 2026.11.28i"
 
 namespace ui {
 
@@ -660,7 +660,7 @@ static void tick(lv_timer_t*) {
         t = snap.link == 2 ? T("รอค่าจากรถ", "Waiting for car data") : vd::info()[0] ? vd::info() : T("Superlink ต่อแล้ว — กำลังหารถ", "Superlink connected — finding the car");
         c = lv_color_hex(0xFFC21A);
       } else { t = linkText(slink::msg()); c = accent(); }
-      lv_label_set_text(chipTxt, t);
+      if (strcmp(lv_label_get_text(chipTxt), t)) lv_label_set_text(chipTxt, t);
       lv_obj_set_style_bg_color(chipDot, c, 0);
       lv_obj_remove_flag(chip, LV_OBJ_FLAG_HIDDEN);
       cfg.en = langSave;
