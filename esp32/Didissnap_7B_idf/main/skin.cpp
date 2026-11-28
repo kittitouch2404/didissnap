@@ -699,9 +699,10 @@ static void segbarDraw(lv_event_t* e) {
     lv_draw_triangle_dsc_init(&d);
     d.bg_color = c;
     d.bg_opa = LV_OPA_COVER;
-    d.p[0] = {x0 + sk, (lv_value_precise_t)a.y1}; d.p[1] = {x1 + sk, (lv_value_precise_t)a.y1}; d.p[2] = {x0, (lv_value_precise_t)a.y2};
+    typedef lv_value_precise_t P;
+    d.p[0] = {(P)(x0 + sk), (P)a.y1}; d.p[1] = {(P)(x1 + sk), (P)a.y1}; d.p[2] = {(P)x0, (P)a.y2};
     lv_draw_triangle(layer, &d);
-    d.p[0] = {x1 + sk, (lv_value_precise_t)a.y1}; d.p[1] = {x1, (lv_value_precise_t)a.y2}; d.p[2] = {x0, (lv_value_precise_t)a.y2};
+    d.p[0] = {(P)(x1 + sk), (P)a.y1}; d.p[1] = {(P)x1, (P)a.y2}; d.p[2] = {(P)x0, (P)a.y2};
     lv_draw_triangle(layer, &d);
   }
 }
