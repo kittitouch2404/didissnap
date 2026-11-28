@@ -12,6 +12,9 @@ extern const char* const BUILTIN;   // สกินในตัว (JSON)
 int build(lv_obj_t* tileview, const char* json, char* err, size_t errLen, bool english = false);
 // อัปเดตค่าของหน้าที่แสดงอยู่ (เรียกทุกเฟรมจากงาน LVGL)
 void update(int page, const vd::Snap& s);
+// หน้าที่แสดงอยู่: วาดส่วนที่ไม่ขยับ (พื้น สเกล ป้าย กรอบ) เป็นรูปเดียวไว้ → ทุกเฟรมวาดใหม่แค่ค่า/เข็ม (เร็วหลายเท่า)
+// หน้าอื่นคืนเป็นวิดเจ็ตปกติ (ประหยัด PSRAM: รูปละ 1.2 MB)
+void setActive(int page);
 int pageCount();
 const char* pageName(int i);
 lv_color_t accent();

@@ -26,7 +26,7 @@ LV_FONT_DECLARE(f_t28)
 LV_FONT_DECLARE(f_t20)
 }
 
-#define FW_VER "7B 2026.11.28g"
+#define FW_VER "7B 2026.11.28h"
 
 namespace ui {
 
@@ -170,6 +170,7 @@ static void loadSkin(const char* name) {
   if (curPage >= n) curPage = 0;
   lv_tileview_set_tile_by_index(tv, curPage, 0, LV_ANIM_OFF);
   rebuildDots();
+  skin::setActive(curPage);
   ESP_LOGI(TAG, "skin '%s' %d pages", name && name[0] ? name : "built-in", n);
 }
 
@@ -326,6 +327,7 @@ static void onGoPage(lv_event_t* e) {
   curPage = p;
   lv_tileview_set_tile_by_index(tv, p, 0, LV_ANIM_OFF);
   rebuildDots();
+  skin::setActive(p);
   pageChangedAt = esp_timer_get_time();
   closeAll();
 }
@@ -634,6 +636,7 @@ static void onTile(lv_event_t*) {
   if (p != curPage) {
     curPage = p;
     rebuildDots();
+    skin::setActive(curPage);
     pageChangedAt = esp_timer_get_time();
   }
 }

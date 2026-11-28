@@ -7,6 +7,8 @@
 #include <vector>
 #include "cJSON.h"
 #include "esp_timer.h"
+#include "esp_log.h"
+#include "esp_heap_caps.h"
 
 extern "C" {
 LV_FONT_DECLARE(f_num170)
@@ -128,6 +130,8 @@ struct W {
   std::vector<lv_obj_t*> segs;  // ไฟเปลี่ยนเกียร์
   lv_color_t col, warnCol, lowCol, offCol;
   lv_scale_section_t* sec[2] = {nullptr, nullptr};   // ticks: ช่วงที่ติด / ติดในโซนแดง
+  lv_obj_t* litArc = nullptr;                         // ticks ตอนอบรูป: arc ที่ใช้รูป "ขีดติดทั้งวง" เป็นลาย
+  lv_draw_buf_t* litBuf = nullptr;
   lv_point_precise_t* pts = nullptr;                  // needle
   float cx = 0, cy = 0, r0 = 0, r1 = 0, rot = 0, sweep = 0;
   int lastI = -1;
@@ -136,9 +140,16 @@ struct W {
   int lastState = -1;
 };
 
+struct Saved { lv_obj_t* o; lv_opa_t bg, border; };
 struct Page {
   char name[24];
   std::vector<W> w;
+  lv_obj_t* tile = nullptr;
+  lv_draw_buf_t* bake = nullptr;   // รูปส่วนนิ่งของหน้า (RGB565 เต็มจอ)
+  lv_obj_t* bakeImg = nullptr;
+  std::vector<lv_obj_t*> hid;      // ของนิ่งที่ซ่อนไว้ตอนใช้รูป
+  std::vector<Saved> clear;        // กล่องที่มีค่าอยู่ข้างใน: ทำพื้นใสชั่วคราว
+  lv_opa_t tileBg = LV_OPA_COVER;
 };
 
 static std::vector<Page> pages;
@@ -426,6 +437,9 @@ static void buildWidget(lv_obj_t* tile, Page& pg, cJSON* j) {
     lv_scale_set_major_tick_every(sc, labels ? 1 : n + 2);
     lv_scale_set_label_show(sc, labels);
     int len = jInt(j, "len", 14), lw = jInt(j, "width", 4);
+    w.r1 = (float)len;
+    w.rot = (float)jInt(j, "rot", 135);
+    w.sweep = (float)jInt(j, "sweep", 270);
     lv_color_t off = colorOf(jStr(j, "off"), lv_color_hex(0x5A5A5A));
     lv_color_t on = colorOf(jStr(j, "on"), lv_color_hex(0xF2F2F2));
     lv_color_t redon = colorOf(jStr(j, "redon"), on);
@@ -519,6 +533,11 @@ int build(lv_obj_t* tv, const char* json, char* err, size_t errLen, bool english
   }
   acc = colorOf(jStr(root, "accent"), lv_color_hex(0xFF7A00));
   lv_color_t bg = colorOf(jStr(root, "bg"), lv_color_hex(0x0A0A0C));
+  for (int k = 0; k < (int)pages.size(); k++) {   // รูปที่อบไว้ไม่ใช่วิดเจ็ต → คืนหน่วยความจำเอง
+    Page& pg = pages[k];
+    if (pg.bake) lv_draw_buf_destroy(pg.bake);
+    for (auto& w : pg.w) if (w.litBuf) lv_draw_buf_destroy(w.litBuf);
+  }
   lv_obj_clean(tv);
   for (auto& pg : pages)
     for (auto& w : pg.w)
@@ -542,6 +561,7 @@ int build(lv_obj_t* tv, const char* json, char* err, size_t errLen, bool english
     }
     pages.emplace_back();
     Page& pg = pages.back();
+    pg.tile = tile;
     snprintf(pg.name, sizeof(pg.name), "%s", jStr(p, "name") ? jStr(p, "name") : "PAGE");
     cJSON* wl = cJSON_GetObjectItemCaseSensitive(p, "w");
     cJSON* w;
@@ -550,6 +570,126 @@ int build(lv_obj_t* tv, const char* json, char* err, size_t errLen, bool english
   }
   cJSON_Delete(root);
   return i;
+}
+
+// ---------------------------------------------------------------- อบส่วนนิ่งเป็นรูป
+static void dynObjs(Page& pg, std::vector<lv_obj_t*>& out) {
+  for (auto& w : pg.w) {
+    if (w.type == T_SHIFT) for (auto* s : w.segs) out.push_back(s);
+    else if (w.type == T_TICKS) { if (w.litArc) out.push_back(w.litArc); }
+    else if (w.obj) out.push_back(w.obj);
+  }
+}
+static bool has(const std::vector<lv_obj_t*>& v, lv_obj_t* o) {
+  for (auto* x : v) if (x == o) return true;
+  return false;
+}
+static bool hasDynInside(lv_obj_t* o, const std::vector<lv_obj_t*>& dyn) {
+  for (auto* d : dyn)
+    for (lv_obj_t* p = lv_obj_get_parent(d); p; p = lv_obj_get_parent(p))
+      if (p == o) return true;
+  return false;
+}
+static void strip(Page& pg, lv_obj_t* o, const std::vector<lv_obj_t*>& dyn) {
+  uint32_t n = lv_obj_get_child_count(o);
+  for (uint32_t i = 0; i < n; i++) {
+    lv_obj_t* c = lv_obj_get_child(o, i);
+    if (c == pg.bakeImg || has(dyn, c)) continue;
+    if (lv_obj_has_flag(c, LV_OBJ_FLAG_HIDDEN)) continue;
+    if (hasDynInside(c, dyn)) {
+      pg.clear.push_back({c, lv_obj_get_style_bg_opa(c, 0), lv_obj_get_style_border_opa(c, 0)});
+      lv_obj_set_style_bg_opa(c, LV_OPA_TRANSP, 0);
+      lv_obj_set_style_border_opa(c, LV_OPA_TRANSP, 0);
+      strip(pg, c, dyn);
+    } else {
+      lv_obj_add_flag(c, LV_OBJ_FLAG_HIDDEN);
+      pg.hid.push_back(c);
+    }
+  }
+}
+static void unbake(Page& pg) {
+  if (!pg.bake) return;
+  if (pg.bakeImg) { lv_obj_delete(pg.bakeImg); pg.bakeImg = nullptr; }
+  for (auto* o : pg.hid) lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+  for (auto& c : pg.clear) { lv_obj_set_style_bg_opa(c.o, c.bg, 0); lv_obj_set_style_border_opa(c.o, c.border, 0); }
+  pg.hid.clear();
+  pg.clear.clear();
+  lv_obj_set_style_bg_opa(pg.tile, pg.tileBg, 0);
+  for (auto& w : pg.w) {
+    if (w.litArc) { lv_obj_delete(w.litArc); w.litArc = nullptr; }
+    if (w.litBuf) { lv_draw_buf_destroy(w.litBuf); w.litBuf = nullptr; }
+    if (w.type == T_TICKS) { lv_obj_remove_flag(w.obj, LV_OBJ_FLAG_HIDDEN); w.lastI = -999; }
+  }
+  lv_draw_buf_destroy(pg.bake);
+  pg.bake = nullptr;
+}
+static void bake(Page& pg) {
+  if (pg.bake || !pg.tile) return;
+  int64_t t0 = esp_timer_get_time();
+  lv_obj_update_layout(pg.tile);
+  // 1) ขีดที่ติดตามค่า: ถ่ายรูปตอน "ติดทั้งวง" (พื้นใส) ไว้เป็นลายของ arc · แล้วคืนเป็นดับทั้งวงให้ไปอยู่ในรูปพื้น
+  for (auto& w : pg.w) {
+    if (w.type != T_TICKS || !w.sec[0]) continue;
+    lv_scale_section_set_range(w.sec[0], (int32_t)w.mn, (int32_t)w.mx);
+    if (w.red < w.mx) lv_scale_section_set_range(w.sec[1], (int32_t)w.red, (int32_t)w.mx);
+    w.litBuf = lv_snapshot_take(w.obj, LV_COLOR_FORMAT_ARGB8888);
+    lv_scale_section_set_range(w.sec[0], (int32_t)w.mx + 1, (int32_t)w.mx + 1);
+    lv_scale_section_set_range(w.sec[1], (int32_t)w.mx + 1, (int32_t)w.mx + 1);
+  }
+  // 2) ซ่อนของที่ขยับ แล้วถ่ายรูปทั้งหน้า
+  std::vector<lv_obj_t*> dyn;
+  dynObjs(pg, dyn);
+  for (auto* o : dyn) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+  pg.bake = lv_snapshot_take(pg.tile, LV_COLOR_FORMAT_RGB565);
+  for (auto* o : dyn) lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+  if (!pg.bake) {
+    ESP_LOGW("skin", "bake %s: no memory (psram free %u)", pg.name, (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    for (auto& w : pg.w) if (w.litBuf) { lv_draw_buf_destroy(w.litBuf); w.litBuf = nullptr; }
+    return;
+  }
+  // 3) ขีดที่ติดตามค่า → arc ใช้รูปเป็นลาย (วาดแค่ส่วนมุมที่เปลี่ยน แทนวาดสเกล 100 ขีดใหม่ทั้งวง)
+  for (auto& w : pg.w) {
+    if (w.type != T_TICKS || !w.litBuf) continue;
+    lv_area_t a;
+    lv_obj_get_coords(w.obj, &a);
+    int sz = w.litBuf->header.w;
+    int ext = (sz - lv_area_get_width(&a)) / 2;           // รูปใหญ่กว่าตัวสเกลเท่าที่ LVGL เผื่อขอบไว้
+    lv_area_t tc;
+    lv_obj_get_coords(pg.tile, &tc);
+    lv_obj_t* arc = lv_arc_create(pg.tile);
+    lv_obj_remove_style_all(arc);
+    lv_obj_set_pos(arc, a.x1 - ext - tc.x1, a.y1 - ext - tc.y1);
+    lv_obj_set_size(arc, sz, sz);
+    lv_arc_set_rotation(arc, (int32_t)w.rot);
+    lv_arc_set_bg_angles(arc, 0, (int32_t)w.sweep);
+    lv_arc_set_range(arc, 0, 1000);
+    lv_arc_set_value(arc, 0);
+    lv_obj_set_style_arc_width(arc, ext + (int)w.r1 + 4, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(arc, false, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_opa(arc, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_image_src(arc, w.litBuf, LV_PART_INDICATOR);
+    plain(arc);
+    w.litArc = arc;
+    w.lastI = -999;
+    lv_obj_add_flag(w.obj, LV_OBJ_FLAG_HIDDEN);   // สเกลตัวจริงอยู่ในรูปพื้นแล้ว
+  }
+  // 4) รูปพื้น + ซ่อนของนิ่ง
+  pg.bakeImg = lv_image_create(pg.tile);
+  lv_image_set_src(pg.bakeImg, pg.bake);
+  lv_obj_set_pos(pg.bakeImg, 0, 0);
+  plain(pg.bakeImg);
+  lv_obj_move_to_index(pg.bakeImg, 0);
+  dyn.clear();
+  dynObjs(pg, dyn);
+  strip(pg, pg.tile, dyn);
+  pg.tileBg = lv_obj_get_style_bg_opa(pg.tile, 0);
+  lv_obj_set_style_bg_opa(pg.tile, LV_OPA_TRANSP, 0);
+  ESP_LOGI("skin", "baked %s in %d ms (psram free %u)", pg.name, (int)((esp_timer_get_time() - t0) / 1000),
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+}
+void setActive(int page) {
+  for (int i = 0; i < (int)pages.size(); i++) if (i != page) unbake(pages[i]);
+  if (page >= 0 && page < (int)pages.size()) bake(pages[page]);
 }
 
 // ---------------------------------------------------------------- อัปเดต
@@ -635,6 +775,13 @@ void update(int page, const vd::Snap& s) {
       }
       case T_TICKS: {
         w.shown += (v - w.shown) * k;
+        if (w.litArc) {                                       // อบรูปแล้ว: เลื่อน arc ที่มีลายขีดติด
+          int ia = have ? (int)lroundf(1000.f * (w.shown - w.mn) / (w.mx - w.mn)) : 0;
+          if (ia < 0) ia = 0;
+          if (ia > 1000) ia = 1000;
+          if (ia != w.lastI) { w.lastI = ia; lv_arc_set_value(w.litArc, ia); }
+          break;
+        }
         int iv = have ? (int)lroundf(w.shown) : (int)w.mn - 1;
         int step = (int)((w.mx - w.mn) / 50);                 // ขยับทีละ 2% (สเกลใหญ่วาดใหม่ทั้งวง = แพง)
         if (step < 1) step = 1;
