@@ -25,7 +25,7 @@ LV_FONT_DECLARE(f_t28)
 LV_FONT_DECLARE(f_t20)
 }
 
-#define FW_VER "7B 2026.11.28b"
+#define FW_VER "7B 2026.11.28c"
 
 namespace ui {
 
@@ -156,7 +156,7 @@ static void loadSkin(const char* name) {
   if (name && name[0] && board_sd_ok()) {
     std::string p = std::string("/sdcard/skins/") + name;
     char* j = readFile(p.c_str());
-    if (j) { n = skin::build(tv, j, err, sizeof(err), cfg.en); free(j); }
+    if (j) { n = skin::build(tv, j, err, sizeof(err), true); free(j); }   // หน้าปัดเป็นภาษาอังกฤษเสมอ
     else snprintf(err, sizeof(err), "%s", T("อ่านไฟล์ไม่ได้", "cannot read file"));
     if (!n) {
       char m[160];
@@ -164,7 +164,7 @@ static void loadSkin(const char* name) {
       toast(m, 5000);
     }
   }
-  if (!n) n = skin::build(tv, skin::BUILTIN, err, sizeof(err), cfg.en);
+  if (!n) n = skin::build(tv, skin::BUILTIN, err, sizeof(err), true);
   if (curPage >= n) curPage = 0;
   lv_tileview_set_tile_by_index(tv, curPage, 0, LV_ANIM_OFF);
   rebuildDots();
@@ -443,8 +443,7 @@ static void onBack(lv_event_t*) { closeAll(); }
 static void onLang(lv_event_t*) {
   cfg.en = !cfg.en;
   cfgSave();
-  loadSkin(cfg.skin);          // ชื่อช่องในหน้าปัดเปลี่ยนภาษาด้วย
-  buildMenu();
+  buildMenu();                 // (หน้าปัดเป็นภาษาอังกฤษเสมอ — เปลี่ยนแค่เมนู)
 }
 static void onColor(lv_event_t*) {
   cfg.color = (cfg.color + 1) & 7;
@@ -596,6 +595,8 @@ static void tick(lv_timer_t*) {
   if (++k % 8 == 0) {                 // ~4 ครั้ง/วิ: สถานะ
     bool showChip = !menu && !sub && (cfg.demo || !snap.live);
     if (showChip) {
+      int langSave = cfg.en;
+      cfg.en = 1;                     // ป้ายบนหน้าปัดเป็นภาษาอังกฤษเสมอ
       const char* t;
       lv_color_t c;
       if (cfg.demo) { t = "DEMO"; c = lv_color_hex(0x3AA0FF); }
@@ -606,6 +607,7 @@ static void tick(lv_timer_t*) {
       lv_label_set_text(chipTxt, t);
       lv_obj_set_style_bg_color(chipDot, c, 0);
       lv_obj_remove_flag(chip, LV_OBJ_FLAG_HIDDEN);
+      cfg.en = langSave;
     } else lv_obj_add_flag(chip, LV_OBJ_FLAG_HIDDEN);
     updateMenuLive();
     if (subLink) {
@@ -690,7 +692,7 @@ void build() {
   else lv_sysmon_hide_performance(nullptr);
 #endif
   lv_timer_create(tick, 30, nullptr);
-  toast(T("ปัดซ้าย/ขวา = เปลี่ยนหน้า  ·  แตะค้าง = เมนู", "Swipe left/right = page  ·  Long-press = menu"), 4000);
+  toast("Swipe left/right = page  ·  Long-press = menu", 4000);
 }
 
 int bri() { return cfg.bri; }
